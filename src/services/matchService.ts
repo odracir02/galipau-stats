@@ -3,6 +3,7 @@
 // se persiste antes de devolverse.
 import * as clock from '../clock/clock';
 import type { Repository } from '../data/repository';
+import { isLegacyKind } from '../domain/catalog';
 import { buildEvent, lastRecorded, type EventTiming } from '../domain/events';
 import { monotonicIsoNow, newId } from '../domain/ids';
 import type {
@@ -162,8 +163,17 @@ export async function reopenMatch(repo: Repository, match: Match): Promise<Match
   return persist(repo, withChanges(match, { status: 'in_progress', finishedAt: null }));
 }
 
-export async function deleteMatch(repo: Repository, match: Match): Promise<Match> {
-  return persist(repo, withChanges(match, { deletedAt: isoNow() }));
+/**
+ * Elimina un partido (borrado lógico). Deja de aparecer en el historial, en
+ * «partido en curso» y en la temporada; sus eventos se conservan intactos pero
+ * no cuentan porque su partido ya no se lista. El reloj queda parado. Repetir la
+ * operación no cambia nada. La marca `deletedAt` permitirá restaurarlo y viajará
+ * como «lápida» en la sincronización para que no reaparezca.
+ */
+export async function deleteMatch(repo: Repository, match: Match, now = Date.now()): Promise<Match> {
+  const current = (await repo.getMatch(match.id)) ?? match;
+  if (current.deletedAt !== null) return current;
+  return persist(repo, withChanges(current, { deletedAt: isoNow(), clock: clock.pause(current.clock, now) }));
 }
 
 /**
@@ -197,6 +207,7 @@ export async function recordEvent(
 ): Promise<MatchEvent> {
   const existing = await repo.getEvent(id);
   if (existing) return existing;
+  if (isLegacyKind(payload.kind)) throw new ValidationError('Esta acción ya no se registra.');
   const event = buildEvent({ id, matchId: match.id, payload, playerId, timing, nowIso: isoNow() });
   assertValidEvent(match, event);
   await repo.saveEvent(event);
@@ -220,6 +231,9 @@ export async function updateEvent(
   event: MatchEvent,
   changes: EventChanges,
 ): Promise<MatchEvent> {
+  // Un evento histórico puede conservar su categoría; ninguno puede pasar a ella.
+  if (changes.payload && isLegacyKind(changes.payload.kind) && changes.payload.kind !== event.kind)
+    throw new ValidationError('Esta acción ya no se registra.');
   const base = buildEvent({
     id: event.id,
     matchId: event.matchId,

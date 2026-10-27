@@ -1,102 +1,146 @@
-import { formatPct } from '../../domain/format';
-import type { Counters } from '../../stats/engine';
-import { efficiency, perMatch, sanctions, savePct } from '../../stats/engine';
+import type { ReactNode } from 'react';
+import type { RedCard } from '../../stats/discipline';
+import { efficiency, perMatch, savePct, type Counters } from '../../stats/engine';
 import { Sheet } from '../components/Sheet';
-import { GkSummary, GkTypeTable, KV, RedsValue, ShotTypeTable, Tile, type StatRow } from './StatTables';
+import { Meter, Ring } from './charts';
+import { BallBlock, DisciplineBlock, GoalkeepingBlock, KV, ShotsBlock, Tile, type StatRow } from './StatTables';
 
 const avg = (value: number | null) =>
   value === null ? '—' : value.toLocaleString('es-ES', { maximumFractionDigits: 1 });
 
-/** Ficha individual con TODAS las estadísticas registradas del jugador. */
-export function PlayerCard({ row, mode, onClose }: { row: StatRow; mode: 'match' | 'season'; onClose: () => void }) {
+interface Props {
+  row: StatRow;
+  mode: 'match' | 'season';
+  /** «vs Rival · 27/10/2026» o «Temporada 2026/27». */
+  context: string;
+  /** Descalificación en este partido (solo vista de partido). */
+  card?: RedCard;
+  onClose: () => void;
+}
+
+/** Ficha individual con TODAS las estadísticas registradas del jugador o portero. */
+export function PlayerCard({ row, mode, context, card, onClose }: Props) {
   const c = row.counters;
   const isGk = row.position === 'goalkeeper';
   const matches = row.matches ?? 0;
-  // Un portero solo muestra lanzamientos propios si los tiene (p. ej. gol a portería vacía).
-  const showShots = !isGk || c.shots.attempts > 0;
+  const s = c.shots;
 
   return (
-    <Sheet title={row.name} onClose={onClose}>
-      <div className="player-head">
-        <span className="dorsal dorsal-lg">{row.number}</span>
-        <span className="muted">
-          {isGk ? 'Portero' : 'Jugador de campo'}
-          {mode === 'season' && ` · ${matches} ${matches === 1 ? 'partido convocado' : 'partidos convocado'}`}
-        </span>
-      </div>
+    <Sheet title={isGk ? 'Ficha del portero' : 'Ficha del jugador'} onClose={onClose}>
+      <header className="pcard-head">
+        <span className="pcard-num">{row.number}</span>
+        <div>
+          <strong>{row.name}</strong>
+          <span className="muted">
+            {isGk ? 'Portero' : 'Jugador de campo'} · {context}
+            {mode === 'season' && ` · ${matches} ${matches === 1 ? 'partido' : 'partidos'}`}
+          </span>
+        </div>
+      </header>
 
-      <div className="tiles">
-        {isGk ? (
-          <>
-            <Tile accent label="% paradas" value={formatPct(savePct(c.gk))} />
-            <Tile label="Paradas" value={c.gk.saves} />
-            <Tile label="Goles encajados" value={c.gk.goals} />
-          </>
-        ) : (
-          <>
-            <Tile accent label="Eficacia" value={formatPct(efficiency(c.shots))} />
-            <Tile label="Goles" value={c.shots.goals} sub={`${c.shots.attempts} lanz.`} />
-            <Tile label="Pérd. / Rec." value={`${c.turnovers.total} / ${c.recoveries}`} />
-          </>
-        )}
-      </div>
-
-      {isGk && (
-        <section className="card">
-          <h3>Portería</h3>
-          <GkSummary counters={c} />
-          {mode === 'season' && (
-            <dl className="kv">
-              <KV k="Paradas por partido" v={avg(perMatch(c.gk.saves, matches))} />
-              <KV k="Goles encajados por partido" v={avg(perMatch(c.gk.goals, matches))} />
-            </dl>
+      {isGk ? (
+        <>
+          <section className="card">
+            <div className="hero">
+              <Ring pct={savePct(c.gk)} label="Porcentaje de paradas" />
+              <div className="hero-text">
+                <span className="hero-label">% paradas</span>
+                <strong>
+                  {c.gk.saves} {c.gk.saves === 1 ? 'parada' : 'paradas'} / {c.gk.saves + c.gk.goals} entre palos
+                </strong>
+                <span className="muted">
+                  {c.gk.out} {c.gk.out === 1 ? 'lanzamiento fuera' : 'lanzamientos fuera'}
+                </span>
+              </div>
+            </div>
+            <div className="tiles">
+              <Tile label="Paradas" value={c.gk.saves} />
+              <Tile label="Goles encajados" value={c.gk.goals} />
+              <Tile label="Recibidos" value={c.gk.received} />
+              <Tile label="Fuera" value={c.gk.out} />
+            </div>
+          </section>
+          <Block title="Portería por procedencia">
+            <GoalkeepingBlock counters={c} summary={false} />
+          </Block>
+          {s.attempts > 0 && (
+            <Block title="Lanzamientos propios">
+              <Meter label="Eficacia" pct={efficiency(s)} detail={`${s.goals}/${s.attempts}`} />
+              <ShotsBlock counters={c} />
+            </Block>
           )}
-          <GkTypeTable counters={c} />
-        </section>
+        </>
+      ) : (
+        <>
+          <section className="card">
+            <div className="hero">
+              <Ring pct={efficiency(s)} label="Eficacia" />
+              <div className="hero-text">
+                <span className="hero-label">Eficacia</span>
+                <strong>
+                  {s.goals} {s.goals === 1 ? 'gol' : 'goles'} / {s.attempts}{' '}
+                  {s.attempts === 1 ? 'lanzamiento' : 'lanzamientos'}
+                </strong>
+                <span className="muted">
+                  {s.out} fuera · {s.saved} {s.saved === 1 ? 'parado' : 'parados'} por el portero rival
+                </span>
+              </div>
+            </div>
+            <div className="tiles">
+              <Tile label="Goles" value={s.goals} />
+              <Tile label="Lanzamientos" value={s.attempts} />
+            </div>
+          </section>
+          <Block title="Lanzamientos por tipo">
+            <ShotsBlock counters={c} />
+          </Block>
+        </>
       )}
 
-      {showShots && <ShotsSection counters={c} season={mode === 'season'} matches={matches} />}
+      <Block title="Balance de balón">
+        <BallBlock counters={c} />
+      </Block>
 
-      <section className="card">
-        <h3>Pérdidas y recuperaciones</h3>
-        <dl className="kv">
-          <KV k="Pasos" v={c.turnovers.steps} />
-          <KV k="Dobles" v={c.turnovers.double} />
-          <KV k="Pases fallados" v={c.turnovers.badPass} />
-          <KV k="Otras pérdidas" v={c.turnovers.general} />
-          <KV k="Pérdidas (total)" v={c.turnovers.total} strong />
-          <KV k="Recuperaciones" v={c.recoveries} strong />
-        </dl>
-      </section>
+      <Block title="Disciplina y defensa">
+        <DisciplineBlock counters={c} card={card} />
+      </Block>
 
-      <section className="card">
-        <h3>Defensa y sanciones</h3>
-        <dl className="kv">
-          <KV k="Amarillas" v={c.yellows} />
-          <KV k="Exclusiones 2 min" v={c.exclusions} />
-          <KV k="Rojas" v={<RedsValue counters={c} />} />
-          <KV k="Sanciones (total)" v={sanctions(c)} strong />
-          <KV k="Golpes francos" v={c.freeThrows} />
-          <KV k="Penaltis cometidos" v={c.penaltiesCommitted} />
-        </dl>
-      </section>
+      {mode === 'season' && <SeasonAverages counters={c} matches={matches} isGk={isGk} />}
     </Sheet>
   );
 }
 
-function ShotsSection({ counters: c, season, matches }: { counters: Counters; season: boolean; matches: number }) {
+function Block({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="card">
-      <h3>Lanzamientos</h3>
-      <dl className="kv">
-        <KV k="Goles" v={c.shots.goals} />
-        <KV k="Fuera" v={c.shots.out} />
-        <KV k="Parados" v={c.shots.saved} />
-        <KV k="Lanzamientos" v={c.shots.attempts} />
-        <KV k="Eficacia" v={formatPct(efficiency(c.shots))} strong />
-        {season && <KV k="Goles por partido" v={avg(perMatch(c.shots.goals, matches))} />}
-      </dl>
-      <ShotTypeTable counters={c} />
+      <h3>{title}</h3>
+      {children}
     </section>
+  );
+}
+
+/** Promedios por partido convocado (solo los que se pueden calcular con los eventos). */
+function SeasonAverages({ counters: c, matches, isGk }: { counters: Counters; matches: number; isGk: boolean }) {
+  return (
+    <Block title="Promedios por partido">
+      <dl className="kv">
+        <KV k="Partidos con convocatoria" v={matches} strong />
+        {isGk ? (
+          <>
+            <KV k="Paradas" v={avg(perMatch(c.gk.saves, matches))} />
+            <KV k="Goles encajados" v={avg(perMatch(c.gk.goals, matches))} />
+            <KV k="Lanzamientos recibidos" v={avg(perMatch(c.gk.received, matches))} />
+          </>
+        ) : (
+          <>
+            <KV k="Goles" v={avg(perMatch(c.shots.goals, matches))} />
+            <KV k="Lanzamientos" v={avg(perMatch(c.shots.attempts, matches))} />
+          </>
+        )}
+        <KV k="Pérdidas" v={avg(perMatch(c.turnovers.total, matches))} />
+        <KV k="Recuperaciones" v={avg(perMatch(c.recoveries, matches))} />
+        <KV k="Exclusiones" v={avg(perMatch(c.exclusions, matches))} />
+      </dl>
+    </Block>
   );
 }

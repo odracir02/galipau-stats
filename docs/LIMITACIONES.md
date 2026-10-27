@@ -18,8 +18,9 @@
 - Duración de parte fija en 30 min desde la interfaz (el modelo admite otras).
 - Un jugador de campo no puede figurar como portero (lanzamiento recibido). Si un jugador de campo se pone de portero, hay que registrarlo como acción pendiente.
 - Tras cambiar el tipo de una acción a otro incompatible con el jugador (p. ej. de «Lanzamiento» a «Portería»), la acción queda sin asignar hasta que se elija portero.
-- No hay borrado de equipos ni de partidos desde la interfaz (el servicio `deleteMatch` existe, sin pantalla).
-- Sin gráficas, PDF, sincronización, autenticación ni invitaciones (fuera del alcance de esta versión).
+- Los partidos eliminados no se pueden restaurar desde la interfaz (el dato se conserva; no hay papelera). Tampoco se pueden eliminar equipos.
+- Sin PDF, sincronización, autenticación ni invitaciones (fuera del alcance de esta versión).
+- La guionización de etiquetas largas depende del navegador; en anchos estrechos las tarjetas de cifras pasan a dos columnas para que no se corten.
 
 ## PWA
 

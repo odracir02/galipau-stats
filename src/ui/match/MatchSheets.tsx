@@ -1,4 +1,4 @@
-import { ArrowLeft, Coffee, Flag, Minus, Plus, RotateCcw, Scale, Timer, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, Coffee, Flag, Minus, Plus, RotateCcw, Scale, Timer, Trash2, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import { elapsedMs, MINUTE_MS } from '../../clock/clock';
 import { useNow } from '../../app/useNow';
@@ -142,6 +142,7 @@ interface MenuProps {
   onFinish: () => void;
   onReopen: () => void;
   onExit: () => void;
+  onDelete: () => void;
   onClose: () => void;
 }
 
@@ -169,10 +170,11 @@ export function MatchMenuSheet(p: MenuProps) {
             'Finalizar partido' + (p.pendingCount ? ' (' + p.pendingCount + ' sin asignar)' : ''),
             Flag,
             p.onFinish,
-            'menu-danger',
           )}
         </div>
       )}
+      {/* Acción destructiva, separada del resto. Pide confirmación. */}
+      <div className="menu menu-separated">{item('Eliminar partido', Trash2, p.onDelete, 'menu-danger')}</div>
     </Sheet>
   );
 }

@@ -28,3 +28,8 @@
 | D24 | Roja por acumulación derivada, sin evento | Borrar o corregir una exclusión la elimina o la traslada sola; no puede quedar una roja «huérfana» ni duplicada. |
 | D25 | Una descalificación por jugador y partido, la primera en tiempo de partido | Evita contar dos rojas si se registra una roja directa tras la 3.ª exclusión. Orden por minuto (no por orden de registro) para que una exclusión olvidada añadida después se sitúe correctamente. |
 | D26 | El descalificado solo desaparece de la selección rápida | Sus acciones anteriores olvidadas se pueden atribuir desde el editor; la validación no lo bloquea. |
+| D27 | Golpe franco como categoría histórica (`LEGACY_KINDS`) | Ya no se ofrece ni se puede crear (también lo impide el servicio), pero los eventos antiguos siguen siendo válidos y nunca se borran solos. |
+| D28 | Advertencia de acción posterior a la expulsión solo en el editor | Es donde se pueden elegir descalificados; en la selección rápida ya no aparecen. Se calcula con la acción ya colocada (corregir la propia 3.ª exclusión no avisa contra sí misma). No bloquea: «Revisar» o «Guardar igualmente». |
+| D29 | Eliminación de partidos con el borrado lógico existente | Permite restaurar más adelante y no reaparecer al sincronizar. Las acciones se conservan pero dejan de contar porque el partido no se lista. |
+| D30 | Gráficas propias con CSS/SVG (anillo, barras, intervalos) | Son pocas y sencillas; una librería añadiría peso sin aportar nada. Todas muestran los valores en texto. |
+| D31 | Cifras exactas en desplegables «Ver cifras exactas» | Las barras resumen; las tablas completas siguen disponibles sin alargar la pantalla. |

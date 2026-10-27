@@ -240,13 +240,14 @@ function SeasonPanel({ team }: { team: Team }) {
       ) : (
         <StatsView
           mode="season"
+          context={`Temporada ${season}`}
           team={stats.team}
           rows={rows}
           intervals={stats.intervals}
           pendingCount={stats.pendingCount}
           summary={
             <>
-              <div className="tiles">
+              <div className="tiles tiles-3">
                 <Tile label="Partidos" value={stats.matches} />
                 <Tile
                   label="A favor"

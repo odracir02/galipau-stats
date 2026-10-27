@@ -7,11 +7,11 @@ import { showToast } from '../../app/toast';
 import { useLoad } from '../../app/useLoad';
 import { useWakeLock } from '../../app/useWakeLock';
 import { describePayload } from '../../domain/catalog';
-import { lastRecorded, type EventTiming } from '../../domain/events';
-import { formatDate } from '../../domain/format';
+import { buildEvent, lastRecorded, type EventTiming } from '../../domain/events';
+import { formatClock, formatDate } from '../../domain/format';
 import type { EventPayload, Id, Match, MatchEvent, ScoreAdjustment, Team } from '../../domain/types';
 import * as svc from '../../services/matchService';
-import { disqualifications, redCards } from '../../stats/discipline';
+import { actionAfterDisqualification, disqualifications, redCards } from '../../stats/discipline';
 import { computeMatchStats } from '../../stats/engine';
 import { ConfirmSheet } from '../components/Sheet';
 import { Icon } from '../components/Icon';
@@ -60,6 +60,7 @@ type Overlay =
   | { name: 'score' }
   | { name: 'halftime' }
   | { name: 'finish' }
+  | { name: 'delete' }
   | { name: 'edit'; event: MatchEvent }
   | { name: 'add'; timing: EventTiming }
   | null;
@@ -137,6 +138,28 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
       showToast('Acción corregida');
     });
 
+  /**
+   * Advertencia del editor: ¿el jugador ya estaba descalificado en el minuto de la
+   * acción? Solo informa; no crea sanciones ni modifica estadísticas.
+   */
+  const disqualifiedWarning =
+    (existing?: MatchEvent) =>
+    (payload: EventPayload, playerId: Id | null, timing: EventTiming): string | null => {
+      const candidate = buildEvent({
+        id: existing?.id ?? 'accion-nueva',
+        matchId: match.id,
+        payload,
+        playerId,
+        timing,
+        nowIso: existing?.createdAt ?? new Date().toISOString(),
+      });
+      const card = actionAfterDisqualification(events, candidate);
+      if (!card) return null;
+      const who = squad.find((s) => s.playerId === playerId);
+      const origin = card.type === 'direct' ? 'roja directa' : 'roja por acumulación';
+      return `El dorsal ${who?.number ?? '?'} fue descalificado en el minuto ${formatClock(card.matchTimeMs)} (${origin}). Esta acción corresponde al minuto ${formatClock(timing.matchTimeMs)}.`;
+    };
+
   const remove = (event: MatchEvent) =>
     attempt(async () => {
       const e = await svc.deleteEvent(repo, event);
@@ -202,6 +225,8 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
           <div className="content">
             <StatsView
               mode="match"
+              context={`${match.venue === 'home' ? 'vs' : '@'} ${match.opponent} · ${formatDate(match.date)}`}
+              redCards={disqualifications(events)}
               team={stats.team}
               rows={squad.map((s) => ({ ...s, counters: stats.players.get(s.playerId)! }))}
               intervals={stats.intervals}
@@ -248,6 +273,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
             })
           }
           onExit={() => navigate({ name: 'team', teamId: match.teamId })}
+          onDelete={() => setOverlay({ name: 'delete' })}
         />
       )}
       {overlay?.name === 'clock' && (
@@ -304,6 +330,36 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
           }
         />
       )}
+      {overlay?.name === 'delete' && (
+        <ConfirmSheet
+          title="Eliminar partido"
+          message={
+            <>
+              <p>
+                <strong>
+                  {match.venue === 'home' ? 'vs' : '@'} {match.opponent}
+                </strong>{' '}
+                · {formatDate(match.date)}
+              </p>
+              <p>
+                El partido desaparecerá del historial y dejará de contar en las estadísticas del partido, de los
+                jugadores y de la temporada. La plantilla y los demás partidos no cambian.
+              </p>
+            </>
+          }
+          confirmLabel="Eliminar partido"
+          danger
+          onCancel={() => setOverlay(null)}
+          onConfirm={() =>
+            void attempt(async () => {
+              await svc.deleteMatch(repo, matchRef.current);
+              setOverlay(null);
+              showToast('Partido eliminado', 'info');
+              navigate({ name: 'team', teamId: matchRef.current.teamId }, { replace: true });
+            })
+          }
+        />
+      )}
       {overlay?.name === 'edit' && (
         <EventEditorSheet
           squad={squad}
@@ -311,6 +367,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
           event={overlay.event}
           defaultTiming={overlay.event}
           onSave={(payload, playerId, timing) => saveEdit(overlay.event, payload, playerId, timing)}
+          checkDisqualified={disqualifiedWarning(overlay.event)}
           onDelete={() => remove(overlay.event)}
           onClose={() => setOverlay(null)}
         />
@@ -321,6 +378,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
           disqualified={disqualified}
           defaultTiming={overlay.timing}
           onSave={record}
+          checkDisqualified={disqualifiedWarning()}
           onClose={() => setOverlay(null)}
         />
       )}

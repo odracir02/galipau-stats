@@ -22,16 +22,22 @@ export const GK_SHOT_RESULTS: readonly GkShotResult[] = ['goal', 'save', 'out'];
 
 export const TURNOVER_TYPES: readonly TurnoverType[] = ['general', 'steps', 'double', 'bad_pass'];
 
-/** Acciones del grupo «Defensa y sanciones». */
-export const DEFENSE_KINDS: readonly SimpleEventKind[] = [
-  'yellow',
-  'exclusion',
-  'red',
-  'free_throw',
-  'penalty_committed',
-];
+/** Acciones del grupo «Defensa y sanciones» que se registran. */
+export const DEFENSE_KINDS: readonly SimpleEventKind[] = ['yellow', 'exclusion', 'red', 'penalty_committed'];
 
+/** Acciones simples que se pueden registrar hoy. */
 export const SIMPLE_KINDS: readonly SimpleEventKind[] = ['recovery', ...DEFENSE_KINDS];
+
+/**
+ * Categorías históricas: ya no se registran (el golpe franco se retiró porque se
+ * producen demasiados), pero los eventos antiguos siguen siendo válidos, se pueden
+ * leer, corregir o eliminar, y nunca se borran automáticamente.
+ */
+export const LEGACY_KINDS: readonly SimpleEventKind[] = ['free_throw'];
+
+export function isLegacyKind(kind: EventKind): boolean {
+  return (LEGACY_KINDS as readonly EventKind[]).includes(kind);
+}
 
 export const FIELD_SHOT_TYPE_LABEL: Record<FieldShotType, string> = {
   nine_m: '9 m / sobre defensa',

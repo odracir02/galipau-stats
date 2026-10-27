@@ -16,6 +16,8 @@ Se aplican a cualquier autor de un lanzamiento, también a un portero que marca 
 | Pérdidas (total)   | pérdida general + pasos + dobles + pase fallado |
 | Sanciones          | amarillas + exclusiones + rojas               |
 
+Los **golpes francos** ya no se registran ni se muestran. Los eventos antiguos se siguen contando internamente (`freeThrows`) para no perder datos, pero no forman parte de ninguna cifra visible. Los **penaltis cometidos** sí se muestran.
+
 ## Tarjetas rojas y descalificación
 
 Implementación: [`src/stats/discipline.ts`](../src/stats/discipline.ts). Las rojas **no** se cuentan evento a evento: se derivan recorriendo las acciones en orden de tiempo de partido.

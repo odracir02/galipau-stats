@@ -27,12 +27,16 @@ Campos comunes: `id`, `matchId`, `playerId` (null = **pendiente de atribución**
 | `yellow`            | —                                                            | Cualquier convocado |
 | `exclusion`         | — (2 minutos)                                                | Cualquier convocado |
 | `red`               | — (roja **directa**; la roja por acumulación no es un evento, se deriva de la 3.ª exclusión) | Cualquier convocado |
-| `free_throw`        | — (golpe franco cometido)                                    | Cualquier convocado |
+| `free_throw`        | — (golpe franco cometido). **Categoría histórica**: ya no se registra; los eventos antiguos se conservan, se pueden corregir o eliminar y siguen siendo válidos | Cualquier convocado |
 | `penalty_committed` | — (penalti cometido en defensa)                              | Cualquier convocado |
 
 Los tres «penaltis» son conceptos distintos y no se mezclan: `shot` + `penalty` (lanzado en ataque), `penalty_committed` (cometido en defensa) y `gk_shot` + `penalty` (recibido por nuestro portero).
 
 Un evento de pasos/dobles/pase fallado es **un único evento** (`turnover` con su subtipo); el motor cuenta además la pérdida. No se guardan contadores.
+
+## Eliminación de partidos
+
+`deleteMatch` es un **borrado lógico**: marca `deletedAt`, detiene el reloj y conserva el estado y todas las acciones. Los listados (`listMatches`) excluyen los partidos eliminados, de modo que desaparecen del historial, de «partido en curso» y de la temporada; los demás partidos y la plantilla no cambian. Repetir la operación no tiene efecto. La marca permitirá restaurarlos y viajará como «lápida» en la futura sincronización para que no reaparezcan.
 
 ## Operaciones sobre eventos
 

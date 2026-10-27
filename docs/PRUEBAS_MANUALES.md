@@ -98,3 +98,48 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 58. Cambiar una de sus exclusiones a otro jugador que ya tenía dos. ✔ La roja pasa al otro jugador; el primero vuelve a estar disponible.
 59. Repetir con un portero. ✔ Mismo comportamiento.
 60. Roja directa a un jugador sin exclusiones. ✔ «1 · directa» y deja de estar disponible.
+
+## K. Panel de estadísticas
+
+61. Estadísticas → Equipo con un partido con datos variados.
+    - ✔ El anillo de eficacia muestra el porcentaje y «X goles / Y lanzamientos».
+    - ✔ Las barras por tipo muestran «% · goles/lanzamientos».
+    - ✔ Los tipos sin lanzamientos dicen «Sin datos».
+62. «Ver cifras exactas». ✔ Tabla con Gol, Fuera, Parada, Total y Eficacia, más la fila Total.
+63. Portería, Balance de balón, Disciplina y defensa. ✔ Cuadran con la cronología; los golpes francos no aparecen.
+64. Evolución por intervalos. ✔ Goles a favor hacia arriba y en contra hacia abajo, con números; «Ver detalle por intervalo» abre la tabla.
+65. Jugadores y Porteros. ✔ Una tarjeta por jugador con su barra; al tocarla se abre la ficha (dorsal, contexto, anillo, bloques).
+66. Temporada → ficha. ✔ Incluye «Promedios por partido».
+67. Repetir en 320, 360, 375 y 390 px. ✔ Nada se sale de la pantalla ni de su tarjeta.
+
+## L. Golpes francos
+
+68. Defensa y sanciones. ✔ No aparece «Golpe franco»; «Penalti cometido» sí.
+69. «Añadir acción olvidada». ✔ No ofrece «Golpe franco».
+70. Con datos antiguos que tengan golpes francos:
+    - ✔ Siguen en la cronología.
+    - ✔ Al editarlos conservan su categoría.
+    - ✔ No aparecen en las estadísticas.
+
+## M. Eliminar partidos
+
+71. Crear un partido de prueba, iniciarlo y registrar acciones.
+72. ⋮ → «Eliminar partido» (separado, en rojo).
+    - ✔ La confirmación muestra rival y fecha.
+    - ✔ «Cancelar» no elimina nada.
+73. Confirmar.
+    - ✔ Se sale al equipo.
+    - ✔ El partido desaparece del historial y del aviso «Partido en curso».
+    - ✔ La temporada se recalcula; los demás partidos y la plantilla no cambian.
+74. Recargar. ✔ Sigue eliminado.
+75. Repetir con un partido preparado y con uno finalizado.
+
+## N. Advertencia de expulsión
+
+76. Descalificar a un jugador (3 exclusiones o roja directa) en, por ejemplo, el 42:15.
+77. Cronología → «Añadir acción olvidada»: ese jugador (descalificado), 2.ª parte, 47:20 → Guardar.
+    - ✔ Aviso «El dorsal … fue descalificado en el minuto 42:15 … Esta acción corresponde al minuto 47:20», visible sin desplazar.
+78. «Revisar». ✔ No guarda; se puede cambiar el minuto.
+79. Cambiar a un minuto anterior → Guardar. ✔ Se guarda sin aviso.
+80. Repetir con un minuto posterior → «Guardar igualmente». ✔ Se guarda; las sanciones no cambian.
+81. Mover la 3.ª exclusión a un minuto posterior a la acción. ✔ La acción deja de considerarse posterior y ya no avisa.

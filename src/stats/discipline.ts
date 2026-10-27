@@ -72,3 +72,23 @@ export function availableForNewActions(squad: readonly SquadEntry[], events: rea
   const out = disqualifications(events);
   return squad.filter((s) => !out.has(s.playerId));
 }
+
+/** Compara dos momentos de partido: negativo si `a` es anterior a `b`. */
+function compareTiming(a: Pick<RedCard, 'period' | 'matchTimeMs'>, b: Pick<RedCard, 'period' | 'matchTimeMs'>): number {
+  return a.period - b.period || a.matchTimeMs - b.matchTimeMs;
+}
+
+/**
+ * Si `candidate` (una acción nueva o corregida) se atribuye a un jugador que en
+ * ese momento ya estaba descalificado, devuelve su descalificación; si no, null.
+ * Se calcula con el evento ya colocado en el partido (sustituyendo su versión
+ * anterior), de modo que corregir la propia 3.ª exclusión o la roja se evalúa
+ * con la situación resultante. Solo informa: no bloquea ni cambia estadísticas.
+ */
+export function actionAfterDisqualification(events: readonly MatchEvent[], candidate: MatchEvent): RedCard | null {
+  if (candidate.playerId === null || candidate.deletedAt !== null) return null;
+  const others = events.filter((e) => e.id !== candidate.id);
+  const card = disqualifications([...others, candidate]).get(candidate.playerId);
+  if (!card || card.triggerEventId === candidate.id) return null;
+  return compareTiming(candidate, card) > 0 ? card : null;
+}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ev, makeMatch, SQUAD } from '../test/fixtures';
 import type { MatchEvent } from '../domain/types';
-import { availableForNewActions, disqualifications, redCards } from './discipline';
+import { actionAfterDisqualification, availableForNewActions, disqualifications, redCards } from './discipline';
 import { computeMatchStats, computeSeasonStats, sanctions } from './engine';
 
 const exclusion = (player: string | null, minute: number, opts = {}) => ev({ kind: 'exclusion' }, player, minute, opts);
@@ -118,5 +118,62 @@ describe('disponibilidad en directo', () => {
     const events = [exclusion('p7', 5), exclusion('p7', 12), exclusion('p7', 40, { deleted: true })];
     expect(availableForNewActions(SQUAD, events).map((s) => s.playerId)).toContain('p7');
     expect(stats(events).players.get('p7')!.reds).toBe(0);
+  });
+});
+
+describe('advertencia de acción posterior a la expulsión', () => {
+  const goalAt = (player: string, minute: number) => ev({ kind: 'shot', shotType: 'nine_m', result: 'goal' }, player, minute);
+
+  it('avisa si la acción es posterior a una roja por tercera exclusión', () => {
+    const events = [exclusion('p69', 5), exclusion('p69', 20), exclusion('p69', 42)];
+    const card = actionAfterDisqualification(events, goalAt('p69', 47));
+    expect(card).toMatchObject({ type: 'accumulated', triggerEventId: events[2]!.id });
+  });
+
+  it('avisa si la acción es posterior a una roja directa', () => {
+    expect(actionAfterDisqualification([red('p7', 10)], goalAt('p7', 12))?.type).toBe('direct');
+  });
+
+  it('no avisa para acciones anteriores ni del mismo instante', () => {
+    const events = [red('p7', 10)];
+    expect(actionAfterDisqualification(events, goalAt('p7', 8))).toBeNull();
+    expect(actionAfterDisqualification(events, goalAt('p7', 10))).toBeNull();
+  });
+
+  it('no avisa para jugadores no descalificados ni para pendientes', () => {
+    expect(actionAfterDisqualification([red('p7', 10)], goalAt('p14', 50))).toBeNull();
+    expect(actionAfterDisqualification([red('p7', 10)], ev({ kind: 'recovery' }, null, 50))).toBeNull();
+  });
+
+  it('corregir la propia 3.ª exclusión a un minuto posterior no avisa contra sí misma', () => {
+    const events = [exclusion('p7', 5), exclusion('p7', 20), exclusion('p7', 42)];
+    const moved = { ...events[2]!, matchTimeMs: 50 * 60_000 };
+    expect(actionAfterDisqualification(events, moved)).toBeNull();
+  });
+
+  it('mover una exclusión antes de la 3.ª cambia el momento de la expulsión', () => {
+    // Con la 3.ª en el 42, un gol en el 45 avisa; si una de ellas pasa a ser posterior al gol, deja de avisar.
+    const events = [exclusion('p7', 5), exclusion('p7', 20), exclusion('p7', 42)];
+    const goal = goalAt('p7', 45);
+    expect(actionAfterDisqualification(events, goal)).not.toBeNull();
+    const later = [events[0]!, events[1]!, { ...events[2]!, matchTimeMs: 50 * 60_000 }];
+    expect(actionAfterDisqualification(later, goal)).toBeNull();
+  });
+
+  it('eliminar la sanción quita la advertencia', () => {
+    const events = [exclusion('p7', 5), exclusion('p7', 20), exclusion('p7', 42, { deleted: true })];
+    expect(actionAfterDisqualification(events, goalAt('p7', 47))).toBeNull();
+  });
+
+  it('una acción corregida que pasa a otro dorsal se evalúa con el nuevo jugador', () => {
+    const events = [red('p7', 10)];
+    const goal = goalAt('p14', 20);
+    expect(actionAfterDisqualification(events, goal)).toBeNull();
+    expect(actionAfterDisqualification(events, { ...goal, playerId: 'p7' })).not.toBeNull();
+  });
+
+  it('una descalificación no afecta a otro partido', () => {
+    const otherMatchEvents: MatchEvent[] = [];
+    expect(actionAfterDisqualification(otherMatchEvents, goalAt('p7', 47))).toBeNull();
   });
 });

@@ -41,6 +41,15 @@ Inter (variable, subconjunto latino, empaquetada para funcionar sin conexión), 
 
 Un único juego, `lucide-react`, con trazo 2 y tamaño 20 px por defecto (componente `Icon`). Los iconos de las acciones están centralizados en `src/ui/components/icons.ts`.
 
+## Estadísticas
+
+- **Resumen**: anillo con el porcentaje principal (eficacia ofensiva o % de paradas) junto a las cifras que lo generan («5 goles / 7 lanzamientos») y tarjetas de cifras clave.
+- **Barras horizontales** (`Meter`) para porcentajes por tipo o procedencia, siempre con «% · aciertos/intentos». Sin intentos se muestra «Sin datos» con una pista discontinua, nunca 0 %.
+- **Barras de recuento** (`CountBar`) para la composición de pérdidas.
+- **Intervalos de 5 minutos**: goles a favor hacia arriba (rojo) y en contra hacia abajo (oscuro), con números y leyenda; la dirección distingue las series sin depender del color.
+- Las tablas completas quedan en desplegables «Ver cifras exactas».
+- Tarjetas de cifras con columnas adaptativas (2 en móvil estrecho, 3 cuando caben).
+
 ## Pantalla de partido
 
 1. **Cabecera fija (oscura):**

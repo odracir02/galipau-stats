@@ -96,7 +96,7 @@ export function RecordPanel({ squad, unavailable, getTiming, onRecord }: Props) 
             wide
             icon={ACTION_ICON.defense}
             title="Defensa y sanciones"
-            sub="Amarilla · 2 min · Roja · Golpe franco · Penalti"
+            sub="Amarilla · 2 min · Roja · Penalti cometido"
             onClick={() => setStep({ name: 'defense', timing: getTiming() })}
           />
         </div>

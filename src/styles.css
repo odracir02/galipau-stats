@@ -623,7 +623,7 @@ svg {
 
 .form-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s-3);
   align-items: end;
 }
@@ -730,11 +730,13 @@ svg {
 
 .squad-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  /* minmax(0, …): un nombre largo se recorta con «…» en vez de ensanchar la cuadrícula. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s-2);
 }
 
 .squad-chip {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--s-2);
@@ -1127,7 +1129,7 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
 .tabbar {
   flex: none;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   padding-bottom: var(--safe-b);
   background: var(--c-surface);
   border-top: 1px solid var(--c-border);
@@ -1223,7 +1225,7 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
 /* Inicio del registro: cuadrícula compacta y neutra */
 .rec-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s-2);
   padding: var(--s-3);
 }
@@ -1313,7 +1315,7 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
 /* Matriz tipo × resultado: una sola pulsación elige ambos */
 .matrix {
   display: grid;
-  grid-template-columns: minmax(5.75rem, 1.1fr) repeat(3, 1fr);
+  grid-template-columns: minmax(5.75rem, 1.1fr) repeat(3, minmax(0, 1fr));
   gap: 6px;
   align-items: stretch;
 }
@@ -1373,7 +1375,7 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
 
 .options {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s-2);
 }
 
@@ -1415,12 +1417,12 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
 /* Selección de jugador por dorsal */
 .players {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
 }
 
 .players-few {
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .player {
@@ -1594,7 +1596,7 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
 
 .adjust-steps {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--s-2);
 }
 
@@ -1663,10 +1665,16 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
   color: var(--c-text-2);
 }
 
+/* Tantas columnas como quepan sin cortar etiquetas largas («Recuperaciones»). */
 .tiles {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(min(7.25rem, 100%), 1fr));
   gap: var(--s-2);
+}
+
+/* Tres cifras con etiquetas cortas (resumen de temporada). */
+.tiles.tiles-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .tile {
@@ -1695,6 +1703,7 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
 }
 
 .tile-label {
+  hyphens: auto;
   font-size: var(--fs-xs);
   color: var(--c-text-2);
 }
@@ -1880,9 +1889,473 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
 
 @media (min-width: 420px) {
   .players {
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
   .players-few {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* Advertencia no bloqueante (p. ej. acción posterior a una descalificación) */
+.warning {
+  display: flex;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--c-secondary);
+  border-radius: var(--r-md);
+  background: var(--c-secondary-soft);
+  color: var(--c-secondary-text);
+  font-size: var(--fs-sm);
+}
+
+.warning strong {
+  color: var(--c-text);
+}
+
+.warning p {
+  margin: var(--s-1) 0 0;
+  color: var(--c-text);
+}
+
+.warning .muted {
+  color: var(--c-text-2);
+}
+
+.menu-separated {
+  margin-top: var(--s-3);
+}
+
+/* ---------------------------------------------------------------------------
+   Estadísticas: panel deportivo
+--------------------------------------------------------------------------- */
+.hero {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin-bottom: var(--s-3);
+}
+
+.hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+
+.hero-label {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-text-2);
+}
+
+.hero-text strong {
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.ring {
+  flex: none;
+}
+
+.ring-track {
+  stroke: var(--c-surface-2);
+}
+
+.ring-fill {
+  stroke: var(--c-accent);
+}
+
+.ring-text {
+  fill: var(--c-text);
+  font-size: 15px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.tile-sub {
+  color: var(--c-text-3);
+}
+
+
+.meters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.meter-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s-2);
+  font-size: var(--fs-sm);
+}
+
+.meter-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meter-value {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-track {
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-2);
+  overflow: hidden;
+}
+
+.meter-track.is-empty {
+  background: repeating-linear-gradient(90deg, var(--c-surface-2) 0 6px, transparent 6px 10px);
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--c-accent);
+}
+
+.countbars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+}
+
+.countbar {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr 2ch;
+  align-items: center;
+  gap: var(--s-3);
+  font-size: var(--fs-sm);
+}
+
+.countbar-label {
+  color: var(--c-text-2);
+}
+
+.countbar-track {
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-2);
+  overflow: hidden;
+}
+
+.countbar-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--c-header);
+}
+
+.countbar-value {
+  text-align: right;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.mini-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s-2);
+  margin-bottom: var(--s-3);
+}
+
+.mini-stats-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mini-stats > div {
+  display: flex;
+  flex-direction: column;
+  padding: var(--s-2);
+  border-radius: var(--r-sm);
+  background: var(--c-bg);
+  min-width: 0;
+}
+
+.mini-stats strong {
+  font-size: var(--fs-lg);
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.mini-stats span {
+  font-size: var(--fs-xs);
+  color: var(--c-text-2);
+  line-height: 1.2;
+}
+
+@media (max-width: 359px) {
+  .mini-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .countbar {
+    grid-template-columns: 6.5rem 1fr 2ch;
+  }
+}
+
+.exact {
+  margin-top: var(--s-3);
+  border-top: 1px solid var(--c-border);
+}
+
+.exact summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--tap);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--c-accent);
+  cursor: pointer;
+  list-style: none;
+}
+
+.exact summary::-webkit-details-marker {
+  display: none;
+}
+
+.exact summary::before {
+  content: '▸';
+  margin-right: var(--s-2);
+}
+
+.exact[open] summary::before {
+  content: '▾';
+}
+
+.table .row-total th,
+.table .row-total td {
+  font-weight: 700;
+  border-top: 1px solid var(--c-text);
+}
+
+.table .row-half th,
+.table .row-half td {
+  border-top: 1px solid var(--c-text);
+}
+
+/* Gráfica de intervalos */
+.ichart {
+  margin: 0;
+}
+
+.ichart-cols {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.ichart-col {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.ichart-col.is-half-start {
+  border-left: 1px dashed var(--c-border-strong);
+}
+
+.ichart-up,
+.ichart-down {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 3px;
+}
+
+.ichart-up {
+  flex-direction: column-reverse;
+  justify-content: flex-start;
+}
+
+.ichart-down {
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.ichart-bar {
+  width: 100%;
+  max-width: 18px;
+  flex: none;
+}
+
+.ichart-bar.is-for {
+  border-radius: 3px 3px 0 0;
+  background: var(--c-accent);
+}
+
+.ichart-bar.is-against {
+  border-radius: 0 0 3px 3px;
+  background: var(--c-header);
+}
+
+.ichart-num {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+
+.ichart-axis {
+  padding: 2px 0;
+  border-top: 1px solid var(--c-border-strong);
+  border-bottom: 1px solid var(--c-border-strong);
+  text-align: center;
+  font-size: 0.625rem;
+  color: var(--c-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.ichart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+  margin-top: var(--s-2);
+  font-size: var(--fs-xs);
+  color: var(--c-text-2);
+}
+
+.ichart-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.swatch.is-for {
+  background: var(--c-accent);
+}
+
+.swatch.is-against {
+  background: var(--c-header);
+}
+
+/* Listas de jugadores y porteros */
+.plist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.prow {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  text-align: left;
+}
+
+.prow:active {
+  background: var(--c-surface-2);
+}
+
+.prow-top {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.prow-who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.prow-name {
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prow-pj {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+}
+
+.prow-main {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.prow-main strong {
+  font-size: var(--fs-lg);
+  font-weight: 750;
+}
+
+.prow .meter-label {
+  color: var(--c-text-2);
+}
+
+.prow-foot {
+  font-size: var(--fs-xs);
+  color: var(--c-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Cabecera de ficha */
+.pcard-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.pcard-head > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pcard-head strong {
+  font-size: var(--fs-lg);
+}
+
+.pcard-head .muted {
+  font-size: var(--fs-sm);
+}
+
+.pcard-num {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--r-md);
+  background: var(--c-header);
+  color: var(--c-on-header);
+  font-size: 1.5rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
 }

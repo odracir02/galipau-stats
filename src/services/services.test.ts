@@ -11,6 +11,7 @@ import {
   createMatch,
   currentTiming,
   deleteEvent,
+  deleteMatch,
   finishMatch,
   previousSquadIds,
   recordEvent,
@@ -434,5 +435,131 @@ describe('descalificación por tercera exclusión (persistencia)', () => {
     // Convocatoria e historial intactos.
     expect(reloaded.squad.map((s) => s.playerId)).toContain(id('p7'));
     expect(events.filter((e) => e.kind === 'red')).toHaveLength(0);
+  });
+});
+
+describe('eliminación de partidos', () => {
+  const t = { period: 1 as const, matchTimeMs: 0 };
+  const goalFor = (match: Match, key: string) =>
+    recordEvent(repo, match, { kind: 'shot', shotType: 'nine_m', result: 'goal' }, id(key), t);
+  const seasonOf = async () => {
+    const matches = await repo.listMatches(team.id);
+    return computeSeasonStats(
+      await Promise.all(matches.map(async (match) => ({ match, events: await repo.listEvents(match.id) }))),
+    );
+  };
+
+  it('elimina un partido preparado y desaparece de los listados', async () => {
+    const match = await newMatch();
+    expect(match.status).toBe('ready');
+    await deleteMatch(repo, match);
+    expect(await repo.listMatches(team.id)).toHaveLength(0);
+    expect((await repo.getMatch(match.id))!.deletedAt).not.toBeNull();
+  });
+
+  it('elimina un partido en curso deteniendo su cronómetro', async () => {
+    const match = await toggleClock(repo, await newMatch(), T0);
+    const deleted = await deleteMatch(repo, match, T0 + 90_000);
+    expect(deleted.clock.running).toBe(false);
+    expect(elapsedMs(deleted.clock, T0 + 10 * MINUTE_MS)).toBe(90_000);
+    expect(deleted.status).toBe('in_progress'); // el estado se conserva para una posible restauración
+  });
+
+  it('elimina un partido finalizado', async () => {
+    const match = await finishMatch(repo, await toggleClock(repo, await newMatch(), T0), T0 + 1000);
+    await deleteMatch(repo, match);
+    expect(await repo.listMatches(team.id)).toHaveLength(0);
+  });
+
+  it('sus acciones dejan de contar en la temporada y los demás partidos quedan intactos', async () => {
+    const keep = await newMatch({ date: '2026-10-01' });
+    const remove = await newMatch({ date: '2026-10-08' });
+    await goalFor(keep, 'p7');
+    await goalFor(remove, 'p7');
+    await goalFor(remove, 'p14');
+    await recordEvent(repo, remove, { kind: 'exclusion' }, id('p7'), t);
+    let season = await seasonOf();
+    expect(season.matches).toBe(2);
+    expect(season.team.shots.goals).toBe(3);
+
+    await deleteMatch(repo, remove);
+    season = await seasonOf();
+    expect(season.matches).toBe(1);
+    expect(season.team.shots.goals).toBe(1);
+    expect(season.team.exclusions).toBe(0);
+    expect(season.players.get(id('p7'))).toMatchObject({ matches: 1 });
+    expect(season.players.get(id('p7'))!.counters.shots.goals).toBe(1);
+    expect(season.players.has(id('p14'))).toBe(true); // sigue convocado en el partido que queda
+    expect(season.players.get(id('p14'))!.counters.shots.goals).toBe(0);
+    // Las acciones del partido eliminado se conservan en el almacenamiento (no se destruyen).
+    expect(await repo.listEvents(remove.id)).toHaveLength(3);
+  });
+
+  it('no modifica la plantilla del equipo', async () => {
+    const match = await newMatch();
+    const before = await repo.listPlayers(team.id);
+    await deleteMatch(repo, match);
+    expect(await repo.listPlayers(team.id)).toEqual(before);
+  });
+
+  it('persiste tras recargar y no aparece como partido en curso', async () => {
+    const match = await toggleClock(repo, await newMatch(), T0);
+    await deleteMatch(repo, match);
+    const fresh = new IndexedDbRepository(dbName);
+    const listed = await fresh.listMatches(team.id);
+    expect(listed).toHaveLength(0);
+    expect(listed.filter((m) => m.status === 'in_progress' || m.status === 'halftime')).toHaveLength(0);
+    expect((await fresh.getMatch(match.id))!.deletedAt).not.toBeNull();
+  });
+
+  it('repetir la eliminación no cambia nada (aunque se use una copia antigua del partido)', async () => {
+    const match = await newMatch();
+    const first = await deleteMatch(repo, match);
+    const second = await deleteMatch(repo, match);
+    expect(second).toEqual(first);
+    expect((await repo.getMatch(match.id))!.deletedAt).toBe(first.deletedAt);
+  });
+});
+
+describe('golpes francos: categoría histórica', () => {
+  const t = { period: 1 as const, matchTimeMs: 60_000 };
+
+  it('no se pueden registrar golpes francos nuevos', async () => {
+    const match = await newMatch();
+    await expect(recordEvent(repo, match, { kind: 'free_throw' }, id('p7'), t)).rejects.toThrow(ValidationError);
+    expect(await repo.listEvents(match.id)).toHaveLength(0);
+  });
+
+  it('un golpe franco antiguo se sigue leyendo, contando internamente y corrigiendo', async () => {
+    const match = await newMatch();
+    // Evento guardado por una versión anterior de la aplicación.
+    const legacy = {
+      id: 'antiguo-1',
+      matchId: match.id,
+      kind: 'free_throw' as const,
+      playerId: id('p7'),
+      period: 1 as const,
+      matchTimeMs: 60_000,
+      createdAt: '2026-09-01T10:00:00.000Z',
+      updatedAt: '2026-09-01T10:00:00.000Z',
+      deletedAt: null,
+    };
+    await repo.saveEvent(legacy);
+    const fresh = new IndexedDbRepository(dbName);
+    const events = await fresh.listEvents(match.id);
+    expect(events).toHaveLength(1);
+    expect(computeMatchStats(match, events).players.get(id('p7'))!.freeThrows).toBe(1);
+
+    // Se puede corregir manteniendo su categoría o pasarlo a otra acción.
+    const moved = await updateEvent(repo, match, legacy, { playerId: id('p14') });
+    expect(moved.kind).toBe('free_throw');
+    const changed = await updateEvent(repo, match, moved, { payload: { kind: 'penalty_committed' } });
+    expect(changed.kind).toBe('penalty_committed');
+  });
+
+  it('ninguna otra acción puede convertirse en golpe franco', async () => {
+    const match = await newMatch();
+    const e = await recordEvent(repo, match, { kind: 'yellow' }, id('p7'), t);
+    await expect(updateEvent(repo, match, e, { payload: { kind: 'free_throw' } })).rejects.toThrow(ValidationError);
   });
 });

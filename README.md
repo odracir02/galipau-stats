@@ -18,10 +18,12 @@ Funciona sin conexión a Internet: está pensada para pabellones sin cobertura.
   - Recuperaciones y sanciones.
   - Deshacer siempre visible y acciones pendientes de atribuir.
 - **Corrección:** cronología editable, acciones olvidadas y corrección del marcador separada de las estadísticas.
+- **Disciplina:** roja automática a la tercera exclusión y aviso si se atribuye una acción posterior a una descalificación.
 - **Estadísticas:**
-  - Equipo: ataque, defensa, portería e intervalos de 5 minutos.
+  - Panel de equipo: indicadores principales, eficacia por tipo de lanzamiento, portería por procedencia, balance de balón, disciplina y evolución por intervalos de 5 minutos.
   - Fichas completas de cada jugador y de cada portero.
   - Acumulados de temporada calculados sobre totales.
+- **Partidos:** se pueden eliminar (por ejemplo, los de prueba) sin afectar a la temporada ni a los demás partidos.
 - **Instalable (PWA):** se añade a la pantalla de inicio en Android y iPhone.
 
 ## Tecnologías

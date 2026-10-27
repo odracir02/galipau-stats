@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { TriangleAlert } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import {
   eligiblePositions,
   FIELD_SHOT_RESULT_LABEL,
@@ -9,6 +10,7 @@ import {
   GK_SHOT_RESULTS,
   GK_SHOT_TYPE_SHORT,
   GK_SHOT_TYPES,
+  isLegacyKind,
   KIND_LABEL,
   SIMPLE_KINDS,
   TURNOVER_LABEL,
@@ -29,6 +31,7 @@ import type {
   SquadEntry,
   TurnoverType,
 } from '../../domain/types';
+import { Icon } from '../components/Icon';
 import { ConfirmSheet, Sheet } from '../components/Sheet';
 
 const KINDS: readonly EventKind[] = ['shot', 'gk_shot', 'turnover', ...SIMPLE_KINDS];
@@ -41,6 +44,11 @@ interface Props {
   event?: MatchEvent;
   defaultTiming: EventTiming;
   onSave: (payload: EventPayload, playerId: Id | null, timing: EventTiming) => Promise<boolean>;
+  /**
+   * Comprueba si el jugador ya estaba descalificado en ese momento. Devuelve el
+   * texto de la advertencia o null. Solo avisa: «Guardar igualmente» sigue disponible.
+   */
+  checkDisqualified: (payload: EventPayload, playerId: Id | null, timing: EventTiming) => string | null;
   onDelete?: () => Promise<boolean>;
   onClose: () => void;
 }
@@ -71,7 +79,16 @@ function Chips<T extends string | number>({
   );
 }
 
-export function EventEditorSheet({ squad, disqualified, event, defaultTiming, onSave, onDelete, onClose }: Props) {
+export function EventEditorSheet({
+  squad,
+  disqualified,
+  event,
+  defaultTiming,
+  onSave,
+  checkDisqualified,
+  onDelete,
+  onClose,
+}: Props) {
   const [kind, setKind] = useState<EventKind>(event?.kind ?? 'shot');
   const [shotType, setShotType] = useState<FieldShotType>(event?.kind === 'shot' ? event.shotType : 'nine_m');
   const [shotResult, setShotResult] = useState<FieldShotResult>(event?.kind === 'shot' ? event.result : 'goal');
@@ -86,6 +103,15 @@ export function EventEditorSheet({ squad, disqualified, event, defaultTiming, on
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [warning, setWarning] = useState<string | null>(null);
+  const warningRef = useRef<HTMLDivElement>(null);
+  // La advertencia aparece al final del formulario: se desplaza a la vista para que se lea
+  // antes de decidir entre «Revisar» y «Guardar igualmente».
+  useEffect(() => {
+    if (warning) warningRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [warning]);
+  // Un evento histórico de una categoría retirada (golpe franco) conserva su opción solo al editarlo.
+  const kindOptions = event && isLegacyKind(event.kind) ? [...KINDS, event.kind] : KINDS;
 
   const allowed = eligiblePositions(kind);
   const candidates = squad.filter((s) => allowed.includes(s.position)).sort((a, b) => a.number - b.number);
@@ -105,14 +131,23 @@ export function EventEditorSheet({ squad, disqualified, event, defaultTiming, on
     }
   }
 
-  async function save() {
+  async function save(force = false) {
     const ms = parseClock(timeText);
     if (ms === null) {
       setError('Tiempo no válido. Usa el formato mm:ss, por ejemplo 23:45.');
       return;
     }
+    const timing = { period, matchTimeMs: ms };
+    if (!force) {
+      const message = checkDisqualified(payload(), effectivePlayer, timing);
+      if (message) {
+        setWarning(message);
+        return;
+      }
+    }
+    setWarning(null);
     setSaving(true);
-    const ok = await onSave(payload(), effectivePlayer, { period, matchTimeMs: ms });
+    const ok = await onSave(payload(), effectivePlayer, timing);
     setSaving(false);
     if (ok) onClose();
   }
@@ -137,21 +172,32 @@ export function EventEditorSheet({ squad, disqualified, event, defaultTiming, on
       title={event ? 'Corregir acción' : 'Añadir acción olvidada'}
       onClose={onClose}
       footer={
-        <>
-          {event && onDelete && (
-            <button type="button" className="btn btn-danger-outline" onClick={() => setConfirmDelete(true)}>
-              Eliminar
+        warning ? (
+          <>
+            <button type="button" className="btn" onClick={() => setWarning(null)}>
+              Revisar
             </button>
-          )}
-          <button type="button" className="btn btn-primary" disabled={saving} onClick={() => void save()}>
-            Guardar
-          </button>
-        </>
+            <button type="button" className="btn btn-primary" disabled={saving} onClick={() => void save(true)}>
+              Guardar igualmente
+            </button>
+          </>
+        ) : (
+          <>
+            {event && onDelete && (
+              <button type="button" className="btn btn-danger-outline" onClick={() => setConfirmDelete(true)}>
+                Eliminar
+              </button>
+            )}
+            <button type="button" className="btn btn-primary" disabled={saving} onClick={() => void save()}>
+              Guardar
+            </button>
+          </>
+        )
       }
     >
       <div className="form">
         <div className="field-label">Acción</div>
-        <Chips value={kind} onChange={setKind} options={KINDS.map((k) => ({ value: k, label: KIND_LABEL[k] }))} />
+        <Chips value={kind} onChange={setKind} options={kindOptions.map((k) => ({ value: k, label: KIND_LABEL[k] }))} />
 
         {kind === 'shot' && (
           <>
@@ -230,6 +276,16 @@ export function EventEditorSheet({ squad, disqualified, event, defaultTiming, on
           </label>
         </div>
         {error && <p className="form-error">{error}</p>}
+        {warning && (
+          <div className="warning" role="alert" ref={warningRef}>
+            <Icon as={TriangleAlert} />
+            <div>
+              <strong>Jugador ya descalificado</strong>
+              <p>{warning}</p>
+              <p className="muted">Revisa el jugador o el minuto. Si es correcto, puedes guardar igualmente.</p>
+            </div>
+          </div>
+        )}
       </div>
     </Sheet>
   );
