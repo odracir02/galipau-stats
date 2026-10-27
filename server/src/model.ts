@@ -53,16 +53,22 @@ export interface AdminRoleGrant {
   clubId: Id | null;
 }
 
-/** Quién hace la petición y con qué permisos vigentes. */
+/**
+ * Quién hace la petición y con qué permisos vigentes. Hay dos formas:
+ *   * dispositivo (token propio): deviceId y sus permisos de equipo;
+ *   * administración (Cloudflare Access + roles en D1): admin, sin dispositivo.
+ */
 export interface AuthContext {
-  /** Dispositivo (navegador o PWA) desde el que se hace la petición. */
-  deviceId: Id;
+  /** Dispositivo (navegador o PWA); null en peticiones de administración. */
+  deviceId: Id | null;
   /** Permisos de equipo del dispositivo. */
   grants: Grant[];
-  /** Solo con sesión administrativa: identidad, roles y momento de la verificación fuerte. */
+  /** Solo en peticiones de administración. */
   admin?: {
     identityId: Id;
+    email: string;
     roles: AdminRoleGrant[];
-    verifiedAt: IsoDateTime;
+    /** El token viene de la aplicación de Access de operaciones críticas (MFA reciente). */
+    critical: boolean;
   };
 }

@@ -53,7 +53,7 @@
 | D49 | `people` opcional para jugadores en varios equipos | Ranking de club sin duplicar personas; solo el nombre visible (minimización). |
 | D50 | Validación de acciones compartida (`src/domain/validation.ts`) entre aplicación y Worker | Las reglas de catálogo, convocatoria y porteros son idénticas en ambos lados. |
 | D51 | Cuatro roles en dos sujetos: dispositivos (`coach`, `viewer` en `grants`) e identidades administrativas (`superadmin`, `club_admin` en `admin_roles`) | Los roles administrativos exigen una persona con credencial fuerte; los de equipo, solo un dispositivo. La base de datos impide mezclarlos. |
-| D52 | Llave de acceso (WebAuthn) como credencial administrativa, TOTP opcional, sesiones cortas y verificación reciente para operaciones críticas | Resistente al phishing y sin contraseñas que guardar. |
+| D52 | ~~Llave de acceso (WebAuthn) propia como credencial administrativa~~ Sustituida por D60 | — |
 | D53 | Ninguna ruta crea superadministradores; el primero se crea por consola con la cuenta de Cloudflare | Quien no controla la cuenta no puede escalar. El SQL no hace nada si ya hay uno. |
 | D54 | El administrador de club no nombra administradores | Evita que un club se autogestione sin control del propietario; lo hace el superadministrador. |
 | D55 | Clave del límite de intentos: solo `CF-Connecting-IP`, IPv6 por /64, sin cabecera = contador compartido | El cliente no puede cambiar su clave con cabeceras inventadas. |
@@ -61,3 +61,12 @@
 | D57 | Códigos de invitación de 12 símbolos (≈59 bits) | Con 10 y muchos códigos vigentes, una red de bots muy grande podría acertar en meses; con 12, siglos. |
 | D58 | Node 24 como mínimo declarado (`engines`), igual que `.node-version` | Las pruebas del servidor usan el SQLite integrado en Node. Pages ya compila con Node 24: la compilación no cambia. |
 | D59 | Worker local con nombre propio y prueba automática de la separación de entornos | Un `deploy` sin `--env` no puede sustituir a producción; local y preview no pueden apuntar a la base de producción. |
+| D60 | Autenticación administrativa con Cloudflare Access (proveedor de identidad + segundo factor independiente); roles siempre en D1 | Menos código de seguridad propio que WebAuthn, recuperación de autenticadores resuelta, Face ID en iPhone. La híbrida duplicaría el segundo factor sin ganar seguridad. Las tablas de credenciales propias de 0001 se eliminan en 0002 (nunca se usaron). |
+| D61 | El Worker verifica el JWT de Access (RS256, emisor, audiencia, vigencia) aunque Access ya filtre | Ninguna URL que no pase por Access (p. ej. workers.dev) permite entrar. Sin dependencias: Web Crypto. |
+| D62 | Identidad por correo, vinculada a la cuenta de Access (`sub`) en el primer acceso | Otra cuenta con el mismo correo no puede ocupar la identidad. |
+| D63 | Operaciones críticas bajo `/api/admin/critical/*`, una segunda aplicación de Access con su propia política y segundo factor reciente; el Worker exige su audiencia | La audiencia separa los dos niveles de forma verificable. No prueba el segundo factor (ver D66). |
+| D64 | Sin configuración de Access, administración desactivada (503) en todos los entornos | No existe modo de desarrollo que la abra; en local y en pruebas se usan claves generadas en memoria. |
+| D65 | Peticiones de administración sin dispositivo y sin CORS | Una sesión de administración no registra acciones ni canjea códigos; la API de administración solo se usa desde su propia URL. |
+| D66 | Operaciones críticas desactivadas (`ADMIN_CRITICAL_OPS = "disabled"`) hasta una verificación manual del segundo factor en cada entorno | El JWT de Access no incluye el método ni el momento del segundo factor: el Worker no puede comprobarlo. Se habilitan solo tras comprobar en Cloudflare que se vuelve a pedir. |
+| D67 | La aplicación de Access crítica lleva su propia política explícita | En Access, la ruta más específica prevalece y no hereda las reglas de la general. |
+| D68 | Solo rutas canónicas en el Worker y sin URLs de vista previa | El Worker enruta exactamente lo que Access protege; no hay otra URL por versión que llegue al Worker. El JWT se exige igualmente en cualquier hostname. |

@@ -27,7 +27,7 @@
 
 - El Worker y D1 existen solo en el repositorio y en local. No hay recursos en Cloudflare ni sincronización en la app.
 - Faltan las rutas de alta de club y equipo, canje de códigos, transferencia de partidos y subida de partidos y plantillas (Tarea 005C).
-- El inicio de sesión administrativo (llave de acceso) y sus rutas no existen todavía: el modelo, las reglas y el alta del primer superadministrador están preparados.
+- La autenticación administrativa (Cloudflare Access) está implementada pero sin configurar: hasta crear las aplicaciones de Access, la administración responde 503. Ver [AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#limitaciones-y-riesgos).
 - La tabla de intentos de canje necesitará una purga periódica cuando se despliegue.
 
 ## PWA

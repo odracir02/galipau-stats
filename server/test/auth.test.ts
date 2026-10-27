@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { authenticate, authorize, authorizeClub, authorizePlatform, effectiveRole } from '../src/auth';
+import { adminContext, authenticate, authorize, authorizeClub, authorizePlatform, effectiveRole } from '../src/auth';
 import { HttpError } from '../src/errors';
 import type { AuthContext, Role } from '../src/model';
 import { clubRoleAllows, isReadOnly, roleAllows, type Action, type ClubAction } from '../src/permissions';
@@ -14,10 +14,12 @@ async function status(p: Promise<unknown> | (() => unknown)): Promise<number | s
     await (typeof p === 'function' ? p() : p);
     return 'ok';
   } catch (e) {
-    if (e instanceof HttpError) return e.status === 401 && e.code !== 'unauthorized' ? e.code : e.status;
+    if (e instanceof HttpError) return e.code === 'unauthorized' || e.code === 'not_found' || e.code === 'forbidden' ? e.status : e.code;
     throw e;
   }
 }
+
+const claims = (email: string, sub = 'sub-x', critical = false) => ({ email, sub, iat: 0, exp: 0, critical });
 
 describe('matriz de permisos', () => {
   it.each<[Role, Action[]]>([
@@ -42,7 +44,7 @@ describe('matriz de permisos', () => {
   });
 });
 
-describe('autenticación', () => {
+describe('autenticación de dispositivos', () => {
   let db: SqliteD1;
   beforeEach(() => {
     db = migratedDb();
@@ -65,55 +67,58 @@ describe('autenticación', () => {
     expect(await status(authenticate(db, token, PEPPER))).toBe(401);
   });
 
-  it('tokens y sesiones no se guardan en claro', async () => {
+  it('el token no se guarda en claro', async () => {
     const { token } = await addDevice(db, 'd1', []);
-    const admin = await addAdmin(db, 'sa', [{ role: 'superadmin', clubId: null }]);
-    const dump = JSON.stringify([db.sqlite.prepare('SELECT * FROM device_tokens').all(), db.sqlite.prepare('SELECT * FROM admin_sessions').all()]);
-    expect(dump).not.toContain(token);
-    expect(dump).not.toContain(admin.token);
+    expect(JSON.stringify(db.sqlite.prepare('SELECT * FROM device_tokens').all())).not.toContain(token);
   });
 
   it('un dispositivo de entrenador o consulta nunca tiene roles administrativos', async () => {
     const { auth } = await addDevice(db, 'd1', [{ clubId: 'A', teamId: 'a1', role: 'coach' }]);
     expect(auth.admin).toBeUndefined();
   });
+});
 
-  it('la sesión administrativa caduca, se revoca y deja de valer si se desactiva la identidad', async () => {
-    const { token } = await addAdmin(db, 'sa', [{ role: 'superadmin', clubId: null }]);
-    expect((await authenticate(db, token, PEPPER)).admin?.roles).toEqual([{ role: 'superadmin', clubId: null }]);
-    db.run("UPDATE admin_identities SET disabled_at = ? WHERE id = 'sa'", NOW);
-    expect(await status(authenticate(db, token, PEPPER))).toBe(401);
-    db.run("UPDATE admin_identities SET disabled_at = NULL WHERE id = 'sa'");
-    db.run('UPDATE admin_sessions SET revoked_at = ?', NOW);
-    expect(await status(authenticate(db, token, PEPPER))).toBe(401);
-    db.run("UPDATE admin_sessions SET revoked_at = NULL, expires_at = '2026-01-01T00:00:00.000Z'");
-    expect(await status(authenticate(db, token, PEPPER))).toBe(401);
+describe('identidad administrativa (tras Cloudflare Access)', () => {
+  let db: SqliteD1;
+  beforeEach(() => {
+    db = migratedDb();
+    twoClubs(db);
   });
 
-  it('no hay sesión administrativa sin verificación fuerte (la base de datos la exige)', () => {
-    db.run("INSERT INTO admin_identities (id, display_name, created_at) VALUES ('x', 'X', ?)", NOW);
-    db.run("INSERT INTO devices (id, created_at) VALUES ('dx', ?)", NOW);
-    expect(() =>
-      db.run("INSERT INTO admin_sessions (token_hash, identity_id, device_id, created_at, expires_at) VALUES ('h', 'x', 'dx', ?, ?)", NOW, NOW),
-    ).toThrow(/NOT NULL/);
+  it('una cuenta autenticada por Access sin identidad en D1 no es administradora', async () => {
+    expect(await status(adminContext(db, claims('cualquiera@example.com')))).toBe('not_admin');
   });
 
-  it('una sesión administrativa conserva los permisos de equipo de su dispositivo', async () => {
-    const { identityId, deviceId } = await addAdmin(db, 'ca', [{ role: 'club_admin', clubId: 'A' }]);
-    db.run("INSERT INTO grants (id, device_id, club_id, team_id, role, created_at) VALUES ('g', ?, 'B', 'b1', 'viewer', ?)", deviceId, NOW);
-    const token = 'token-de-prueba-sesion-2';
-    const { hashSecret } = await import('../src/secrets');
-    db.run(
-      "INSERT INTO admin_sessions (token_hash, identity_id, device_id, created_at, expires_at, mfa_verified_at) VALUES (?, ?, ?, ?, '2099-01-01T00:00:00.000Z', ?)",
-      await hashSecret(token, PEPPER),
-      identityId,
-      deviceId,
-      NOW,
-      NOW,
+  it('una identidad sin roles vigentes, o desactivada, no es administradora', async () => {
+    const ca = await addAdmin(db, 'ca', [{ role: 'club_admin', clubId: 'A' }]);
+    db.run("UPDATE admin_roles SET revoked_at = ? WHERE identity_id = 'ca'", NOW);
+    expect(await status(adminContext(db, claims(ca.email, 'sub-ca')))).toBe('not_admin');
+    db.run("UPDATE admin_roles SET revoked_at = NULL WHERE identity_id = 'ca'");
+    db.run("UPDATE admin_identities SET disabled_at = ? WHERE id = 'ca'", NOW);
+    expect(await status(adminContext(db, claims(ca.email, 'sub-ca')))).toBe('not_admin');
+  });
+
+  it('la primera cuenta de Access que entra queda vinculada; otra con el mismo correo es rechazada', async () => {
+    const sa = await addAdmin(db, 'sa', [{ role: 'superadmin', clubId: null }]);
+    expect(db.sqlite.prepare("SELECT access_subject FROM admin_identities WHERE id = 'sa'").get()).toEqual({ access_subject: 'sub-sa' });
+    expect(await status(adminContext(db, claims(sa.email, 'otra-cuenta')))).toBe('identity_mismatch');
+    expect(await status(adminContext(db, claims(sa.email, 'sub-sa')))).toBe('ok');
+  });
+
+  it('el correo se compara en minúsculas y la base de datos exige guardarlo así', async () => {
+    const sa = await addAdmin(db, 'SA', [{ role: 'superadmin', clubId: null }]);
+    expect(sa.email).toBe('sa@example.com');
+    expect(() => db.run("INSERT INTO admin_identities (id, display_name, email, created_at) VALUES ('x', 'X', 'Mayus@Example.com', ?)", NOW)).toThrow(
+      /admin_email_invalid/,
     );
-    const auth = await authenticate(db, token, PEPPER);
-    expect(effectiveRole(auth, { id: 'a2', clubId: 'A' })).toBe('club_admin');
-    expect(effectiveRole(auth, { id: 'b1', clubId: 'B' })).toBe('viewer');
+    expect(() => db.run("INSERT INTO admin_identities (id, display_name, created_at) VALUES ('y', 'Y', ?)", NOW)).toThrow(/admin_email_invalid/);
+  });
+
+  it('los roles se leen en cada petición: retirar un rol tiene efecto inmediato', async () => {
+    const ca = await addAdmin(db, 'ca', [{ role: 'club_admin', clubId: 'A' }]);
+    expect(await status(authorize(db, ca.auth, 'a1', 'team.manage'))).toBe('ok');
+    db.run("UPDATE admin_roles SET revoked_at = ? WHERE identity_id = 'ca'", NOW);
+    expect(await status(adminContext(db, claims(ca.email, 'sub-ca')))).toBe('not_admin');
   });
 });
 
@@ -152,10 +157,10 @@ describe('autorización de equipos y aislamiento', () => {
   });
 
   it('superadministrador: todos los equipos de todos los clubes', async () => {
-    const { auth } = await addAdmin(db, 'sa', [{ role: 'superadmin', clubId: null }]);
-    for (const team of ['a1', 'a2', 'b1']) expect(await status(authorize(db, auth, team, 'grants.manage'))).toBe('ok');
-    for (const club of ['A', 'B']) expect(await status(authorizeClub(db, auth, club, 'club.admins.manage'))).toBe('ok');
-    expect(await status(() => authorizePlatform(auth, 'platform.clubs.manage'))).toBe('ok');
+    const sa = await addAdmin(db, 'sa', [{ role: 'superadmin', clubId: null }], { critical: true });
+    for (const team of ['a1', 'a2', 'b1']) expect(await status(authorize(db, sa.auth, team, 'grants.manage'))).toBe('ok');
+    for (const club of ['A', 'B']) expect(await status(authorizeClub(db, sa.auth, club, 'club.admins.manage'))).toBe('ok');
+    expect(await status(() => authorizePlatform(sa.auth, 'platform.clubs.manage'))).toBe('ok');
   });
 
   it('un dispositivo o identidad puede acumular permisos, cada uno en su ámbito', async () => {
@@ -174,21 +179,22 @@ describe('autorización de equipos y aislamiento', () => {
   });
 
   it('si un equipo pasa a otro club, el administrador del club anterior deja de verlo', () => {
-    const auth: AuthContext = { deviceId: 'd', grants: [], admin: { identityId: 'x', roles: [{ role: 'club_admin', clubId: 'A' }], verifiedAt: NOW } };
+    const auth: AuthContext = {
+      deviceId: null,
+      grants: [],
+      admin: { identityId: 'x', email: 'x@example.com', roles: [{ role: 'club_admin', clubId: 'A' }], critical: false },
+    };
     expect(effectiveRole(auth, { id: 'a1', clubId: 'A' })).toBe('club_admin');
     expect(effectiveRole(auth, { id: 'a1', clubId: 'B' })).toBeNull();
   });
 
-  it('al revocar un permiso se pierde el acceso en la siguiente petición', async () => {
+  it('al revocar un permiso de dispositivo se pierde el acceso en la siguiente petición', async () => {
     const { token } = await addDevice(db, 'd1', [{ clubId: 'A', teamId: 'a1', role: 'coach' }]);
     db.run('UPDATE grants SET revoked_at = ?', NOW);
     expect(await status(authorize(db, await authenticate(db, token, PEPPER), 'a1', 'team.read'))).toBe(404);
-    const ca = await addAdmin(db, 'ca', [{ role: 'club_admin', clubId: 'A' }]);
-    db.run("UPDATE admin_roles SET revoked_at = ? WHERE identity_id = 'ca'", NOW);
-    expect(await status(authorize(db, await authenticate(db, ca.token, PEPPER), 'a1', 'team.read'))).toBe(404);
   });
 
-  it('un equipo o club eliminado no es accesible (salvo para revisarlo a nivel de plataforma)', async () => {
+  it('un equipo o club eliminado no es accesible', async () => {
     const { auth } = await addAdmin(db, 'ca', [{ role: 'club_admin', clubId: 'A' }]);
     db.run("UPDATE teams SET deleted_at = ? WHERE id = 'a1'", NOW);
     expect(await status(authorize(db, auth, 'a1', 'team.read'))).toBe(404);
@@ -197,22 +203,26 @@ describe('autorización de equipos y aislamiento', () => {
   });
 });
 
-describe('verificación reciente para operaciones críticas', () => {
+describe('operaciones críticas', () => {
   let db: SqliteD1;
   beforeEach(() => {
     db = migratedDb();
     twoClubs(db);
   });
 
-  it('nombrar administradores o gestionar clubes exige haber verificado la llave hace poco', async () => {
-    const now = new Date('2026-10-27T12:00:00Z');
-    const old = await addAdmin(db, 'sa-old', [{ role: 'superadmin', clubId: null }], { verifiedAt: '2026-10-27T11:00:00.000Z' });
-    expect(await status(authorizeClub(db, old.auth, 'A', 'club.admins.manage', now))).toBe('reauth_required');
-    expect(await status(() => authorizePlatform(old.auth, 'platform.clubs.manage', now))).toBe('reauth_required');
+  it('nombrar administradores o gestionar clubes exige el token de la aplicación crítica', async () => {
+    const sa = await addAdmin(db, 'sa', [{ role: 'superadmin', clubId: null }]);
+    expect(await status(authorizeClub(db, sa.auth, 'A', 'club.admins.manage'))).toBe('reauth_required');
+    expect(await status(() => authorizePlatform(sa.auth, 'platform.clubs.manage'))).toBe('reauth_required');
     // Las operaciones ordinarias no lo exigen.
-    expect(await status(authorizeClub(db, old.auth, 'A', 'club.teams.manage', now))).toBe('ok');
+    expect(await status(authorizeClub(db, sa.auth, 'A', 'club.teams.manage'))).toBe('ok');
+    const fresh = await sa.critical();
+    expect(await status(authorizeClub(db, fresh, 'A', 'club.admins.manage'))).toBe('ok');
+  });
 
-    const fresh = await addAdmin(db, 'sa-new', [{ role: 'superadmin', clubId: null }], { verifiedAt: '2026-10-27T11:55:00.000Z' });
-    expect(await status(authorizeClub(db, fresh.auth, 'A', 'club.admins.manage', now))).toBe('ok');
+  it('el token crítico no amplía el rol: un administrador de club sigue sin poder nombrar administradores', async () => {
+    const ca = await addAdmin(db, 'ca', [{ role: 'club_admin', clubId: 'A' }], { critical: true });
+    expect(await status(authorizeClub(db, ca.auth, 'A', 'club.admins.manage'))).toBe(403);
+    expect(await status(() => authorizePlatform(ca.auth, 'platform.clubs.manage'))).toBe(403);
   });
 });

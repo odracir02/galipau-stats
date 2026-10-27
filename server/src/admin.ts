@@ -1,5 +1,4 @@
-// Operaciones administrativas. Solo la lógica del servidor: los paneles y las
-// rutas llegarán en una fase posterior. Cada operación comprueba el permiso con
+// Operaciones administrativas. Cada una comprueba el permiso con
 // authorizeClub/authorizePlatform y queda en el registro de auditoría.
 //
 // No existe ninguna operación que conceda el rol de superadministrador: el
@@ -8,14 +7,10 @@
 import type { Id } from '../../src/domain/types';
 import { newId } from '../../src/domain/ids';
 import { assertValidTeamCode, normalizeTeamCode, ValidationError } from '../../src/domain/validation';
-import { authorizeClub, authorizePlatform } from './auth';
+import { authorizeClub, authorizePlatform, isSuperadmin } from './auth';
 import type { Db, Statement } from './db';
 import { HttpError, notFound } from './errors';
 import type { AuthContext, Gender } from './model';
-import { generateInviteCode, hashSecret, normalizeInviteCode } from './secrets';
-
-/** Caducidad del enlace de alta de credencial de un administrador. */
-export const ADMIN_ENROLLMENT_MINUTES = 30;
 
 function audit(db: Db, auth: AuthContext, action: string, targetType: string, targetId: Id, at: string): Statement {
   return db
@@ -28,30 +23,70 @@ function badRequest(e: unknown): never {
   throw e;
 }
 
-// --- Clubes (superadministrador) ---------------------------------------------
+/** Correo normalizado (minúsculas, sin espacios) o error 400. */
+export function normalizeEmail(email: unknown): string {
+  const value = typeof email === 'string' ? email.trim().toLowerCase() : '';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) || value.length > 254) {
+    throw new HttpError(400, 'invalid_email', 'Correo electrónico no válido.');
+  }
+  return value;
+}
 
-export async function createClub(db: Db, auth: AuthContext, args: { name: string; shortName?: string | null }, now = new Date()): Promise<Id> {
-  authorizePlatform(auth, 'platform.clubs.manage', now);
-  const name = args.name.trim();
-  if (!name) throw new HttpError(400, 'invalid', 'El nombre del club es obligatorio.');
+// --- Consulta -------------------------------------------------------------------
+
+export interface AdminProfile {
+  identityId: Id;
+  email: string;
+  roles: { role: string; clubId: Id | null }[];
+}
+
+export function adminProfile(auth: AuthContext): AdminProfile {
+  if (!auth.admin) throw new HttpError(403, 'not_admin', 'Esta cuenta no tiene permisos de administración.');
+  return { identityId: auth.admin.identityId, email: auth.admin.email, roles: auth.admin.roles };
+}
+
+/** Clubes visibles: todos para el superadministrador; los suyos para un administrador de club. */
+export async function listClubs(db: Db, auth: AuthContext): Promise<{ id: Id; name: string }[]> {
+  if (!auth.admin) throw new HttpError(403, 'not_admin', 'Esta cuenta no tiene permisos de administración.');
+  if (isSuperadmin(auth)) {
+    return (await db.prepare('SELECT id, name FROM clubs WHERE deleted_at IS NULL ORDER BY name').all<{ id: Id; name: string }>()).results;
+  }
+  const ids = auth.admin.roles.filter((r) => r.role === 'club_admin' && r.clubId).map((r) => r.clubId!);
+  if (ids.length === 0) return [];
+  return (
+    await db
+      .prepare(`SELECT id, name FROM clubs WHERE deleted_at IS NULL AND id IN (${ids.map(() => '?').join(', ')}) ORDER BY name`)
+      .bind(...ids)
+      .all<{ id: Id; name: string }>()
+  ).results;
+}
+
+// --- Clubes (superadministrador, operación crítica) ---------------------------
+
+export async function createClub(db: Db, auth: AuthContext, args: { name?: unknown; shortName?: unknown }, now = new Date()): Promise<Id> {
+  authorizePlatform(auth, 'platform.clubs.manage');
+  const name = typeof args.name === 'string' ? args.name.trim() : '';
+  if (!name || name.length > 120) throw new HttpError(400, 'invalid', 'El nombre del club es obligatorio.');
+  const shortName = typeof args.shortName === 'string' && args.shortName.trim() ? args.shortName.trim() : null;
   const id = newId();
   const at = now.toISOString();
   await db.batch([
-    db.prepare('INSERT INTO clubs (id, name, short_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').bind(id, name, args.shortName ?? null, at, at),
+    db.prepare('INSERT INTO clubs (id, name, short_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').bind(id, name, shortName, at, at),
     audit(db, auth, 'club.create', 'club', id, at),
   ]);
   return id;
 }
 
-/** Eliminación lógica: deja de ser accesible para todos salvo el superadministrador. */
+/** Eliminación lógica: deja de ser accesible para sus administradores, entrenadores y familias. */
 export async function deleteClub(db: Db, auth: AuthContext, clubId: Id, now = new Date()): Promise<void> {
-  authorizePlatform(auth, 'platform.clubs.manage', now);
+  authorizePlatform(auth, 'platform.clubs.manage');
+  const club = await db.prepare('SELECT 1 AS x FROM clubs WHERE id = ? AND deleted_at IS NULL').bind(clubId).first();
+  if (!club) throw notFound();
   const at = now.toISOString();
-  const [res] = await db.batch([
+  await db.batch([
     db.prepare('UPDATE clubs SET deleted_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND deleted_at IS NULL').bind(at, at, clubId),
     audit(db, auth, 'club.delete', 'club', clubId, at),
   ]);
-  if (!res?.meta.changes) throw notFound();
 }
 
 // --- Equipos (superadministrador o administrador del club) --------------------
@@ -62,7 +97,7 @@ export async function createTeam(
   args: { clubId: Id; name: string; code: string; season: string; category?: string | null; gender?: Gender | null },
   now = new Date(),
 ): Promise<Id> {
-  await authorizeClub(db, auth, args.clubId, 'club.teams.manage', now);
+  await authorizeClub(db, auth, args.clubId, 'club.teams.manage');
   const code = normalizeTeamCode(args.code);
   try {
     assertValidTeamCode(code);
@@ -84,74 +119,66 @@ export async function createTeam(
   return id;
 }
 
-// --- Administradores de club (superadministrador) -----------------------------
-
-export interface ClubAdminInvite {
-  identityId: Id;
-  /** Código de alta de credencial, de un solo uso: se entrega en persona y no se guarda. */
-  enrollmentCode: string;
-  expiresAt: string;
-}
+// --- Administradores de club (superadministrador, operación crítica) ----------
 
 /**
- * Nombra administrador de un club a una persona. Crea su identidad (o reutiliza
- * una existente), el rol y un código de alta de un solo uso con el que, en la
- * fase siguiente, registrará su llave de acceso. Solo el superadministrador,
- * con verificación reciente.
+ * Nombra administrador de un club a la persona con ese correo. Crea su
+ * identidad si no existe. La persona entrará con Cloudflare Access usando ese
+ * correo (su política debe permitirlo); el rol lo da esta tabla, no Access.
  */
 export async function appointClubAdmin(
   db: Db,
   auth: AuthContext,
-  args: { clubId: Id; identityId?: Id; displayName: string },
-  pepper: string,
+  args: { clubId: Id; email: unknown; displayName?: unknown },
   now = new Date(),
-): Promise<ClubAdminInvite> {
-  await authorizeClub(db, auth, args.clubId, 'club.admins.manage', now);
+): Promise<{ identityId: Id }> {
+  await authorizeClub(db, auth, args.clubId, 'club.admins.manage');
+  const email = normalizeEmail(args.email);
   const at = now.toISOString();
-  const identityId = args.identityId ?? newId();
+  const existing = await db
+    .prepare('SELECT id, disabled_at FROM admin_identities WHERE email = ?')
+    .bind(email)
+    .first<{ id: string; disabled_at: string | null }>();
+  if (existing?.disabled_at) throw new HttpError(409, 'identity_disabled', 'Esa identidad está desactivada.');
+  const active = existing
+    ? await db
+        .prepare("SELECT 1 AS x FROM admin_roles WHERE identity_id = ? AND club_id = ? AND role = 'club_admin' AND revoked_at IS NULL")
+        .bind(existing.id, args.clubId)
+        .first()
+    : null;
+  if (active) throw new HttpError(409, 'already_admin', 'Ya es administrador de este club.');
+
+  const identityId = existing?.id ?? newId();
   const statements: Statement[] = [];
-  if (args.identityId) {
-    const exists = await db.prepare('SELECT 1 AS x FROM admin_identities WHERE id = ? AND disabled_at IS NULL').bind(args.identityId).first();
-    if (!exists) throw notFound();
-  } else {
+  if (!existing) {
+    const displayName = typeof args.displayName === 'string' && args.displayName.trim() ? args.displayName.trim() : email;
     statements.push(
-      db.prepare('INSERT INTO admin_identities (id, display_name, created_at) VALUES (?, ?, ?)').bind(identityId, args.displayName.trim(), at),
+      db.prepare('INSERT INTO admin_identities (id, display_name, email, created_at) VALUES (?, ?, ?, ?)').bind(identityId, displayName, email, at),
     );
   }
-  const code = generateInviteCode(16);
-  const expiresAt = new Date(now.getTime() + ADMIN_ENROLLMENT_MINUTES * 60_000).toISOString();
   statements.push(
     db
       .prepare(
         "INSERT INTO admin_roles (id, identity_id, role, club_id, granted_by_identity_id, created_at) VALUES (?, ?, 'club_admin', ?, ?, ?)",
       )
       .bind(newId(), identityId, args.clubId, auth.admin!.identityId, at),
-    db
-      .prepare(
-        'INSERT INTO admin_enrollments (id, identity_id, code_hash, created_by_identity_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
-      )
-      .bind(newId(), identityId, await hashSecret(`enroll:${normalizeInviteCode(code)}`, pepper), auth.admin!.identityId, at, expiresAt),
     audit(db, auth, 'club_admin.appoint', 'club', args.clubId, at),
   );
   await db.batch(statements);
-  return { identityId, enrollmentCode: code, expiresAt };
+  return { identityId };
 }
 
-/** Retira el rol de administrador de club y cierra sus sesiones abiertas si ya no le queda ningún rol. */
+/** Retira el rol de administrador de club. Efecto inmediato: los roles se leen en cada petición. */
 export async function revokeClubAdmin(db: Db, auth: AuthContext, args: { clubId: Id; identityId: Id }, now = new Date()): Promise<void> {
-  await authorizeClub(db, auth, args.clubId, 'club.admins.manage', now);
+  await authorizeClub(db, auth, args.clubId, 'club.admins.manage');
+  const role = await db
+    .prepare("SELECT id FROM admin_roles WHERE identity_id = ? AND club_id = ? AND role = 'club_admin' AND revoked_at IS NULL")
+    .bind(args.identityId, args.clubId)
+    .first<{ id: string }>();
+  if (!role) throw notFound();
   const at = now.toISOString();
-  const [res] = await db.batch([
-    db
-      .prepare("UPDATE admin_roles SET revoked_at = ? WHERE identity_id = ? AND club_id = ? AND role = 'club_admin' AND revoked_at IS NULL")
-      .bind(at, args.identityId, args.clubId),
-    db
-      .prepare(
-        `UPDATE admin_sessions SET revoked_at = ? WHERE identity_id = ? AND revoked_at IS NULL
-           AND NOT EXISTS (SELECT 1 FROM admin_roles WHERE identity_id = ? AND revoked_at IS NULL)`,
-      )
-      .bind(at, args.identityId, args.identityId),
+  await db.batch([
+    db.prepare('UPDATE admin_roles SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').bind(at, role.id),
     audit(db, auth, 'club_admin.revoke', 'club', args.clubId, at),
   ]);
-  if (!res?.meta.changes) throw notFound();
 }

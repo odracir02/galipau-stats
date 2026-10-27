@@ -94,6 +94,7 @@ Principios:
 - [Backend: Cloudflare Workers + D1](docs/BACKEND.md) (base preparada, aún sin uso)
 - [Protocolo de sincronización](docs/SINCRONIZACION.md)
 - [Permisos, seguridad y privacidad](docs/SEGURIDAD.md)
+- [Autenticación administrativa](docs/AUTENTICACION_ADMIN.md) (Cloudflare Access, aún sin configurar)
 - [Modelo de dominio y eventos](docs/MODELO_DATOS.md)
 - [Fórmulas estadísticas](docs/FORMULAS.md)
 - [Sistema de diseño](docs/DISENO.md)

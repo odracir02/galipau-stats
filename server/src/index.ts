@@ -1,13 +1,23 @@
-// Worker de GalipauStats (API). Rutas mínimas de esta fase, sin desplegar.
-// Pendientes: inicio de sesión administrativo (llave de acceso), canje de
-// códigos, alta de clubes y equipos, administradores, transferencia de
-// partidos y sincronización completa.
+// Worker de GalipauStats (API). Sin desplegar todavía.
+// Pendientes: canje de códigos, alta de equipos desde la app, transferencia de
+// partidos, sincronización completa y paneles de administración.
 //
+// Dispositivos (Authorization: Bearer <token de dispositivo>):
 //   GET  /api/health                         sin autenticación
 //   GET  /api/teams/:teamId                  consulta (cualquier rol del equipo)
 //   GET  /api/teams/:teamId/changes?since=N  consulta: cambios posteriores a N
-//   POST /api/sync/events                    escritura: entrenador, administrador de club o superadministrador
-import { authenticate, authorize, bearerToken } from './auth';
+//   POST /api/sync/events                    escritura: entrenador
+//
+// Administración (Cloudflare Access + roles en D1; misma URL, sin CORS):
+//   GET    /api/admin/me                                    identidad y roles
+//   GET    /api/admin/clubs                                 clubes visibles
+//   POST   /api/admin/critical/clubs                        crear club (superadmin)
+//   DELETE /api/admin/critical/clubs/:clubId                eliminar club (superadmin)
+//   POST   /api/admin/critical/clubs/:clubId/admins         nombrar administrador (superadmin)
+//   DELETE /api/admin/critical/clubs/:clubId/admins/:id     retirar administrador (superadmin)
+import { accessConfig } from './access';
+import { adminProfile, appointClubAdmin, createClub, deleteClub, listClubs, revokeClubAdmin } from './admin';
+import { authenticate, authenticateAdmin, authorize, bearerToken } from './auth';
 import type { Db } from './db';
 import { HttpError, notFound } from './errors';
 import { rowToTeam, type TeamRow } from './mapping';
@@ -19,8 +29,16 @@ export interface Env {
   TOKEN_PEPPER: string;
   /** local | preview | production */
   ENVIRONMENT: string;
-  /** Orígenes de la aplicación separados por comas (CORS). */
+  /** Orígenes de la aplicación separados por comas (CORS). No aplica a /api/admin. */
   ALLOWED_ORIGINS: string;
+  /** https://<equipo>.cloudflareaccess.com. Vacío = administración desactivada. */
+  ACCESS_TEAM_DOMAIN?: string;
+  /** AUD de la aplicación de Access de administración (/api/admin/*). */
+  ACCESS_AUD_ADMIN?: string;
+  /** AUD de la aplicación de Access de operaciones críticas (/api/admin/critical/*). */
+  ACCESS_AUD_CRITICAL?: string;
+  /** «enabled» solo tras verificar a mano el segundo factor en Cloudflare; si no, 503. */
+  ADMIN_CRITICAL_OPS?: string;
 }
 
 function json(body: unknown, status = 200, headers: HeadersInit = {}): Response {
@@ -51,14 +69,27 @@ async function readJson<T>(request: Request): Promise<T> {
   }
 }
 
+/**
+ * Solo rutas canónicas: sin barras dobles ni finales y sin barras o puntos
+ * codificados. Así el Worker enruta exactamente las rutas que Cloudflare
+ * Access protege, y una variante no puede llegar a otra ruta.
+ */
+export function isCanonicalPath(pathname: string): boolean {
+  if (pathname.includes('//') || (pathname.length > 1 && pathname.endsWith('/'))) return false;
+  if (/%(2f|5c|2e)/i.test(pathname) || pathname.includes('\\')) return false;
+  return pathname.split('/').every((seg) => seg !== '.' && seg !== '..');
+}
+
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const parts = url.pathname.split('/').filter(Boolean);
-  if (parts[0] !== 'api') throw notFound();
+  if (parts[0] !== 'api' || !isCanonicalPath(url.pathname)) throw notFound();
 
   if (request.method === 'GET' && parts[1] === 'health' && parts.length === 2) {
     return json({ ok: true, environment: env.ENVIRONMENT });
   }
+
+  if (parts[1] === 'admin') return adminRoute(request, env, parts.slice(2));
 
   const auth = await authenticate(env.DB, bearerToken(request), env.TOKEN_PEPPER);
 
@@ -86,8 +117,48 @@ async function route(request: Request, env: Env): Promise<Response> {
   throw notFound();
 }
 
+/**
+ * Rutas de administración. Solo Cloudflare Access: el token de dispositivo no
+ * cuenta aquí. Las críticas exigen el token de la aplicación de operaciones
+ * críticas (segundo factor reciente), además del rol en la base de datos.
+ */
+async function adminRoute(request: Request, env: Env, path: string[]): Promise<Response> {
+  const config = accessConfig(env);
+  if (path[0] === 'critical' && config && !config.criticalEnabled) {
+    throw new HttpError(503, 'critical_disabled', 'Las operaciones críticas no están habilitadas en este entorno.');
+  }
+  const auth = await authenticateAdmin(env.DB, request, config);
+  const m = request.method;
+
+  if (m === 'GET' && path.length === 1 && path[0] === 'me') return json(adminProfile(auth));
+  if (m === 'GET' && path.length === 1 && path[0] === 'clubs') return json({ clubs: await listClubs(env.DB, auth) });
+
+  if (path[0] === 'critical' && path[1] === 'clubs') {
+    const [, , clubId, sub, identityId] = path;
+    if (m === 'POST' && path.length === 2) {
+      const body = await readJson<{ name?: unknown; shortName?: unknown }>(request);
+      return json({ clubId: await createClub(env.DB, auth, body ?? {}) }, 201);
+    }
+    if (m === 'DELETE' && clubId && path.length === 3) {
+      await deleteClub(env.DB, auth, clubId);
+      return json({ ok: true });
+    }
+    if (m === 'POST' && clubId && sub === 'admins' && path.length === 4) {
+      const body = await readJson<{ email?: unknown; displayName?: unknown }>(request);
+      return json(await appointClubAdmin(env.DB, auth, { clubId, email: body?.email, displayName: body?.displayName }), 201);
+    }
+    if (m === 'DELETE' && clubId && sub === 'admins' && identityId && path.length === 5) {
+      await revokeClubAdmin(env.DB, auth, { clubId, identityId });
+      return json({ ok: true });
+    }
+  }
+  throw notFound();
+}
+
 export async function handle(request: Request, env: Env): Promise<Response> {
-  const cors = corsHeaders(request, env);
+  // La administración solo se usa desde su propia URL: nunca CORS (y nunca credenciales cruzadas).
+  const isAdmin = /^\/api\/admin(\/|$)/.test(new URL(request.url).pathname);
+  const cors = isAdmin ? {} : corsHeaders(request, env);
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   try {
     const res = await route(request, env);

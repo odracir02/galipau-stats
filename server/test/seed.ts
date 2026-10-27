@@ -1,7 +1,7 @@
 // Datos ficticios para las pruebas del servidor. No representan personas reales.
 import type { Match, Player } from '../../src/domain/types';
 import { makeMatch, SQUAD } from '../../src/test/fixtures';
-import { authenticate } from '../src/auth';
+import { adminContext, authenticate } from '../src/auth';
 import { insertSql, matchToRows, playerToRow, teamToRow } from '../src/mapping';
 import type { AdminRole, AuthContext } from '../src/model';
 import { generateToken, hashSecret } from '../src/secrets';
@@ -97,20 +97,18 @@ export function twoClubs(db: SqliteD1): void {
 }
 
 /**
- * Identidad administrativa con sesión ya verificada (como tras usar su llave de
- * acceso) desde un dispositivo propio. `verifiedAt` permite simular una
- * verificación antigua.
+ * Identidad administrativa con roles en D1 y su contexto tal como queda tras
+ * validar el JWT de Cloudflare Access. `critical` simula un token de la
+ * aplicación de operaciones críticas.
  */
 export async function addAdmin(
   db: SqliteD1,
   id: string,
   roles: { role: AdminRole | string; clubId: string | null }[],
-  { verifiedAt = new Date().toISOString(), expiresAt = '2099-01-01T00:00:00.000Z' } = {},
-): Promise<{ identityId: string; deviceId: string; token: string; auth: AuthContext }> {
-  const token = generateToken();
-  const deviceId = `dev-${id}`;
-  db.run('INSERT INTO admin_identities (id, display_name, created_at) VALUES (?, ?, ?)', id, `Admin ${id}`, NOW);
-  db.run('INSERT INTO devices (id, label, created_at) VALUES (?, ?, ?)', deviceId, `Navegador de ${id}`, NOW);
+  { critical = false } = {},
+): Promise<{ identityId: string; email: string; auth: AuthContext; critical: () => Promise<AuthContext> }> {
+  const email = `${id.toLowerCase()}@example.com`;
+  db.run('INSERT INTO admin_identities (id, display_name, email, created_at) VALUES (?, ?, ?, ?)', id, `Admin ${id}`, email, NOW);
   roles.forEach((r, i) =>
     db.run(
       'INSERT INTO admin_roles (id, identity_id, role, club_id, created_at) VALUES (?, ?, ?, ?, ?)',
@@ -121,14 +119,11 @@ export async function addAdmin(
       NOW,
     ),
   );
-  db.run(
-    'INSERT INTO admin_sessions (token_hash, identity_id, device_id, created_at, expires_at, mfa_verified_at) VALUES (?, ?, ?, ?, ?, ?)',
-    await hashSecret(token, PEPPER),
-    id,
-    deviceId,
-    NOW,
-    expiresAt,
-    verifiedAt,
-  );
-  return { identityId: id, deviceId, token, auth: await authenticate(db, token, PEPPER) };
+  const claims = (crit: boolean) => ({ email, sub: `sub-${id}`, iat: 0, exp: 0, critical: crit });
+  return {
+    identityId: id,
+    email,
+    auth: await adminContext(db, claims(critical)),
+    critical: () => adminContext(db, claims(true)),
+  };
 }

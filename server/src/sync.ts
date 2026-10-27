@@ -52,6 +52,10 @@ function conflict(server: (EventRow & { version: number }) | null, reason: strin
 
 export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now = new Date()): Promise<OpResult> {
   await authorize(db, auth, op.teamId, 'match.write');
+  // Las acciones las registra un dispositivo (el que lleva el partido), no una
+  // sesión de administración.
+  const deviceId = auth.deviceId;
+  if (!deviceId) throw new HttpError(403, 'device_required', 'Las acciones se registran desde un dispositivo autorizado.');
 
   // 1. ¿Ya se aplicó esta operación?
   const done = await db
@@ -59,7 +63,7 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
     .bind(op.opId)
     .first<{ device_id: string; entity_id: string; result_json: string }>();
   if (done) {
-    if (done.device_id !== auth.deviceId || done.entity_id !== op.event.id) {
+    if (done.device_id !== deviceId || done.entity_id !== op.event.id) {
       throw new HttpError(409, 'op_id_reused', 'Identificador de operación ya usado para otro registro.');
     }
     return JSON.parse(done.result_json) as OpResult;
@@ -72,7 +76,7 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
     .first<MatchRow & { recorder_device_id: string | null }>();
   if (!match) throw notFound();
   if (match.deleted_at) throw new HttpError(409, 'match_deleted', 'El partido está eliminado.');
-  if (match.recorder_device_id && match.recorder_device_id !== auth.deviceId) {
+  if (match.recorder_device_id && match.recorder_device_id !== deviceId) {
     throw new HttpError(409, 'match_recorded_elsewhere', 'Otro dispositivo registra este partido.');
   }
 
@@ -95,7 +99,7 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
   let result: OpResult;
   if (!current) {
     if (op.baseVersion !== null) throw conflict(null, 'La acción ya no existe en el servidor.');
-    const ins = insertSql('events', { ...incoming, version: 1, updated_by_device_id: auth.deviceId });
+    const ins = insertSql('events', { ...incoming, version: 1, updated_by_device_id: deviceId });
     writes.push(db.prepare(ins.sql).bind(...ins.values));
     result = { status: 'applied', entityId: op.event.id, version: 1 };
   } else if (op.baseVersion === null) {
@@ -125,7 +129,7 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
           incoming.updated_at,
           incoming.deleted_at,
           version,
-          auth.deviceId,
+          deviceId,
           op.event.id,
           current.version,
         ),
@@ -138,12 +142,12 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
   //    por este dispositivo: si otro la cambió entre la lectura y la escritura,
   //    no se marca como aplicada y se responde conflicto.
   const guard = 'WHERE (SELECT version FROM events WHERE id = ?) = ? AND (SELECT updated_by_device_id FROM events WHERE id = ?) = ?';
-  const guardValues = [op.event.id, result.version, op.event.id, auth.deviceId];
+  const guardValues = [op.event.id, result.version, op.event.id, deviceId];
   if (result.status === 'applied') {
     writes.push(
       db
         .prepare('UPDATE matches SET recorder_device_id = ? WHERE id = ? AND recorder_device_id IS NULL')
-        .bind(auth.deviceId, match.id),
+        .bind(deviceId, match.id),
       db
         .prepare(`INSERT INTO change_log (team_id, entity, entity_id, version, changed_at) SELECT ?, ?, ?, ?, ? ${guard}`)
         .bind(op.teamId, 'event', op.event.id, result.version, nowIso, ...guardValues),
@@ -152,7 +156,7 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
           `INSERT INTO sync_ops (op_id, device_id, team_id, entity, entity_id, result_json, received_at)
            SELECT ?, ?, ?, ?, ?, ?, ? ${guard}`,
         )
-        .bind(op.opId, auth.deviceId, op.teamId, 'event', op.event.id, JSON.stringify(result), nowIso, ...guardValues),
+        .bind(op.opId, deviceId, op.teamId, 'event', op.event.id, JSON.stringify(result), nowIso, ...guardValues),
     );
   } else {
     writes.push(
@@ -160,7 +164,7 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
         .prepare(
           'INSERT INTO sync_ops (op_id, device_id, team_id, entity, entity_id, result_json, received_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
         )
-        .bind(op.opId, auth.deviceId, op.teamId, 'event', op.event.id, JSON.stringify(result), nowIso),
+        .bind(op.opId, deviceId, op.teamId, 'event', op.event.id, JSON.stringify(result), nowIso),
     );
   }
   try {

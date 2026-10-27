@@ -9,11 +9,20 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-01",
   "observability": { "enabled": true },
+  // Sin URLs de vista previa por versión: serían otra forma de llegar al Worker.
+  "preview_urls": false,
 
   // Entorno local (wrangler dev / migraciones --local). No toca Cloudflare.
   "vars": {
     "ENVIRONMENT": "local",
-    "ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:4173"
+    "ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:4173",
+    // Sin Cloudflare Access en local: la administración queda desactivada (503).
+    // No existe ningún modo que la salte.
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD_ADMIN": "",
+    "ACCESS_AUD_CRITICAL": "",
+    // Desactivadas hasta verificar el segundo factor en Cloudflare (ver docs).
+    "ADMIN_CRITICAL_OPS": "disabled"
   },
   "d1_databases": [
     {
@@ -30,7 +39,13 @@
       "name": "galipau-stats-api-preview",
       "vars": {
         "ENVIRONMENT": "preview",
-        "ALLOWED_ORIGINS": "https://develop.galipau-stats.pages.dev"
+        "ALLOWED_ORIGINS": "https://develop.galipau-stats.pages.dev",
+        // Se rellenan al crear las aplicaciones de Access (no son secretos).
+        "ACCESS_TEAM_DOMAIN": "",
+        "ACCESS_AUD_ADMIN": "",
+        "ACCESS_AUD_CRITICAL": "",
+        // Desactivadas hasta verificar el segundo factor en Cloudflare (ver docs).
+        "ADMIN_CRITICAL_OPS": "disabled"
       },
       "d1_databases": [
         {
@@ -46,7 +61,12 @@
       "name": "galipau-stats-api",
       "vars": {
         "ENVIRONMENT": "production",
-        "ALLOWED_ORIGINS": "https://galipau-stats.pages.dev"
+        "ALLOWED_ORIGINS": "https://galipau-stats.pages.dev",
+        "ACCESS_TEAM_DOMAIN": "",
+        "ACCESS_AUD_ADMIN": "",
+        "ACCESS_AUD_CRITICAL": "",
+        // Desactivadas hasta verificar el segundo factor en Cloudflare (ver docs).
+        "ADMIN_CRITICAL_OPS": "disabled"
       },
       "d1_databases": [
         {

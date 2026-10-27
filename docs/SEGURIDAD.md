@@ -1,11 +1,11 @@
 # Permisos, seguridad y privacidad
 
-> **Estado:** diseño y lógica del servidor, probados en local. **Nada de esto está operativo todavía**: no hay Worker desplegado, la aplicación no se conecta a ningún servidor y siguen pendientes:
-> - el inicio de sesión administrativo con llave de acceso, el segundo factor y sus rutas (`/api/admin/*`);
-> - las rutas de canje de códigos, alta de clubes y equipos, nombramiento de administradores y transferencia de partidos;
-> - el cliente de sincronización de la aplicación.
+> **Estado:** implementado y probado en local. **Nada de esto está operativo todavía**: no hay Worker desplegado, ni aplicaciones de Cloudflare Access creadas, y la aplicación no se conecta a ningún servidor. Siguen pendientes:
+> - la configuración de Cloudflare Access ([AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#configuración-pendiente-en-cloudflare));
+> - las rutas de canje de códigos, alta de equipos, gestión de códigos y transferencia de partidos;
+> - el cliente de sincronización de la aplicación y los paneles de administración.
 >
-> Las funciones del servidor existen y tienen pruebas. Salvo las cuatro rutas básicas de [BACKEND.md](BACKEND.md#api-fase-actual), ninguna tiene todavía ruta en la API.
+> Las rutas existentes están en [BACKEND.md](BACKEND.md#api-fase-actual) y [AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#operaciones-implementadas).
 
 ## Roles
 
@@ -19,7 +19,7 @@
 Dos tipos de sujeto, con credenciales distintas:
 
 - **Dispositivo** (navegador o PWA): `coach` y `viewer` sobre equipos concretos (`grants`). Se identifica con un token que obtiene al canjear un código.
-- **Identidad administrativa** (una persona): `superadmin` y `club_admin` (`admin_roles`). Solo actúa con una **sesión administrativa**, que se emite tras verificar una credencial fuerte. La sesión va ligada al navegador donde se inicia, que conserva además sus permisos de equipo.
+- **Identidad administrativa** (una persona, identificada por su correo): `superadmin` y `club_admin` (`admin_roles`). Se autentica con **Cloudflare Access** (proveedor de identidad + segundo factor) y solo en las rutas `/api/admin/*`. Pasar por Access no da ningún rol: los roles salen siempre de la base de datos.
 
 La base de datos impide mezclarlos:
 
@@ -55,66 +55,43 @@ Reglas:
   - una identidad puede administrar varios clubes.
   - En cada equipo vale el mayor de los roles que le correspondan.
 - El administrador de un club pierde el acceso a un equipo si ese equipo pasa a otro club.
-- **Operaciones críticas** (nombrar administradores, crear o eliminar clubes): exigen que la credencial fuerte se haya verificado en los últimos 15 minutos, aunque la sesión siga abierta. Si no, la respuesta es `401 reauth_required`.
+- **Operaciones críticas** (nombrar administradores, crear o eliminar clubes): solo con un token de la aplicación de Access de operaciones críticas (si no, `401 reauth_required`). Además, están **desactivadas** (`503`) hasta verificar a mano que Cloudflare pide de verdad el segundo factor reciente: el token no lo demuestra por sí solo. Ver [AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#operaciones-críticas-qué-comprueba-el-worker-y-qué-no).
 - **Auditoría:** las operaciones administrativas quedan en `admin_audit` (quién, qué, sobre qué y cuándo).
 - El entrenador no tiene jugador destacado. Un dispositivo de consulta podrá elegir uno en el futuro: será una preferencia local, sin verificación y sin permisos adicionales.
 
-## Autenticación administrativa fuerte
+## Autenticación administrativa
 
-- **Credencial principal:** llave de acceso (WebAuthn / *passkey*): Face ID, Touch ID o la llave de seguridad del dispositivo. Une algo que se tiene (el dispositivo con la clave privada) y algo que se es o se sabe (biometría o PIN). Es resistente al *phishing* y el servidor solo guarda la clave pública.
-- **Segundo factor adicional, opcional:** TOTP (aplicación de autenticación). El secreto se guarda cifrado con una clave del servidor (`secret_enc`), nunca en claro.
-- **Sesiones:**
-  - solo existen con la verificación hecha (`mfa_verified_at` es obligatorio en la base de datos);
-  - duran poco;
-  - se guardan como hash;
-  - dejan de valer al revocarse, al desactivar la identidad o al retirarle su último rol.
-- **Alta de credenciales:** con un código de **un solo uso, personal y de 30 minutos**, que se entrega en persona o por un canal seguro. Nunca con un código compartido.
-- **Capa adicional recomendada al desplegar:** proteger las rutas `/api/admin/*` con Cloudflare Access (inicio de sesión con proveedor de identidad y segundo factor; gratuito hasta 50 usuarios). Es defensa en profundidad: la comprobación propia sigue siendo obligatoria.
+La decisión, su comparación con otras opciones y la configuración están en [AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md). Resumen:
 
-La verificación WebAuthn, el inicio de sesión y las rutas `/api/admin/*` se implementarán más adelante. En la Tarea 005B están listos:
-
-- el modelo de datos;
-- las reglas de autorización;
-- la exigencia de verificación reciente;
-- las pruebas.
+- **Cloudflare Access autentica:** proveedor de identidad y segundo factor independiente (Face ID, Touch ID, llaves de seguridad o TOTP).
+- **El Worker verifica siempre el JWT de Access:** firma RS256 con las claves del equipo, emisor, audiencia y vigencia. Después busca la identidad y sus roles en D1.
+- La cuenta de Access queda **vinculada** a la identidad en su primer acceso (`sub`); otra cuenta con el mismo correo se rechaza.
+- **Sin configuración de Access, la administración está desactivada** (503) en todos los entornos. No hay modo de desarrollo que la abra.
+- Los tokens de dispositivo no sirven para administrar, y una sesión de administración no sirve como dispositivo.
 
 ## Primer superadministrador
 
-No existe ninguna petición HTTP que cree o conceda el rol de superadministrador; una prueba lo comprueba recorriendo el código del servidor. El primero se establece con un procedimiento que exige **controlar la cuenta de Cloudflare**, que ya está protegida con el inicio de sesión y el segundo factor del propietario.
+Ninguna petición HTTP crea ni concede el rol de superadministrador; una prueba lo comprueba recorriendo el código del servidor. El primero se crea por consola, **con la cuenta de Cloudflare del propietario**, que ya está protegida con su inicio de sesión y su segundo factor:
 
-1. Con el `TOKEN_PEPPER` del entorno a mano (no se escribe en ningún archivo):
-   ```bash
-   cd server
-   TOKEN_PEPPER=… npm run bootstrap:superadmin -- "Nombre visible" > bootstrap.local.sql
-   ```
-   El script ([`bootstrap-superadmin.mjs`](../server/scripts/bootstrap-superadmin.mjs)):
-   - genera el SQL de la identidad, el rol `superadmin` y un código de alta (solo su hash);
-   - muestra el código una vez por pantalla.
-   - `*.local.sql` está excluido de Git.
-2. Aplicarlo con la cuenta del propietario:
-   ```bash
-   npx wrangler d1 execute DB --env production --remote --file bootstrap.local.sql
-   ```
-3. Borrar `bootstrap.local.sql`.
-4. En los 30 minutos siguientes, abrir la página de alta (fase posterior), introducir el código y registrar la llave de acceso. El código queda usado.
+```bash
+cd server
+node scripts/bootstrap-superadmin.mjs propietario@example.com "Nombre visible" > bootstrap.local.sql
+npx wrangler d1 execute DB --env production --remote --file bootstrap.local.sql
+rm bootstrap.local.sql
+```
 
-Garantías:
-
-- **Si ya hay un superadministrador vigente, el SQL no inserta nada.** No sirve para apropiarse de la plataforma ni para añadir otro superadministrador sin querer.
-- El repositorio solo contiene el script, nunca credenciales.
-- Las pruebas verifican que el hash del script coincide con el del servidor y que el nombre no permite inyectar SQL.
-
-Añadir otro superadministrador o recuperar el acceso (llave perdida) se hace con el mismo tipo de procedimiento por consola, con la cuenta de Cloudflare: revocar la credencial perdida, emitir un código de alta nuevo y registrar una llave. Nunca desde la aplicación.
+- El correo es el de la cuenta con la que el propietario entra en Access.
+- El SQL no contiene secretos. `*.local.sql` está excluido de Git.
+- **Si ya hay un superadministrador vigente, el SQL no inserta nada.** No sirve para apropiarse de la plataforma.
+- Las pruebas verifican también que el nombre no permite inyectar SQL.
+- Recuperar el acceso (autenticador perdido) se hace en el panel de Cloudflare: borrar el autenticador del usuario y volver a darlo de alta. Añadir otro superadministrador, por consola. Nunca desde la aplicación.
 
 ## Administradores de club
 
-1. El superadministrador, con verificación reciente, nombra al administrador de un club (`appointClubAdmin`). Se crean:
-   - la identidad, o se reutiliza una existente;
-   - el rol `club_admin` de ese club;
-   - un código de alta de un solo uso (30 minutos).
-2. El superadministrador entrega el código en persona o por un canal seguro.
-3. La persona registra su llave de acceso con el código.
-4. Retirar el rol (`revokeClubAdmin`) cierra sus sesiones si no le queda ningún otro rol.
+1. El superadministrador, con un token de la aplicación crítica, nombra al administrador de un club por su correo (`appointClubAdmin`). Se crean la identidad (o se reutiliza) y el rol `club_admin` de ese club. Cualquier otro rol que se envíe en la petición se ignora.
+2. Se añade ese correo a la política de las aplicaciones de Access de administración.
+3. La persona entra con Access y configura su segundo factor; queda vinculada.
+4. Retirar el rol (`revokeClubAdmin`) tiene efecto en la siguiente petición: los roles se leen en cada una.
 
 Un administrador de club:
 
@@ -199,8 +176,8 @@ Son tres operaciones distintas, en este orden. **Ninguna se ejecuta en la Tarea 
 
 - Por dispositivo o equipo: `revokeTeamAccess`, o `revoked_at` en dispositivos y tokens.
 - Invitaciones de prueba: `revokeInvite` con `revokeAccess`.
-- Administradores de prueba: `revokeClubAdmin` y desactivar la identidad (`disabled_at`).
-- **Todo de una vez en un entorno:** cambiar su `TOKEN_PEPPER` (`wrangler secret put`). Invalida a la vez todos los tokens, sesiones y códigos de ese entorno, porque sus hashes dejan de coincidir. Solo afecta al entorno elegido.
+- Administradores de prueba: `revokeClubAdmin`, desactivar la identidad (`disabled_at`), quitar su correo de las políticas de Access y revocar su sesión en el panel de Cloudflare.
+- **Todo de una vez en un entorno:** cambiar su `TOKEN_PEPPER` (`wrangler secret put`). Invalida a la vez todos los tokens de dispositivo y códigos de ese entorno, porque sus hashes dejan de coincidir. Solo afecta al entorno elegido. Las sesiones de administración se revocan en Cloudflare Access (aplicación → «Revoke existing tokens»).
 
 ### 2. Eliminar los registros remotos de prueba
 
@@ -226,11 +203,11 @@ Las estadísticas se refieren a personas identificables, posiblemente menores. E
 - **Minimización:**
   - jugador: nombre y dorsal;
   - persona del club: nombre visible;
-  - identidad administrativa: nombre y, opcionalmente, un correo de contacto;
+  - identidad administrativa: nombre, correo (necesario para vincularla con Access) y el identificador de su cuenta de Access;
   - ni fechas de nacimiento ni fotos;
   - las IP solo como hash.
 - **Acceso:** cada dato se ve con un permiso del equipo o del club. El superadministrador lo ve todo; sus operaciones quedan auditadas. Los rankings de club no mostrarán a quienes estén por debajo del décimo puesto, salvo la fila del jugador destacado del propio dispositivo.
-- **Revocación:** de códigos, permisos, sesiones y dispositivos, con efecto inmediato.
+- **Revocación:** de códigos, permisos, roles y dispositivos, con efecto inmediato; las sesiones de Access, desde su panel.
 - **Supresión:** el borrado físico de un jugador, equipo o club elimina en cascada sus datos. El borrado lógico sirve para sincronizar; habrá que fijar un plazo de purga definitiva.
 - **Pendiente de decisión** antes de abrir el servicio a otros clubes:
   - responsable del tratamiento: plataforma, club o ambos;

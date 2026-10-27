@@ -137,7 +137,7 @@ describe('invitaciones', () => {
   it('el administrador puede retirar el acceso de un dispositivo', async () => {
     const admin = await addAdmin(db, 'adm', [{ role: 'club_admin', clubId: 'A' }]);
     const lost = await addDevice(db, 'lost', [{ clubId: 'A', teamId: 'a1', role: 'coach' }]);
-    expect(await errorCode(revokeTeamAccess(db, lost.auth, 'a1', 'dev-adm'))).toBe('403 forbidden');
+    expect(await errorCode(revokeTeamAccess(db, lost.auth, 'a1', 'lost'))).toBe('403 forbidden');
     expect(await revokeTeamAccess(db, admin.auth, 'a1', 'lost')).toBe(1);
     const auth = await authenticate(db, lost.token, PEPPER);
     expect(await errorCode(authorize(db, auth, 'a1', 'team.read'))).toBe('404 not_found');

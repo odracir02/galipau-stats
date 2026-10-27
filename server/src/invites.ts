@@ -167,6 +167,7 @@ export async function redeemInvite(
   pepper: string,
   now = new Date(),
 ): Promise<Redeemed> {
+  if (args.auth && !args.auth.deviceId) throw new HttpError(400, 'device_required', 'Los códigos se canjean desde un dispositivo.');
   await checkRateLimit(db, args.clientKey, pepper, now);
   const nowIso = now.toISOString();
   const invite = await db

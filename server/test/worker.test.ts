@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ev, goal } from '../../src/test/fixtures';
 import worker, { type Env } from '../src/index';
-import { addAdmin, addDevice, addMatch, PEPPER, twoClubs } from './seed';
+import { addDevice, addMatch, PEPPER, twoClubs } from './seed';
 import { migratedDb, type SqliteD1 } from './sqliteD1';
 
 let db: SqliteD1;
@@ -60,9 +60,10 @@ describe('API', () => {
     expect((await changes.json()).events).toHaveLength(1);
   });
 
-  it('equipos de otro club: 404', async () => {
-    const { token } = await addAdmin(db, 'ca', [{ role: 'club_admin', clubId: 'A' }]);
-    expect((await call('/api/teams/a2', { token })).status).toBe(200);
+  it('equipos de otro equipo o club: 404', async () => {
+    const { token } = await addDevice(db, 'c', [{ clubId: 'A', teamId: 'a1', role: 'coach' }]);
+    expect((await call('/api/teams/a1', { token })).status).toBe(200);
+    expect((await call('/api/teams/a2', { token })).status).toBe(404);
     expect((await call('/api/teams/b1', { token })).status).toBe(404);
   });
 

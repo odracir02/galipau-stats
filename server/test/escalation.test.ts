@@ -2,13 +2,12 @@
 // corresponde, ni por la API ni manipulando datos de entrada.
 import { readdirSync, readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { buildBootstrapSql, enrollmentHash, generateCode } from '../scripts/bootstrap-superadmin.mjs';
+import { buildBootstrapSql } from '../scripts/bootstrap-superadmin.mjs';
 import { appointClubAdmin, createClub, createTeam, deleteClub, revokeClubAdmin } from '../src/admin';
-import { authenticate, authorize, authorizeClub } from '../src/auth';
+import { adminContext, authenticate, authorize, authorizeClub } from '../src/auth';
 import { HttpError } from '../src/errors';
 import { createInvite, redeemInvite } from '../src/invites';
 import type { TeamRole } from '../src/model';
-import { hashSecret } from '../src/secrets';
 import { addAdmin, addDevice, NOW, PEPPER, twoClubs } from './seed';
 import { migratedDb, type SqliteD1 } from './sqliteD1';
 
@@ -39,50 +38,58 @@ describe('roles administrativos', () => {
       const { auth } = await addDevice(db, `d-${role}`, [{ clubId: 'A', teamId: 'a1', role }]);
       expect(await errorOf(createClub(db, auth, { name: 'Club pirata' }))).toBe('403 forbidden');
       expect(await errorOf(createTeam(db, auth, { clubId: 'A', name: 'X', code: 'XX99', season: '2026/27' }))).toBe('404 not_found');
-      expect(await errorOf(appointClubAdmin(db, auth, { clubId: 'A', displayName: 'Yo mismo' }, PEPPER))).toBe('404 not_found');
+      expect(await errorOf(appointClubAdmin(db, auth, { clubId: 'A', email: 'yo@example.com' }))).toBe('404 not_found');
     }
     expect(rows('SELECT * FROM admin_roles')).toEqual([]);
   });
 
   it('el administrador de club no puede nombrar administradores, crear clubes ni actuar en otro club', async () => {
-    const { auth, identityId } = await addAdmin(db, 'ca', [{ role: 'club_admin', clubId: 'A' }]);
-    expect(await errorOf(appointClubAdmin(db, auth, { clubId: 'A', displayName: 'Otro' }, PEPPER))).toBe('403 forbidden');
-    expect(await errorOf(appointClubAdmin(db, auth, { clubId: 'B', identityId, displayName: 'Yo' }, PEPPER))).toBe('404 not_found');
-    expect(await errorOf(createClub(db, auth, { name: 'Nuevo' }))).toBe('403 forbidden');
-    expect(await errorOf(createTeam(db, auth, { clubId: 'B', name: 'X', code: 'XX99', season: '2026/27' }))).toBe('404 not_found');
+    const ca = await addAdmin(db, 'ca', [{ role: 'club_admin', clubId: 'A' }], { critical: true });
+    expect(await errorOf(appointClubAdmin(db, ca.auth, { clubId: 'A', email: 'otro@example.com' }))).toBe('403 forbidden');
+    expect(await errorOf(appointClubAdmin(db, ca.auth, { clubId: 'B', email: ca.email }))).toBe('404 not_found');
+    expect(await errorOf(createClub(db, ca.auth, { name: 'Nuevo' }))).toBe('403 forbidden');
+    expect(await errorOf(createTeam(db, ca.auth, { clubId: 'B', name: 'X', code: 'XX99', season: '2026/27' }))).toBe('404 not_found');
     // En su club sí crea equipos.
-    expect(await errorOf(createTeam(db, auth, { clubId: 'A', name: 'Cadete', code: 'cf 2627', season: '2026/27', gender: 'female' }))).toBe('ok');
+    expect(await errorOf(createTeam(db, ca.auth, { clubId: 'A', name: 'Cadete', code: 'cf 2627', season: '2026/27', gender: 'female' }))).toBe('ok');
     expect(rows("SELECT code, club_id FROM teams WHERE name = 'Cadete'")).toEqual([{ code: 'CF2627', club_id: 'A' }]);
   });
 
-  it('el superadministrador nombra administradores de club con un código de alta de un solo uso', async () => {
-    const sa = await addAdmin(db, 'sa', [{ role: 'superadmin', clubId: null }]);
-    const res = await appointClubAdmin(db, sa.auth, { clubId: 'A', displayName: 'Presidencia club A' }, PEPPER);
+  it('el superadministrador nombra administradores de club por correo, con auditoría', async () => {
+    const sa = await addAdmin(db, 'sa', [{ role: 'superadmin', clubId: null }], { critical: true });
+    const res = await appointClubAdmin(db, sa.auth, { clubId: 'A', email: '  Presidencia@ClubA.example ', displayName: 'Presidencia' });
+    expect(rows(`SELECT email FROM admin_identities WHERE id = '${res.identityId}'`)).toEqual([{ email: 'presidencia@cluba.example' }]);
     expect(rows(`SELECT role, club_id, granted_by_identity_id FROM admin_roles WHERE identity_id = '${res.identityId}'`)).toEqual([
       { role: 'club_admin', club_id: 'A', granted_by_identity_id: 'sa' },
     ]);
-    const enrollment = rows('SELECT code_hash FROM admin_enrollments')[0] as { code_hash: string };
-    expect(enrollment.code_hash).toBe(await hashSecret(`enroll:${res.enrollmentCode.replace(/-/g, '')}`, PEPPER));
-    expect(JSON.stringify(rows('SELECT * FROM admin_enrollments'))).not.toContain(res.enrollmentCode.replace(/-/g, ''));
-    expect(rows('SELECT action, target_id, identity_id FROM admin_audit')).toEqual([
-      { action: 'club_admin.appoint', target_id: 'A', identity_id: 'sa' },
-    ]);
+    expect(rows('SELECT action, target_id, identity_id FROM admin_audit')).toEqual([{ action: 'club_admin.appoint', target_id: 'A', identity_id: 'sa' }]);
+    // La nueva persona entra con Access y solo administra su club.
+    const auth = await adminContext(db, { email: 'presidencia@cluba.example', sub: 'sub-p', iat: 0, exp: 0, critical: false });
+    expect(await errorOf(authorize(db, auth, 'a1', 'team.manage'))).toBe('ok');
+    expect(await errorOf(authorize(db, auth, 'b1', 'team.read'))).toBe('404 not_found');
+    // No se duplica ni acepta correos no válidos.
+    expect(await errorOf(appointClubAdmin(db, sa.auth, { clubId: 'A', email: 'presidencia@cluba.example' }))).toBe('409 already_admin');
+    expect(await errorOf(appointClubAdmin(db, sa.auth, { clubId: 'A', email: 'no-es-correo' }))).toBe('400 invalid_email');
   });
 
-  it('retirar el rol de administrador de club cierra sus sesiones si no le queda ningún rol', async () => {
-    const sa = await addAdmin(db, 'sa', [{ role: 'superadmin', clubId: null }]);
-    const ca = await addAdmin(db, 'ca', [{ role: 'club_admin', clubId: 'A' }]);
-    await revokeClubAdmin(db, sa.auth, { clubId: 'A', identityId: 'ca' });
-    expect(await errorOf(authenticate(db, ca.token, PEPPER))).toBe('401 unauthorized');
+  it('una misma persona puede administrar dos clubes; retirar uno no afecta al otro', async () => {
+    const sa = await addAdmin(db, 'sa', [{ role: 'superadmin', clubId: null }], { critical: true });
+    const { identityId } = await appointClubAdmin(db, sa.auth, { clubId: 'A', email: 'p@example.com' });
+    await appointClubAdmin(db, sa.auth, { clubId: 'B', email: 'p@example.com' });
+    await revokeClubAdmin(db, sa.auth, { clubId: 'A', identityId });
+    const auth = await adminContext(db, { email: 'p@example.com', sub: 'sub-p', iat: 0, exp: 0, critical: false });
+    expect(await errorOf(authorize(db, auth, 'a1', 'team.read'))).toBe('404 not_found');
+    expect(await errorOf(authorize(db, auth, 'b1', 'team.manage'))).toBe('ok');
+    expect(await errorOf(revokeClubAdmin(db, sa.auth, { clubId: 'A', identityId }))).toBe('404 not_found');
   });
 
   it('crear y eliminar clubes es exclusivo del superadministrador y queda auditado', async () => {
-    const sa = await addAdmin(db, 'sa', [{ role: 'superadmin', clubId: null }]);
-    const ca = await addAdmin(db, 'ca', [{ role: 'club_admin', clubId: 'A' }]);
+    const sa = await addAdmin(db, 'sa', [{ role: 'superadmin', clubId: null }], { critical: true });
+    const ca = await addAdmin(db, 'ca', [{ role: 'club_admin', clubId: 'A' }], { critical: true });
     const id = await createClub(db, sa.auth, { name: 'Club Nuevo' });
     expect(await errorOf(deleteClub(db, ca.auth, 'A'))).toBe('403 forbidden');
     await deleteClub(db, sa.auth, 'A');
     expect(await errorOf(authorizeClub(db, ca.auth, 'A', 'club.read'))).toBe('404 not_found');
+    expect(await errorOf(deleteClub(db, sa.auth, 'A'))).toBe('404 not_found');
     expect(rows('SELECT action, target_id FROM admin_audit ORDER BY seq')).toEqual([
       { action: 'club.create', target_id: id },
       { action: 'club.delete', target_id: 'A' },
@@ -90,7 +97,7 @@ describe('roles administrativos', () => {
   });
 
   it('la base de datos no admite roles mezclados', () => {
-    db.run("INSERT INTO admin_identities (id, display_name, created_at) VALUES ('x', 'X', ?)", NOW);
+    db.run("INSERT INTO admin_identities (id, display_name, email, created_at) VALUES ('x', 'X', 'x@example.com', ?)", NOW);
     const role = (id: string, r: string, club: string | null) => () =>
       db.run('INSERT INTO admin_roles (id, identity_id, role, club_id, created_at) VALUES (?, ?, ?, ?, ?)', id, 'x', r, club, NOW);
     expect(role('r1', 'superadmin', 'A')).toThrow(/CHECK/); // superadmin no pertenece a un club
@@ -100,7 +107,7 @@ describe('roles administrativos', () => {
   });
 });
 
-describe('las invitaciones nunca conceden roles administrativos', () => {
+describe('las credenciales de dispositivo y las invitaciones nunca dan roles administrativos', () => {
   it('rechaza crear invitaciones con un rol administrativo, aunque se fuerce el tipo', async () => {
     const sa = await addAdmin(db, 'sa', [{ role: 'superadmin', clubId: null }]);
     for (const role of ['club_admin', 'superadmin', 'admin']) {
@@ -139,6 +146,12 @@ describe('las invitaciones nunca conceden roles administrativos', () => {
     expect(await errorOf(authorize(db, auth, 'a2', 'match.write'))).toBe('403 forbidden');
     expect(rows('SELECT * FROM admin_roles')).toHaveLength(1); // solo el de «ca»
   });
+
+  it('una sesión de administración no sirve para registrar acciones ni canjear códigos como dispositivo', async () => {
+    const sa = await addAdmin(db, 'sa', [{ role: 'superadmin', clubId: null }]);
+    const inv = await createInvite(db, sa.auth, { teamId: 'a1', role: 'viewer' }, PEPPER);
+    expect(await errorOf(redeemInvite(db, { code: inv.code, clientKey: client(), auth: sa.auth }, PEPPER))).toBe('400 device_required');
+  });
 });
 
 describe('ninguna operación del servidor concede superadministrador', () => {
@@ -162,32 +175,28 @@ describe('ninguna operación del servidor concede superadministrador', () => {
 describe('alta del primer superadministrador', () => {
   const apply = (sql: string) => db.sqlite.exec(sql);
 
-  it('crea la identidad, el rol y un código de alta guardado solo como hash', () => {
-    const code = generateCode();
-    const sql = buildBootstrapSql({ identityId: 'owner', displayName: 'Propietario', code, pepper: PEPPER, now: new Date(NOW) });
-    expect(sql).not.toContain(code.replace(/-/g, ''));
+  it('crea la identidad (por correo) y el rol, sin secretos en el SQL', async () => {
+    const sql = buildBootstrapSql({ identityId: 'owner', email: ' Propietario@Example.com ', displayName: 'Propietario', now: new Date(NOW) });
     apply(sql);
+    expect(rows("SELECT email, access_subject FROM admin_identities WHERE id = 'owner'")).toEqual([{ email: 'propietario@example.com', access_subject: null }]);
     expect(rows("SELECT role, club_id FROM admin_roles WHERE identity_id = 'owner'")).toEqual([{ role: 'superadmin', club_id: null }]);
-    expect(rows('SELECT code_hash, expires_at FROM admin_enrollments')).toEqual([
-      { code_hash: enrollmentHash(code, PEPPER), expires_at: '2026-10-27T10:30:00.000Z' },
-    ]);
-  });
-
-  it('el hash del script coincide con el del servidor', async () => {
-    const code = generateCode();
-    expect(enrollmentHash(code, PEPPER)).toBe(await hashSecret(`enroll:${code.replace(/-/g, '')}`, PEPPER));
+    expect(rows('SELECT action FROM admin_audit')).toEqual([{ action: 'superadmin.bootstrap' }]);
+    // Entra con Access y su primera cuenta queda vinculada.
+    const auth = await adminContext(db, { email: 'propietario@example.com', sub: 'sub-owner', iat: 0, exp: 0, critical: true });
+    expect(await errorOf(authorizeClub(db, auth, 'B', 'club.admins.manage'))).toBe('ok');
   });
 
   it('si ya existe un superadministrador, no inserta nada (no sirve para apropiarse de la plataforma)', () => {
-    apply(buildBootstrapSql({ identityId: 'owner', displayName: 'Propietario', code: generateCode(), pepper: PEPPER }));
-    apply(buildBootstrapSql({ identityId: 'intruso', displayName: 'Intruso', code: generateCode(), pepper: PEPPER }));
-    expect(rows("SELECT id FROM admin_identities")).toEqual([{ id: 'owner' }]);
+    apply(buildBootstrapSql({ identityId: 'owner', email: 'owner@example.com' }));
+    apply(buildBootstrapSql({ identityId: 'intruso', email: 'intruso@example.com' }));
+    expect(rows('SELECT id FROM admin_identities')).toEqual([{ id: 'owner' }]);
     expect(rows("SELECT identity_id FROM admin_roles WHERE role = 'superadmin'")).toEqual([{ identity_id: 'owner' }]);
   });
 
-  it('el nombre visible no permite inyectar SQL', () => {
-    apply(buildBootstrapSql({ identityId: 'owner', displayName: "x'); DROP TABLE clubs; --", code: generateCode(), pepper: PEPPER }));
-    expect(rows("SELECT display_name FROM admin_identities")).toEqual([{ display_name: "x'); DROP TABLE clubs; --" }]);
+  it('rechaza correos no válidos y no permite inyectar SQL', () => {
+    expect(() => buildBootstrapSql({ identityId: 'x', email: 'sin-arroba' })).toThrow(/Correo/);
+    apply(buildBootstrapSql({ identityId: 'owner', email: 'o@example.com', displayName: "x'); DROP TABLE clubs; --" }));
+    expect(rows('SELECT display_name FROM admin_identities')).toEqual([{ display_name: "x'); DROP TABLE clubs; --" }]);
     expect(rows('SELECT COUNT(*) AS n FROM clubs')).toEqual([{ n: 2 }]);
   });
 });

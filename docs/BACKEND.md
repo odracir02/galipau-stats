@@ -6,10 +6,11 @@ Base técnica para clubes, equipos, permisos y sincronización. **La aplicación
 
 | Parte | Estado |
 | ----- | ------ |
-| Esquema D1 y migración | Hecho; probado en SQLite y en la D1 local de Wrangler |
-| Autorización (4 roles), invitaciones, sincronización de acciones, administración de clubes | Lógica del servidor hecha y probada; **sin rutas públicas** salvo las cuatro de la tabla de la API |
-| Inicio de sesión administrativo (llave de acceso, segundo factor) | **Pendiente** |
-| Rutas de canje de códigos, alta de clubes y equipos, administradores, transferencia de partidos | **Pendiente** |
+| Esquema D1 y migraciones (0001, 0002) | Hecho; probado en SQLite y en la D1 local de Wrangler |
+| Autorización (4 roles), invitaciones, sincronización de acciones | Lógica del servidor hecha y probada |
+| Autenticación administrativa (Cloudflare Access + roles en D1) y rutas `/api/admin/*` | Hecha y probada en local; **sin configurar en Cloudflare** (desactivada: 503). Operaciones críticas desactivadas hasta la verificación manual del segundo factor |
+| Rutas de canje de códigos, alta de equipos, gestión de códigos, transferencia de partidos | **Pendiente** |
+| Paneles de administración | **Pendiente** |
 | Cliente de sincronización en la aplicación | **Pendiente** |
 | Recursos en Cloudflare (D1, Worker, secretos) | **No creados** |
 
@@ -28,6 +29,7 @@ server/                     Subproyecto independiente (no forma parte del build 
     index.ts                Punto de entrada del Worker y rutas
     auth.ts                 Autenticación del dispositivo y autorización por equipo
     permissions.ts          Matriz de permisos por rol
+    access.ts               Verificación del JWT de Cloudflare Access
     invites.ts              Códigos de invitación, canje, revocación y límite de intentos
     admin.ts                Clubes, equipos y administradores de club (con auditoría)
     sync.ts                 Subida idempotente de acciones y descarga de cambios
@@ -35,7 +37,7 @@ server/                     Subproyecto independiente (no forma parte del build 
     secrets.ts              Códigos, tokens y HMAC (Web Crypto)
     model.ts, db.ts, errors.ts
   scripts/
-    bootstrap-superadmin.mjs  Alta del primer superadministrador (ver SEGURIDAD.md)
+    bootstrap-superadmin.mjs  Alta del primer superadministrador (ver AUTENTICACION_ADMIN.md)
   test/                     Pruebas (se ejecutan con «npm test» desde la raíz)
 ```
 
@@ -58,7 +60,7 @@ Ver los comentarios de [`0001_initial.sql`](../server/migrations/0001_initial.sq
 | `events` | Acción (= `MatchEvent` local); `player_id` nulo = pendiente | Partido y jugador del mismo equipo |
 | `devices`, `device_tokens` | Dispositivos y hash de sus credenciales | — |
 | `grants` | Permiso de un dispositivo: `coach` o `viewer` en un equipo | Equipo del club indicado |
-| `admin_identities`, `admin_credentials`, `admin_enrollments`, `admin_sessions` | Personas con rol administrativo: llaves de acceso (solo clave pública), TOTP cifrado, códigos de alta de un solo uso y sesiones (solo hash) | — |
+| `admin_identities` | Personas con rol administrativo: correo (vínculo con Cloudflare Access), cuenta de Access vinculada (`access_subject`) y último acceso | — |
 | `admin_roles` | `superadmin` (sin club) o `club_admin` (de un club) | Club |
 | `admin_audit` | Registro de operaciones administrativas | Identidad |
 | `invites` | Códigos de entrenador y de consulta (solo hash) | Equipo del club indicado |
@@ -95,16 +97,15 @@ Correspondencia con IndexedDB:
 | `GET /api/teams/:teamId/changes?since=N` | consulta | Cambios posteriores al cursor N |
 | `POST /api/sync/events` | entrenador, administrador de club o superadministrador | Subir una acción (alta, edición o borrado) |
 
-Autenticación: `Authorization: Bearer <token>`, del dispositivo o de una sesión administrativa. Roles y permisos: [SEGURIDAD.md](SEGURIDAD.md).
+Autenticación: `Authorization: Bearer <token del dispositivo>`. Las rutas de administración (`/api/admin/*`) usan Cloudflare Access y están en [AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#operaciones-implementadas). Roles y permisos: [SEGURIDAD.md](SEGURIDAD.md).
 
 De fases posteriores son:
 
-- las rutas de crear club o equipo y de canjear códigos;
-- el inicio de sesión administrativo con llave de acceso;
+- las rutas de crear equipos, gestionar códigos y canjearlos;
 - la transferencia de partidos;
 - la subida de partidos y plantillas.
 
-La lógica de invitaciones ([`invites.ts`](../server/src/invites.ts)) y la administrativa ([`admin.ts`](../server/src/admin.ts)) ya existen y están probadas.
+La lógica de invitaciones ([`invites.ts`](../server/src/invites.ts)) y la de creación de equipos ([`admin.ts`](../server/src/admin.ts)) ya existen y están probadas.
 
 ## Entornos
 
@@ -165,7 +166,7 @@ Nada de esto se ha hecho. Requiere `npx wrangler login` con tu cuenta.
 5. Decidir la URL de la API: `*.workers.dev` o una ruta propia. Si cambia, actualizar `ALLOWED_ORIGINS`.
 6. Añadir a la aplicación la URL de la API por entorno (variable de build en Pages) cuando exista el cliente de sincronización (005C).
 7. Producción, solo tras validar preview: pasos 3 y 4 con `--env production`.
-8. Establecer el primer superadministrador en cada entorno con el procedimiento de [SEGURIDAD.md](SEGURIDAD.md#primer-superadministrador).
-9. Recomendado: proteger `/api/admin/*` con Cloudflare Access, y añadir una regla de limitación (WAF) y Turnstile para el canje de códigos.
+8. Configurar Cloudflare Access y crear el primer superadministrador en cada entorno: [AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#configuración-pendiente-en-cloudflare).
+9. Recomendado: una regla de limitación (WAF) y Turnstile para el canje de códigos.
 
 Plan gratuito: Workers y D1 tienen capa gratuita suficiente para este uso. Se recomienda revisar sus límites vigentes antes de abrir el uso a varios clubes.

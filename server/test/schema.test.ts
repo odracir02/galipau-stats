@@ -18,16 +18,13 @@ const count = (table: string) => (db.sqlite.prepare(`SELECT COUNT(*) AS n FROM $
 describe('migraciones', () => {
   it('se aplican en orden sobre una base de datos vacía y quedan registradas', () => {
     const files = migrationFiles();
-    expect(files[0]).toBe('0001_initial.sql');
+    expect(files.slice(0, 2)).toEqual(['0001_initial.sql', '0002_cloudflare_access.sql']);
     // Numeración única y consecutiva.
     expect(files.map((f) => Number(f.slice(0, 4)))).toEqual(files.map((_, i) => i + 1));
     expect(tables(db)).toEqual([
       'admin_audit',
-      'admin_credentials',
-      'admin_enrollments',
       'admin_identities',
       'admin_roles',
-      'admin_sessions',
       'auth_attempts',
       'change_log',
       'clubs',

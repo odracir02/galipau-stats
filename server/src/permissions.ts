@@ -64,13 +64,8 @@ export function isReadOnly(action: Action): boolean {
 }
 
 /**
- * Operaciones que exigen haber verificado la credencial fuerte hace poco,
- * aunque la sesión siga abierta.
+ * Operaciones críticas: solo con un token de la aplicación de Access de
+ * operaciones críticas, configurada para pedir de nuevo el segundo factor
+ * (ver docs/AUTENTICACION_ADMIN.md).
  */
-export const RECENT_AUTH_ACTIONS: readonly (ClubAction | PlatformAction)[] = [
-  'club.admins.manage',
-  'platform.clubs.manage',
-];
-
-/** Margen para considerar reciente la verificación fuerte. */
-export const RECENT_AUTH_MINUTES = 15;
+export const CRITICAL_ACTIONS: readonly (ClubAction | PlatformAction)[] = ['club.admins.manage', 'platform.clubs.manage'];

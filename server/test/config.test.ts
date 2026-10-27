@@ -1,6 +1,7 @@
 // La configuración de entornos no debe permitir tocar producción por accidente.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { accessConfig } from '../src/access';
 
 interface D1Binding {
   binding: string;
@@ -59,5 +60,36 @@ describe('entornos del Worker', () => {
       expect(cmd).not.toMatch(/--remote|wrangler deploy(?!.*--dry-run)|secret put/);
     }
     expect(read('../.dev.vars.example')).toMatch(/TOKEN_PEPPER=solo-para-desarrollo-local/);
+  });
+
+  it('Cloudflare Access: misma configuración en todos los entornos, sin atajos de desarrollo', () => {
+    for (const [env, cfg] of Object.entries(envs)) {
+      for (const key of ['ACCESS_TEAM_DOMAIN', 'ACCESS_AUD_ADMIN', 'ACCESS_AUD_CRITICAL']) expect(Object.keys(cfg.vars), env).toContain(key);
+      // Ninguna variable que desactive o simule la autenticación.
+      for (const key of Object.keys(cfg.vars)) expect(key, env).not.toMatch(/BYPASS|SKIP|INSECURE|FAKE|MOCK|DEV_AUTH|NO_AUTH/i);
+    }
+    // En local no hay Access: la administración queda desactivada, no abierta.
+    expect(accessConfig(envs.local!.vars)).toBeNull();
+    // Si se rellenan, preview y producción no pueden compartir aplicaciones de Access.
+    const p = envs.preview!.vars;
+    const q = envs.production!.vars;
+    if (p.ACCESS_AUD_ADMIN && q.ACCESS_AUD_ADMIN) {
+      expect(p.ACCESS_AUD_ADMIN).not.toBe(q.ACCESS_AUD_ADMIN);
+      expect(p.ACCESS_AUD_CRITICAL).not.toBe(q.ACCESS_AUD_CRITICAL);
+    }
+    for (const v of [p, q]) if (v.ACCESS_TEAM_DOMAIN) expect(accessConfig(v)).not.toBeNull();
+  });
+});
+
+describe('superficie de acceso al Worker', () => {
+  it('las operaciones críticas están desactivadas en todos los entornos del repositorio', () => {
+    // Solo se habilitan tras verificar a mano el segundo factor en Cloudflare.
+    for (const [env, cfg] of Object.entries(envs)) expect(cfg.vars.ADMIN_CRITICAL_OPS, env).toBe('disabled');
+  });
+
+  it('sin URLs de vista previa por versión en ningún entorno', () => {
+    const raw = config as unknown as { preview_urls?: boolean; env: Record<string, { preview_urls?: boolean }> };
+    expect(raw.preview_urls).toBe(false);
+    for (const e of Object.values(raw.env)) expect(e.preview_urls ?? false).toBe(false);
   });
 });
