@@ -164,6 +164,9 @@ Según la documentación de Access, **la aplicación de la ruta más específica
 - Se incluye cada ruta con y sin `/*`, porque un comodín en la ruta no cubre la ruta padre.
 - Una política compartida (*reusable policy*) para los correos evita que las listas se desincronicen, pero cada aplicación debe tenerla asignada.
 - Copiar el *Application Audience (AUD) Tag* de cada aplicación y el dominio del equipo en `server/wrangler.jsonc` (`ACCESS_TEAM_DOMAIN`, `ACCESS_AUD_ADMIN`, `ACCESS_AUD_CRITICAL`). No son secretos.
+  - El dominio va con esquema: `https://<equipo>.cloudflareaccess.com`, igual que el emisor (`iss`) de los JWT.
+  - `ACCESS_AUD_CRITICAL` es opcional: sin ella, la administración general funciona y las operaciones críticas quedan desactivadas aunque `ADMIN_CRITICAL_OPS` diga `enabled`.
+  - Preview: equipo y aplicación general ya configurados; la crítica, pendiente.
 - Cada entorno con sus propias aplicaciones; una prueba impide que preview y producción compartan AUD.
 
 ### 4. Despliegue

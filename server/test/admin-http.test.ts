@@ -206,3 +206,17 @@ describe('peticiones que llegan al Worker sin pasar por Access', () => {
     expect(await dots.json()).toMatchObject({ error: 'unauthorized' });
   });
 });
+
+describe('Access general configurado sin aplicación crítica (estado actual de preview)', () => {
+  beforeEach(() => {
+    env = { ...env, ACCESS_AUD_CRITICAL: '', ADMIN_CRITICAL_OPS: 'enabled' };
+  });
+
+  it('la administración general funciona; las operaciones críticas siguen desactivadas', async () => {
+    expect((await call('/api/admin/me', { email: OWNER })).status).toBe(200);
+    const res = await call('/api/admin/critical/clubs', { email: OWNER, critical: true, method: 'POST', body: { name: 'X' } });
+    expect(res).toMatchObject({ status: 503, body: { error: 'critical_disabled' } });
+    expect(db.sqlite.prepare("SELECT COUNT(*) AS n FROM clubs").get()).toEqual({ n: 2 });
+  });
+});
+

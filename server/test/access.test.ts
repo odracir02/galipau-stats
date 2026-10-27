@@ -39,11 +39,29 @@ describe('configuración de Access', () => {
     expect(accessConfig({ ...ok, ACCESS_TEAM_DOMAIN: 'https://atacante.example.com' })).toBeNull();
     expect(accessConfig({ ...ok, ACCESS_TEAM_DOMAIN: 'https://x.cloudflareaccess.com.atacante.com' })).toBeNull();
     expect(accessConfig({ ...ok, ACCESS_AUD_ADMIN: '' })).toBeNull();
-    expect(accessConfig({ ...ok, ACCESS_AUD_CRITICAL: CONFIG.adminAud })).toBeNull();
+    // Sin aplicación crítica válida (vacía, corta o igual a la general), la
+    // administración general funciona y las operaciones críticas no, aunque se pidan.
+    for (const bad of ['', 'corta', CONFIG.adminAud]) {
+      expect(accessConfig({ ...ok, ACCESS_AUD_CRITICAL: bad, ADMIN_CRITICAL_OPS: 'enabled' })).toEqual({
+        ...CONFIG,
+        criticalAud: '',
+        criticalEnabled: false,
+      });
+    }
   });
 });
 
 describe('verificación del JWT de Access', () => {
+  it('sin aplicación crítica configurada ningún token es crítico, ni siquiera con audiencia vacía', async () => {
+    const noCritical = { ...CONFIG, criticalAud: '', criticalEnabled: false };
+    const normal = await verifyAccessJwt(await issuer.sign(claimsFor('o@example.com')), noCritical);
+    expect(normal.critical).toBe(false);
+    const withEmpty = await issuer.sign({ ...claimsFor('o@example.com'), aud: [CONFIG.adminAud, ''] });
+    expect((await verifyAccessJwt(withEmpty, noCritical)).critical).toBe(false);
+    const onlyEmpty = await issuer.sign({ ...claimsFor('o@example.com'), aud: [''] });
+    expect(await codeOf(verifyAccessJwt(onlyEmpty, noCritical))).toBe('401 access_invalid');
+  });
+
   it('acepta un token auténtico y distingue la aplicación crítica', async () => {
     const normal = await verifyAccessJwt(await issuer.sign(claimsFor('Owner@Example.com')), CONFIG);
     expect(normal).toMatchObject({ email: 'owner@example.com', sub: 'sub-Owner@Example.com', critical: false });

@@ -14,6 +14,7 @@ Base técnica para clubes, equipos, permisos y sincronización. **La aplicación
 | Cliente de sincronización en la aplicación | **Pendiente** |
 | Base de datos D1 de preview (`galipau-stats-preview`, jurisdicción UE) | **Creada**, con las migraciones 0001 y 0002 aplicadas |
 | Worker de preview (`galipau-stats-api-preview`) | Preparado para su primer despliegue (ver [Primer despliegue de preview](#primer-despliegue-de-preview)); **no desplegado** |
+| Cloudflare Access de preview | Equipo `shiny-star-4f59` y aplicación general (`/api/admin`, `/api/admin/*`, solo el superadministrador) **creados** y configurados en `wrangler.jsonc`. Aplicación crítica **pendiente**. |
 | Base de datos D1 de producción, Workers, secretos y Access | **No creados** |
 
 Relacionado: [Sincronización](SINCRONIZACION.md) · [Permisos, seguridad y privacidad](SEGURIDAD.md).
@@ -148,12 +149,12 @@ Nuevas migraciones: `npx wrangler d1 migrations create DB <nombre>` crea `000N_<
 
 ## Primer despliegue de preview
 
-Estado previsto justo después de desplegar, sin Access ni secretos:
+Estado previsto justo después de desplegar, con la aplicación general de Access configurada, sin aplicación crítica y sin secretos:
 
 | Ruta | Respuesta | Por qué |
 | ---- | --------- | ------- |
 | `GET /api/health` | 200 `{ ok, environment: "preview" }` | Pública; no consulta la base de datos |
-| `/api/admin/*` (cualquier método y ruta) | **503** `admin_disabled` | Sin `ACCESS_TEAM_DOMAIN`/AUD no hay forma de autenticarse; las cabeceras falsificadas se ignoran |
+| `/api/admin/*` (salvo las críticas) | **401** sin un JWT válido de la aplicación general; **403** si la identidad no tiene rol en D1 | Access filtra antes de llegar al Worker; el Worker vuelve a verificar el JWT y las cabeceras falsificadas se ignoran |
 | `/api/admin/critical/*` | **503** `critical_disabled` | `ADMIN_CRITICAL_OPS = "disabled"` |
 | Rutas de dispositivos (`/api/teams/…`, `/api/sync/…`) | **503** `not_configured` mientras falte `TOKEN_PEPPER`; después **401** sin token válido | No llegan a la base de datos sin clave; aún no hay dispositivos (no existe la ruta de canje) |
 

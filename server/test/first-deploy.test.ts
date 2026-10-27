@@ -1,8 +1,10 @@
 // El Worker de preview tal como quedará justo después del primer despliegue:
-// variables reales de wrangler.jsonc (sin Access, operaciones críticas
-// desactivadas), base de datos migrada y, al principio, sin TOKEN_PEPPER.
+// variables reales de wrangler.jsonc (Access general configurado, sin
+// aplicación crítica, operaciones críticas desactivadas), base de datos
+// migrada y, al principio, sin TOKEN_PEPPER.
 import { readFileSync } from 'node:fs';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { accessConfig, clearJwksCache } from '../src/access';
 import { buildBootstrapSql } from '../scripts/bootstrap-superadmin.mjs';
 import worker, { MIN_PEPPER_LENGTH, type Env } from '../src/index';
 import { addDevice, PEPPER, twoClubs } from './seed';
@@ -26,6 +28,15 @@ beforeEach(() => {
   db.sqlite.exec(buildBootstrapSql({ identityId: 'owner', email: OWNER }));
   // Sin TOKEN_PEPPER: aún no se ha ejecutado «wrangler secret put».
   env = { DB: db, ...PREVIEW_VARS } as unknown as Env;
+  // Nada de red en las pruebas: si se intentara pedir claves a Access, fallaría.
+  clearJwksCache();
+  vi.stubGlobal('fetch', vi.fn(async () => {
+    throw new Error('Sin red en las pruebas');
+  }));
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+  clearJwksCache();
 });
 
 const call = (path: string, init: RequestInit = {}) => worker.fetch(new Request(`https://galipau-stats-api-preview.example.workers.dev${path}`, init), env);
@@ -48,9 +59,19 @@ const ADMIN_REQUESTS: [string, string, unknown?][] = [
 ];
 
 describe('primer despliegue de preview (sin Access ni secretos)', () => {
-  it('la configuración de preview no tiene Access ni operaciones críticas', () => {
-    expect(PREVIEW_VARS).toMatchObject({ ENVIRONMENT: 'preview', ACCESS_TEAM_DOMAIN: '', ADMIN_CRITICAL_OPS: 'disabled' });
+  it('preview tiene la aplicación general de Access y ninguna operación crítica habilitada', () => {
+    expect(PREVIEW_VARS).toMatchObject({
+      ENVIRONMENT: 'preview',
+      ACCESS_TEAM_DOMAIN: 'https://shiny-star-4f59.cloudflareaccess.com',
+      ACCESS_AUD_CRITICAL: '',
+      ADMIN_CRITICAL_OPS: 'disabled',
+    });
     expect(PREVIEW_VARS).not.toHaveProperty('TOKEN_PEPPER');
+    const config = accessConfig(PREVIEW_VARS);
+    expect(config).toMatchObject({ teamDomain: 'https://shiny-star-4f59.cloudflareaccess.com', criticalAud: '', criticalEnabled: false });
+    expect(config?.adminAud).toMatch(/^[0-9a-f]{64}$/);
+    // Aunque alguien pusiera ADMIN_CRITICAL_OPS = enabled, sin aplicación crítica no se habilitan.
+    expect(accessConfig({ ...PREVIEW_VARS, ADMIN_CRITICAL_OPS: 'enabled' })?.criticalEnabled).toBe(false);
   });
 
   it('/api/health funciona sin ninguna configuración', async () => {
@@ -59,7 +80,7 @@ describe('primer despliegue de preview (sin Access ni secretos)', () => {
     expect(await res.json()).toEqual({ ok: true, environment: 'preview' });
   });
 
-  it('toda la administración responde 503 sin datos, con o sin cabeceras falsificadas, y no escribe nada', async () => {
+  it('sin un JWT de Access válido, la administración responde 401 (y las críticas 503), sin datos y sin escribir nada', async () => {
     const before = snapshot();
     const forged: Record<string, string>[] = [
       {},
@@ -71,7 +92,7 @@ describe('primer despliegue de preview (sin Access ni secretos)', () => {
       for (const [method, path, body] of ADMIN_REQUESTS) {
         const res = await call(path, { method, headers: { ...headers, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
         const text = await res.text();
-        expect(res.status, `${method} ${path}`).toBe(503);
+        expect(res.status, `${method} ${path}`).toBe(path.startsWith('/api/admin/critical') ? 503 : 401);
         expect(Object.keys(JSON.parse(text)).sort()).toEqual(['error', 'message']);
         expect(text).not.toContain(OWNER);
         expect(text).not.toContain('owner');
@@ -110,7 +131,7 @@ describe('primer despliegue de preview (sin Access ni secretos)', () => {
     expect((await call('/api/teams/a1', { headers: auth })).status).toBe(200);
     expect((await call('/api/teams/b1', { headers: auth })).status).toBe(404);
     expect((await call('/api/sync/events', { method: 'POST', headers: auth, body: '{"opId":"o","teamId":"a1","event":{"id":"e"}}' })).status).toBe(403);
-    // Y la administración sigue desactivada.
-    expect((await call('/api/admin/me', { headers: auth })).status).toBe(503);
+    // Un token de dispositivo no sirve para administrar.
+    expect((await call('/api/admin/me', { headers: auth })).status).toBe(401);
   });
 });

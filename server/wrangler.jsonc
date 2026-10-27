@@ -44,9 +44,11 @@
       "vars": {
         "ENVIRONMENT": "preview",
         "ALLOWED_ORIGINS": "https://develop.galipau-stats.pages.dev",
-        // Se rellenan al crear las aplicaciones de Access (no son secretos).
-        "ACCESS_TEAM_DOMAIN": "",
-        "ACCESS_AUD_ADMIN": "",
+        // Cloudflare Access de preview (no son secretos). La aplicación general
+        // (/api/admin y /api/admin/*) ya existe; la crítica todavía no, y sin
+        // ella las operaciones críticas quedan desactivadas.
+        "ACCESS_TEAM_DOMAIN": "https://shiny-star-4f59.cloudflareaccess.com",
+        "ACCESS_AUD_ADMIN": "9da0c4c7f3a26ff248541f69dea8e2b8a82cfea1b7d6108f9504e7ed89a07143",
         "ACCESS_AUD_CRITICAL": "",
         // Desactivadas hasta verificar el segundo factor en Cloudflare (ver docs).
         "ADMIN_CRITICAL_OPS": "disabled"

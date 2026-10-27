@@ -11,7 +11,7 @@ export interface AccessConfig {
   teamDomain: string;
   /** AUD de la aplicación de Access de administración. */
   adminAud: string;
-  /** AUD de la aplicación de Access de operaciones críticas. */
+  /** AUD de la aplicación de Access de operaciones críticas; vacío si no existe. */
   criticalAud: string;
   /**
    * Operaciones críticas habilitadas. El JWT de Access no indica qué factor se
@@ -58,8 +58,17 @@ export function accessConfig(env: {
   const teamDomain = (env.ACCESS_TEAM_DOMAIN ?? '').trim().replace(/\/+$/, '');
   const adminAud = (env.ACCESS_AUD_ADMIN ?? '').trim();
   const criticalAud = (env.ACCESS_AUD_CRITICAL ?? '').trim();
-  if (!TEAM_DOMAIN.test(teamDomain) || adminAud.length < 16 || criticalAud.length < 16 || adminAud === criticalAud) return null;
-  return { teamDomain, adminAud, criticalAud, criticalEnabled: env.ADMIN_CRITICAL_OPS === 'enabled' };
+  if (!TEAM_DOMAIN.test(teamDomain) || adminAud.length < 16) return null;
+  // La aplicación crítica es opcional. Sin ella (o mal configurada) la
+  // administración general funciona y las operaciones críticas quedan
+  // desactivadas, diga lo que diga ADMIN_CRITICAL_OPS.
+  const criticalValid = criticalAud.length >= 16 && criticalAud !== adminAud;
+  return {
+    teamDomain,
+    adminAud,
+    criticalAud: criticalValid ? criticalAud : '',
+    criticalEnabled: criticalValid && env.ADMIN_CRITICAL_OPS === 'enabled',
+  };
 }
 
 // --- Claves públicas (JWKS) ----------------------------------------------------
@@ -144,7 +153,7 @@ export async function verifyAccessJwt(token: string | null, config: AccessConfig
 
   const nowS = nowMs / 1000;
   const aud = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-  const critical = aud.includes(config.criticalAud);
+  const critical = config.criticalAud !== '' && aud.includes(config.criticalAud);
   const admin = aud.includes(config.adminAud);
   if (payload.iss !== config.teamDomain || (!critical && !admin)) throw invalid();
   if (typeof payload.exp !== 'number' || payload.exp + LEEWAY_S < nowS) throw invalid();
