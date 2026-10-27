@@ -1,0 +1,21 @@
+# Cabeceras para Cloudflare Pages (se copian a dist/ en el build).
+
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+
+# El service worker se revalida siempre para que las versiones nuevas lleguen.
+/sw.js
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Cache-Control: no-cache
+
+# Recursos con huella en el nombre: cambian de nombre en cada versión.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

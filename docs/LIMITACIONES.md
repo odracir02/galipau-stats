@@ -3,8 +3,9 @@
 ## Datos
 
 - **Todo vive en este dispositivo y este navegador.** Si se borran los datos del sitio, se desinstala la PWA en algunos sistemas, se usa el modo incógnito o se pierde el móvil, los datos se pierden. Todavía no hay sincronización ni copias de seguridad.
-- En iPhone, Safari puede borrar los datos de webs **no instaladas** tras unos días sin uso. Conviene instalar la PWA en la pantalla de inicio (la sincronización prevista es la solución de fondo).
-- PWA instalada y navegador son almacenamientos distintos en iOS: los datos de uno no se ven en el otro.
+- En iPhone, Safari puede borrar los datos de webs **no instaladas** tras 7 días sin uso. La app instalada en la pantalla de inicio no sufre ese borrado (la sincronización prevista es la solución de fondo).
+- En iOS, la app instalada y Safari tienen almacenamientos distintos: los datos de uno no se ven en el otro. Hay que instalarla antes de crear datos.
+- Eliminar la app de la pantalla de inicio borra sus datos. Ver [DESPLIEGUE.md](DESPLIEGUE.md#datos-en-ios).
 - Si se abre el mismo partido en dos pestañas a la vez, la última escritura del partido (reloj, marcador) gana. No hay bloqueo entre pestañas.
 
 ## Cronómetro
@@ -24,6 +25,8 @@
 
 ## PWA
 
+- En iOS no hay aviso automático de instalación: Safari → Compartir → «Añadir a pantalla de inicio».
+- iOS ignora la orientación del manifiesto, y mantener la pantalla encendida puede fallar con la app instalada en versiones anteriores a iOS 18.4 (alternativa: Bloqueo automático → Nunca).
 - El service worker solo funciona con `npm run build && npm run preview` o en HTTPS. En `npm run dev` no hay modo sin conexión.
 - Para probar desde el móvil por wifi (`--host`) la página carga, pero sin HTTPS no se instala como PWA ni funciona sin conexión.
 - La primera visita debe hacerse con conexión para que se descarguen los recursos.

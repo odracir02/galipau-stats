@@ -32,7 +32,7 @@ React 19 · TypeScript (estricto) · Vite · vite-plugin-pwa (Workbox) · Indexe
 
 ## Instalación
 
-Requisitos: Node.js 20 o superior y npm.
+Requisitos: Node.js 22.12 o superior (el proyecto fija Node 24 en `.node-version`) y npm.
 
 ```bash
 git clone <url-del-repositorio> galipau-stats
@@ -53,7 +53,7 @@ npm run build
 npm run preview    # → http://localhost:4173
 ```
 
-Desde un móvil en la misma red: `npm run preview -- --host` y abrir la dirección IP que aparece. Sin HTTPS los navegadores no instalan la PWA ni activan el modo sin conexión; para eso hace falta un entorno publicado con HTTPS.
+Desde un móvil en la misma red: `npm run preview -- --host` y abrir la dirección IP que aparece. Sin HTTPS los navegadores no instalan la PWA ni activan el modo sin conexión; para eso hace falta un entorno publicado con HTTPS (ver [Despliegue](docs/DESPLIEGUE.md)).
 
 ## Pruebas y calidad
 
@@ -89,6 +89,7 @@ Principios:
 ## Documentación
 
 - [Arquitectura](docs/ARQUITECTURA.md)
+- [Despliegue e instalación en iPhone](docs/DESPLIEGUE.md)
 - [Modelo de dominio y eventos](docs/MODELO_DATOS.md)
 - [Fórmulas estadísticas](docs/FORMULAS.md)
 - [Sistema de diseño](docs/DISENO.md)
