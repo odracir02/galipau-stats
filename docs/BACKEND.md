@@ -12,7 +12,9 @@ Base técnica para clubes, equipos, permisos y sincronización. **La aplicación
 | Rutas de canje de códigos, alta de equipos, gestión de códigos, transferencia de partidos | **Pendiente** |
 | Paneles de administración | **Pendiente** |
 | Cliente de sincronización en la aplicación | **Pendiente** |
-| Recursos en Cloudflare (D1, Worker, secretos) | **No creados** |
+| Base de datos D1 de preview (`galipau-stats-preview`, jurisdicción UE) | **Creada**, con las migraciones 0001 y 0002 aplicadas |
+| Worker de preview (`galipau-stats-api-preview`) | Preparado para su primer despliegue (ver [Primer despliegue de preview](#primer-despliegue-de-preview)); **no desplegado** |
+| Base de datos D1 de producción, Workers, secretos y Access | **No creados** |
 
 Relacionado: [Sincronización](SINCRONIZACION.md) · [Permisos, seguridad y privacidad](SEGURIDAD.md).
 
@@ -115,7 +117,7 @@ La lógica de invitaciones ([`invites.ts`](../server/src/invites.ts)) y la de cr
 | preview | `galipau-stats-api-preview` | `galipau-stats-preview` | `https://develop.galipau-stats.pages.dev` |
 | production | `galipau-stats-api` | `galipau-stats-production` | `https://galipau-stats.pages.dev` |
 
-Pruebas y producción usan bases de datos distintas. Los `database_id` de preview y production en `wrangler.jsonc` son marcadores (`00000000-…`) hasta que se creen las bases reales.
+Pruebas y producción usan bases de datos distintas. La de preview ya existe en Cloudflare, creada con jurisdicción de la Unión Europea, y su `database_id` real está en `wrangler.jsonc`. La de producción todavía no existe: su `database_id` es un marcador (`00000000-…`) hasta que se cree. La jurisdicción se fija al crear la base y no requiere ningún campo en la configuración.
 
 Configuración:
 
@@ -144,25 +146,86 @@ Ninguno de estos comandos necesita una cuenta de Cloudflare ni toca recursos rem
 
 Nuevas migraciones: `npx wrangler d1 migrations create DB <nombre>` crea `000N_<nombre>.sql`. Nunca se edita una migración ya aplicada en preview o producción.
 
+## Primer despliegue de preview
+
+Estado previsto justo después de desplegar, sin Access ni secretos:
+
+| Ruta | Respuesta | Por qué |
+| ---- | --------- | ------- |
+| `GET /api/health` | 200 `{ ok, environment: "preview" }` | Pública; no consulta la base de datos |
+| `/api/admin/*` (cualquier método y ruta) | **503** `admin_disabled` | Sin `ACCESS_TEAM_DOMAIN`/AUD no hay forma de autenticarse; las cabeceras falsificadas se ignoran |
+| `/api/admin/critical/*` | **503** `critical_disabled` | `ADMIN_CRITICAL_OPS = "disabled"` |
+| Rutas de dispositivos (`/api/teams/…`, `/api/sync/…`) | **503** `not_configured` mientras falte `TOKEN_PEPPER`; después **401** sin token válido | No llegan a la base de datos sin clave; aún no hay dispositivos (no existe la ruta de canje) |
+
+Ninguna ruta crea administradores ni concede permisos. El primer superadministrador solo se crea por consola. Las pruebas `server/test/first-deploy.test.ts` reproducen este estado con las variables reales de `preview`, también con cabeceras falsificadas, y comprueban que no se escribe nada.
+
+### Secretos
+
+Solo uno es obligatorio: **`TOKEN_PEPPER`** (al menos 32 caracteres; 32 bytes aleatorios). No se escribe en ningún archivo ni en el historial de la terminal. Wrangler lo pide de forma interactiva:
+
+```bash
+# 1. Generar el valor (se muestra una vez en pantalla; no redirigirlo a ningún archivo)
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+# 2. Pegarlo cuando Wrangler lo pida
+npx wrangler secret put TOKEN_PEPPER --env preview
+```
+
+- Guardarlo en un gestor de contraseñas.
+- Producción tendrá **otro** valor distinto.
+- Cambiarlo invalida todos los tokens y códigos de ese entorno.
+- `ACCESS_*` y `ADMIN_CRITICAL_OPS` no son secretos: van en `wrangler.jsonc`.
+
+### Comandos (desde `server/`, solo con autorización)
+
+```bash
+npx wrangler whoami                                   # cuenta correcta
+npx wrangler deploy --dry-run --env preview           # revisar bindings: DB = galipau-stats-preview
+npx wrangler deploy --env preview                     # despliegue
+npx wrangler secret put TOKEN_PEPPER --env preview    # inmediatamente después
+```
+
+- Hasta configurar el secreto, las rutas de dispositivos responden 503 (sin efecto: aún no hay dispositivos).
+- Ejecutar `secret put` antes del primer `deploy` también funciona, pero Wrangler crearía el Worker vacío solo para guardar el secreto.
+
+Comprobación tras desplegar:
+
+- `/api/health` → 200;
+- `/api/admin/me` → 503;
+- `/api/teams/x` → 401 tras configurar el secreto.
+
+### URL y Cloudflare Access después
+
+- URL: `https://galipau-stats-api-preview.<subdominio-de-la-cuenta>.workers.dev`. El subdominio es el de la cuenta (*Workers → Settings → Subdomain*) y Wrangler lo muestra al desplegar.
+- Las URLs de vista previa por versión están desactivadas (`preview_urls: false`).
+- **No usar** la protección de Access «a nivel de Worker» (el interruptor de *Domains & Routes*): protege todos los hostnames y rutas del Worker y bloquearía las rutas de entrenadores y familias.
+- **Usar aplicaciones de Access autoalojadas por ruta** sobre el hostname `workers.dev` del Worker:
+  - `/api/admin` y `/api/admin/*`;
+  - `/api/admin/critical` y `/api/admin/critical/*`, con su propia política.
+  - Ver [AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#configuración-pendiente-en-cloudflare).
+- Las rutas `/api/health`, `/api/teams/*` y `/api/sync/*` quedan fuera de Access; las protege el token de dispositivo.
+- La documentación de Workers admite aplicaciones por hostname `workers.dev` y por ruta, pero no muestra un ejemplo con ambas cosas a la vez. **Hay que comprobarlo** al crearlas (paso 4 de la verificación manual). Si no funcionara, la alternativa es un dominio propio para la API.
+- El Worker sigue validando el JWT de Access por su cuenta, aunque Cloudflare ofrezca la identidad en `ctx.access`. Así el control no depende de cómo esté configurada la protección.
+
 ## Pasos manuales en Cloudflare (próxima fase, con autorización)
 
-Nada de esto se ha hecho. Requiere `npx wrangler login` con tu cuenta.
+Requiere `npx wrangler login` con tu cuenta. Hecho hasta ahora: la base de datos de preview y sus migraciones.
 
 1. Crear las bases de datos y copiar cada `database_id` en `server/wrangler.jsonc`:
-   ```bash
-   npx wrangler d1 create galipau-stats-preview
-   npx wrangler d1 create galipau-stats-production
-   ```
+   - preview: **hecho** (`galipau-stats-preview`, jurisdicción UE);
+   - producción: pendiente, con la misma jurisdicción:
+     ```bash
+     npx wrangler d1 create galipau-stats-production --jurisdiction=eu
+     ```
 2. Configurar el secreto de cada entorno con un valor aleatorio largo y distinto en cada uno (por ejemplo, `openssl rand -base64 32`). No se apunta en ningún archivo:
    ```bash
    npx wrangler secret put TOKEN_PEPPER --env preview
    npx wrangler secret put TOKEN_PEPPER --env production
    ```
-3. Aplicar las migraciones en remoto, primero en preview:
+3. Aplicar las migraciones en remoto: preview **hecho** (0001 y 0002):
    ```bash
    npx wrangler d1 migrations apply DB --env preview --remote
    ```
-4. Desplegar el Worker de preview: `npx wrangler deploy --env preview`.
+4. Desplegar el Worker de preview: ver [Primer despliegue de preview](#primer-despliegue-de-preview).
 5. Decidir la URL de la API: `*.workers.dev` o una ruta propia. Si cambia, actualizar `ALLOWED_ORIGINS`.
 6. Añadir a la aplicación la URL de la API por entorno (variable de build en Pages) cuando exista el cliente de sincronización (005C).
 7. Producción, solo tras validar preview: pasos 3 y 4 con `--env production`.

@@ -32,6 +32,12 @@
 
 ## PWA
 
+- **Icono provisional (pendiente):** hay que sustituirlo por el diseño aprobado de la rana de GalipauStats cuando se disponga del archivo gráfico definitivo (preferiblemente vectorial). Hay que regenerar:
+  - `favicon.svg`;
+  - `apple-touch-icon.png` (180 × 180, iPhone, sin transparencia);
+  - `pwa-192.png` y `pwa-512.png` (Android y manifiesto);
+  - `pwa-512-maskable.png` (con margen de seguridad para recortes circulares).
+  - También hay que revisar las entradas `icons` del manifiesto en `vite.config.ts` y el color de fondo. El script `scripts/generate-icons.mjs` genera los PNG actuales.
 - En iOS no hay aviso automático de instalación: Safari → Compartir → «Añadir a pantalla de inicio».
 - iOS ignora la orientación del manifiesto, y mantener la pantalla encendida puede fallar con la app instalada en versiones anteriores a iOS 18.4 (alternativa: Bloqueo automático → Nunca).
 - El service worker solo funciona con `npm run build && npm run preview` o en HTTPS. En `npm run dev` no hay modo sin conexión.

@@ -26,7 +26,7 @@ import { applyEventOp, pullChanges, type EventOp } from './sync';
 export interface Env {
   DB: Db;
   /** Clave para el HMAC de tokens y códigos. Secret de Cloudflare, nunca en el repositorio. */
-  TOKEN_PEPPER: string;
+  TOKEN_PEPPER?: string;
   /** local | preview | production */
   ENVIRONMENT: string;
   /** Orígenes de la aplicación separados por comas (CORS). No aplica a /api/admin. */
@@ -40,6 +40,9 @@ export interface Env {
   /** «enabled» solo tras verificar a mano el segundo factor en Cloudflare; si no, 503. */
   ADMIN_CRITICAL_OPS?: string;
 }
+
+/** Longitud mínima de TOKEN_PEPPER (32 bytes aleatorios en base64url ocupan 43). */
+export const MIN_PEPPER_LENGTH = 32;
 
 function json(body: unknown, status = 200, headers: HeadersInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -91,7 +94,11 @@ async function route(request: Request, env: Env): Promise<Response> {
 
   if (parts[1] === 'admin') return adminRoute(request, env, parts.slice(2));
 
-  const auth = await authenticate(env.DB, bearerToken(request), env.TOKEN_PEPPER);
+  // Sin la clave configurada (p. ej. justo tras el primer despliegue) las rutas
+  // de dispositivos se rechazan, sin llegar a la base de datos.
+  const pepper = env.TOKEN_PEPPER ?? '';
+  if (pepper.length < MIN_PEPPER_LENGTH) throw new HttpError(503, 'not_configured', 'El servidor no está configurado todavía.');
+  const auth = await authenticate(env.DB, bearerToken(request), pepper);
 
   if (request.method === 'GET' && parts[1] === 'teams' && parts[2] && parts.length === 3) {
     const team = await authorize(env.DB, auth, parts[2], 'team.read');

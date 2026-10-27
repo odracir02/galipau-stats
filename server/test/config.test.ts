@@ -1,5 +1,5 @@
 // La configuración de entornos no debe permitir tocar producción por accidente.
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { accessConfig } from '../src/access';
 
@@ -93,3 +93,31 @@ describe('superficie de acceso al Worker', () => {
     for (const e of Object.values(raw.env)) expect(e.preview_urls ?? false).toBe(false);
   });
 });
+
+describe('base de datos de preview', () => {
+  it('preview usa su base real; producción sigue sin base asignada', () => {
+    const preview = envs.preview!.d1_databases[0]!;
+    const production = envs.production!.d1_databases[0]!;
+    expect(preview).toMatchObject({ database_name: 'galipau-stats-preview', database_id: '9efcbd78-45c7-4b7f-9c68-fd9782fcd642' });
+    // Mientras no exista la base de producción, su identificador es un marcador
+    // que no puede corresponder a ninguna base real.
+    expect(production.database_id).toMatch(/^0{8}-0{4}-0{4}-0{4}-0{11}[0-9]$/);
+    expect(envs.local!.d1_databases[0]!.database_id).toMatch(/^0{8}-/);
+  });
+
+  it('preview se publica en workers.dev sin URLs de vista previa por versión', () => {
+    const raw = config as unknown as { env: { preview: { workers_dev?: boolean } } };
+    expect(raw.env.preview.workers_dev).toBe(true);
+  });
+
+  it('el código del Worker no contiene secretos', () => {
+    const dir = new URL('../src/', import.meta.url);
+    for (const file of readdirSync(dir)) {
+      const src = readFileSync(new URL(file, dir), 'utf8');
+      // Ninguna asignación de un valor literal a la clave.
+      expect(src, file).not.toMatch(/TOKEN_PEPPER\s*[:=]\s*['"`][^'"`]/);
+      expect(src, file).not.toMatch(/-----BEGIN|sk-[A-Za-z0-9]{20}|ghp_[A-Za-z0-9]{20}/);
+    }
+  });
+});
+

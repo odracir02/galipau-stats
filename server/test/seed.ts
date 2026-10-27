@@ -7,7 +7,7 @@ import type { AdminRole, AuthContext } from '../src/model';
 import { generateToken, hashSecret } from '../src/secrets';
 import type { SqliteD1 } from './sqliteD1';
 
-export const PEPPER = 'clave-de-pruebas';
+export const PEPPER = 'clave-de-pruebas-solo-para-tests-0123456789';
 export const NOW = '2026-10-27T10:00:00.000Z';
 
 function insert(db: SqliteD1, table: string, row: object): void {
