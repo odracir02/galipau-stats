@@ -20,7 +20,7 @@ Campos comunes: `id`, `matchId`, `playerId` (null = **pendiente de atribución**
 
 | `kind`              | Campos extra                                                 | Quién              |
 | ------------------- | ------------------------------------------------------------ | ------------------ |
-| `shot`              | `shotType`: `nine_m` `six_m` `penalty` `fast_break`; `result`: `goal` `out` `saved` | Jugador de campo |
+| `shot`              | `shotType`: `nine_m` `six_m` `penalty` `fast_break`; `result`: `goal` `out` `saved` | Cualquier convocado (porteros incluidos, p. ej. portería vacía) |
 | `gk_shot`           | `shotType`: `nine_m` `six_m` `wing` `fast_break` `penalty`; `result`: `goal` `save` `out` | Portero |
 | `turnover`          | `turnoverType`: `general` `steps` `double` `bad_pass`        | Cualquier convocado |
 | `recovery`          | —                                                            | Cualquier convocado |
@@ -45,4 +45,4 @@ Un evento de pasos/dobles/pase fallado es **un único evento** (`turnover` con s
 ## Validación
 
 - La acción debe pertenecer al catálogo (`assertValidPayload`).
-- El jugador debe estar convocado; `shot` solo a jugadores de campo y `gk_shot` solo a porteros. Si al corregir se cambia a un tipo incompatible con el jugador, el editor deja la acción **sin asignar** (nunca se reasigna a otro jugador).
+- El jugador debe estar convocado. `gk_shot` (lanzamiento recibido) solo a porteros. `shot` (lanzamiento propio) a cualquier convocado: un gol de portero cuenta como lanzamiento ofensivo suyo y suma al marcador propio, nunca como lanzamiento recibido. Si al corregir se cambia a un tipo incompatible con el jugador, el editor deja la acción **sin asignar** (nunca se reasigna a otro jugador).

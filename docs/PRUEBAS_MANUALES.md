@@ -65,3 +65,22 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 39. Abrir el partido finalizado. ✔ Se abre en Estadísticas; se puede corregir desde la cronología; ⋮ → Reabrir.
 40. Pestaña Temporada con dos partidos. ✔ Totales sumados; PJ por jugador; porcentajes sobre totales.
 41. Cambiar nombre o dorsal de un jugador en la plantilla. ✔ Los partidos anteriores muestran el nombre/dorsal de entonces.
+
+## H. Gol de portero
+
+42. Lanzamiento → «Gol» 9 m → en la selección de autor, los porteros aparecen al final con la etiqueta «POR»; elegir un portero. ✔ Marcador propio +1.
+43. Estadísticas → Porteros. ✔ Aparece la columna G/L; el % de paradas del portero no cambia.
+44. Ficha del portero. ✔ Incluye la sección «Lanzamientos» con su gol; «Lanzamientos recibidos» no cambia.
+
+## I. Diseño y ergonomía
+
+45. Probar en tres tamaños de DevTools: 390 × 844, 375 × 667 (iPhone SE) y 360 × 780.
+    - ✔ La cabecera no tapa ningún botón.
+    - ✔ La barra inferior no tapa contenido.
+    - ✔ El botón de pausa siempre es visible.
+46. Ajustar el reloj a 24:55 y esperar al 25:00. ✔ Aparece «quedan 05:00» sin que nada se desplace.
+47. Pulsar varias acciones seguidas. ✔ El aviso inferior nunca bloquea un botón.
+48. Abrir el editor de una acción justo después de registrar. ✔ El aviso no tapa el formulario.
+49. Con teclado (ordenador):
+    - ✔ Tab recorre los botones con un foco visible.
+    - ✔ Escape cierra las hojas.

@@ -150,16 +150,40 @@ describe('registro de eventos', () => {
     expect(await repo.listEvents(match.id)).toHaveLength(1);
   });
 
-  it('rechaza lanzamientos asignados a porteros y paradas asignadas a jugadores de campo', async () => {
+  it('rechaza lanzamientos recibidos asignados a jugadores de campo', async () => {
     const match = await newMatch();
     const t = { period: 1 as const, matchTimeMs: 0 };
-    await expect(
-      recordEvent(repo, match, { kind: 'shot', shotType: 'nine_m', result: 'goal' }, id('g1'), t),
-    ).rejects.toThrow(ValidationError);
     await expect(
       recordEvent(repo, match, { kind: 'gk_shot', shotType: 'nine_m', result: 'save' }, id('p7'), t),
     ).rejects.toThrow(ValidationError);
     expect(await repo.listEvents(match.id)).toHaveLength(0);
+  });
+
+  it('un portero puede marcar: gol ofensivo suyo, marcador propio, no es lanzamiento recibido', async () => {
+    const match = await newMatch();
+    const t = { period: 2 as const, matchTimeMs: 58 * MINUTE_MS };
+    await recordEvent(repo, match, { kind: 'shot', shotType: 'nine_m', result: 'goal' }, id('g1'), t);
+    await recordEvent(repo, match, { kind: 'shot', shotType: 'nine_m', result: 'out' }, id('g1'), t);
+    await recordEvent(repo, match, { kind: 'gk_shot', shotType: 'six_m', result: 'save' }, id('g1'), t);
+    const stats = computeMatchStats(match, await repo.listEvents(match.id));
+    const g1 = stats.players.get(id('g1'))!;
+    expect(g1.shots).toEqual({ goals: 1, out: 1, saved: 0, attempts: 2 });
+    expect(g1.gk).toEqual({ goals: 0, saves: 1, out: 0, received: 1 });
+    expect(stats.score).toMatchObject({ own: 1, opponent: 0 });
+    expect(stats.team.shots.goals).toBe(1);
+    expect(stats.team.gk.received).toBe(1);
+  });
+
+  it('un gol de jugador de campo corregido a portero conserva el total colectivo', async () => {
+    const match = await newMatch();
+    const t = { period: 1 as const, matchTimeMs: 0 };
+    const e = await recordEvent(repo, match, { kind: 'shot', shotType: 'nine_m', result: 'goal' }, id('p7'), t);
+    await updateEvent(repo, match, e, { playerId: id('g12') });
+    const stats = computeMatchStats(match, await repo.listEvents(match.id));
+    expect(stats.players.get(id('p7'))!.shots.goals).toBe(0);
+    expect(stats.players.get(id('g12'))!.shots.goals).toBe(1);
+    expect(stats.players.get(id('g12'))!.gk.received).toBe(0);
+    expect(stats.score.own).toBe(1);
   });
 
   it('permite acciones generales de porteros (pérdida, recuperación)', async () => {

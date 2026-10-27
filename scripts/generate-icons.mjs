@@ -3,8 +3,8 @@
 import { writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 
-const NAVY = [15, 39, 66];
-const ORANGE = [245, 130, 32];
+const DARK = [23, 33, 44]; // #17212C
+const RED = [201, 36, 61]; // #C9243D
 const WHITE = [255, 255, 255];
 
 const CRC_TABLE = new Uint32Array(256).map((_, n) => {
@@ -51,7 +51,7 @@ function encodePng(size, pixel) {
   ]);
 }
 
-// Balón naranja con dos costuras blancas sobre fondo azul marino.
+// Balón rojo con costuras blancas sobre fondo oscuro.
 function icon(size, { scale, rounded }) {
   const c = size / 2;
   const R = (size / 2) * scale;
@@ -63,13 +63,13 @@ function icon(size, { scale, rounded }) {
       if (dx * dx + dy * dy > corner * corner) return [0, 0, 0, 0];
     }
     const d = Math.hypot(x - c, y - c);
-    if (d > R) return [...NAVY, 255];
+    if (d > R) return [...DARK, 255];
     if (d > R * 0.9) return [...WHITE, 255];
     const seam = R * 0.06;
     const nx = (x - c) / R;
     const curve = Math.abs(Math.abs(nx) - 0.42 * (1 - ((y - c) / R) ** 2) - 0.12);
     if (Math.abs(y - c) < seam || curve * R < seam) return [...WHITE, 255];
-    return [...ORANGE, 255];
+    return [...RED, 255];
   };
 }
 

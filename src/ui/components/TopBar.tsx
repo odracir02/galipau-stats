@@ -1,7 +1,9 @@
+import { ChevronLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { Icon } from './Icon';
 
 interface TopBarProps {
-  title: string;
+  title: ReactNode;
   subtitle?: string;
   back?: () => void;
   actions?: ReactNode;
@@ -12,7 +14,7 @@ export function TopBar({ title, subtitle, back, actions }: TopBarProps) {
     <header className="topbar">
       {back && (
         <button type="button" className="icon-btn" onClick={back} aria-label="Volver">
-          ←
+          <Icon as={ChevronLeft} size={24} />
         </button>
       )}
       <div className="topbar-title">

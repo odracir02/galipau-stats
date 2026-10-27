@@ -1,9 +1,11 @@
+import { ArrowLeft, Coffee, Flag, Minus, Plus, RotateCcw, Scale, Timer, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import { elapsedMs, MINUTE_MS } from '../../clock/clock';
 import { useNow } from '../../app/useNow';
 import { formatClock, parseClock } from '../../domain/format';
 import type { Match, ScoreAdjustment } from '../../domain/types';
 import type { Score } from '../../stats/engine';
+import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
 
 /** Ajuste manual del cronómetro: botones rápidos o un tiempo exacto. */
@@ -99,7 +101,7 @@ export function ScoreSheet({
           onClick={() => onChange({ ...adj, [key]: value - 1 })}
           aria-label={`Restar un gol a ${label}`}
         >
-          −
+          <Icon as={Minus} />
         </button>
         <span className="stepper-value">{Math.max(0, fromEvents + value)}</span>
         <button
@@ -108,7 +110,7 @@ export function ScoreSheet({
           onClick={() => onChange({ ...adj, [key]: value + 1 })}
           aria-label={`Sumar un gol a ${label}`}
         >
-          +
+          <Icon as={Plus} />
         </button>
       </div>
     </div>
@@ -145,21 +147,32 @@ interface MenuProps {
 
 export function MatchMenuSheet(p: MenuProps) {
   const finished = p.match.status === 'finished';
-  const item = (label: string, action: () => void, cls = '') => (
-    <button type="button" className={`menu-item ${cls}`} onClick={action}>
+  const canHalftime = !finished && p.match.clock.period === 1 && p.match.status !== 'halftime';
+  const item = (label: string, icon: LucideIcon, action: () => void, cls = '') => (
+    <button type="button" className={'menu-item ' + cls} onClick={action}>
+      <Icon as={icon} />
       {label}
     </button>
   );
   return (
     <Sheet title="Partido" onClose={p.onClose}>
       <div className="menu">
-        {!finished && item('Ajustar cronómetro', p.onAdjustClock)}
-        {item('Corregir marcador', p.onScore)}
-        {!finished && p.match.clock.period === 1 && p.match.status !== 'halftime' && item('Descanso (fin de la 1.ª parte)', p.onHalftime)}
-        {!finished && item(`Finalizar partido${p.pendingCount ? ` (${p.pendingCount} sin asignar)` : ''}`, p.onFinish, 'menu-danger')}
-        {finished && item('Reabrir partido', p.onReopen)}
-        {item('Volver al equipo', p.onExit)}
+        {!finished && item('Ajustar cronómetro', Timer, p.onAdjustClock)}
+        {item('Corregir marcador', Scale, p.onScore)}
+        {canHalftime && item('Descanso (fin de la 1.ª parte)', Coffee, p.onHalftime)}
+        {finished && item('Reabrir partido', RotateCcw, p.onReopen)}
+        {item('Volver al equipo', ArrowLeft, p.onExit)}
       </div>
+      {!finished && (
+        <div className="menu">
+          {item(
+            'Finalizar partido' + (p.pendingCount ? ' (' + p.pendingCount + ' sin asignar)' : ''),
+            Flag,
+            p.onFinish,
+            'menu-danger',
+          )}
+        </div>
+      )}
     </Sheet>
   );
 }

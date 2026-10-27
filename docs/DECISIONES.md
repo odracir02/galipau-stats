@@ -19,5 +19,9 @@
 | D15 | Wake Lock de pantalla durante el partido (si el navegador lo admite) | Evita que el móvil se bloquee durante el registro. No es imprescindible: el reloj no depende de ello. |
 | D16 | `navigator.storage.persist()` al arrancar | Reduce el riesgo de que el navegador borre los datos por falta de espacio. No es una garantía. |
 | D17 | Partido válido para temporada si se ha iniciado o tiene acciones | Evita contar convocatorias de partidos creados por error y nunca jugados. |
-| D18 | Porteros: lanzamientos solo a jugadores de campo y paradas solo a porteros | Lo indica la especificación. Si un portero lanzase a portería vacía, hoy habría que registrarlo como pendiente (ver limitaciones). |
+| D18 | Lanzamientos recibidos solo a porteros; lanzamientos propios a cualquier convocado | Un portero puede marcar (portería vacía). En la selección de autor los porteros aparecen al final, marcados «POR». |
 | D19 | Iconos PNG generados con un script propio sin dependencias | Evita instalar herramientas de imagen solo para cuatro iconos. |
+| D20 | Sistema de diseño con tokens CSS centralizados en `src/styles.css` | Una sola fuente para colores, espaciado, radios y tipografía. Ver [DISENO.md](DISENO.md). |
+| D21 | Iconos de `lucide-react` | Un único juego homogéneo (mismo trazo); solo se empaquetan los iconos usados. |
+| D22 | Tipografía Inter empaquetada (solo subconjunto latino) | Aspecto uniforme en Android e iPhone y disponible sin conexión (≈48 kB). |
+| D23 | Cronómetro y botón de pausa en la misma fila de la cabecera | Gana altura útil para el registro sin reducir el área táctil del botón (60 px). |

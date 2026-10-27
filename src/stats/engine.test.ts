@@ -300,3 +300,16 @@ describe('estadísticas de temporada', () => {
     expect(season.intervals![1]!.counters.gk.goals).toBe(1);
   });
 });
+
+describe('gol de portero', () => {
+  it('cuenta como lanzamiento ofensivo del portero y en el marcador propio, nunca como recibido', () => {
+    const s = stats([ev(goal('fast_break'), 'g1'), ev({ kind: 'gk_shot', shotType: 'nine_m', result: 'goal' }, 'g1')]);
+    const g = s.players.get('g1')!;
+    expect(g.shots).toEqual({ goals: 1, out: 0, saved: 0, attempts: 1 });
+    expect(g.shotsByType.fast_break.goals).toBe(1);
+    expect(efficiency(g.shots)).toBe(100);
+    expect(g.gk).toEqual({ goals: 1, saves: 0, out: 0, received: 1 });
+    expect(savePct(g.gk)).toBe(0);
+    expect(s.score).toMatchObject({ own: 1, opponent: 1 });
+  });
+});

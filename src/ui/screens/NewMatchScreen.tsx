@@ -1,3 +1,4 @@
+import { Check } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
@@ -7,6 +8,7 @@ import { todayLocal } from '../../domain/format';
 import { newId } from '../../domain/ids';
 import type { Id, Player, Team, Venue } from '../../domain/types';
 import { createMatch, previousSquadIds } from '../../services/matchService';
+import { Icon } from '../components/Icon';
 import { Segmented } from '../components/Segmented';
 import { TopBar } from '../components/TopBar';
 
@@ -91,6 +93,7 @@ function NewMatchForm({ team, players, proposal }: { team: Team; players: Player
           >
             <span className="dorsal">{p.number}</span>
             <span className="squad-name">{p.name}</span>
+            {selected.has(p.id) && <Icon as={Check} size={18} className="squad-check" />}
           </button>
         ))}
       </div>
@@ -127,8 +130,8 @@ function NewMatchForm({ team, players, proposal }: { team: Team; players: Player
 
         <div className="squad-head">
           <strong>Convocatoria</strong>
-          <span className={total > max ? 'over' : 'muted'}>
-            {nField} campo + {nGk} porteros = {total}/{max}
+          <span className={total > max ? 'squad-count over' : 'squad-count'}>
+            {nField} campo · {nGk} porteros · <strong>{total}/{max}</strong>
           </span>
         </div>
         {usedPrevious && (

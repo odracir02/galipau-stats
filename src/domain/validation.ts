@@ -43,11 +43,7 @@ export function assertEligiblePlayer(match: Pick<Match, 'squad'>, kind: MatchEve
   const entry = match.squad.find((s) => s.playerId === playerId);
   if (!entry) throw new ValidationError('El jugador no está convocado en este partido.');
   if (!eligiblePositions(kind).includes(entry.position)) {
-    throw new ValidationError(
-      kind === 'gk_shot'
-        ? 'Los lanzamientos recibidos solo pueden asignarse a porteros.'
-        : 'Los lanzamientos solo pueden asignarse a jugadores de campo.',
-    );
+    throw new ValidationError('Los lanzamientos recibidos solo pueden asignarse a porteros.');
   }
 }
 

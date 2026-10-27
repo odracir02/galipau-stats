@@ -45,7 +45,7 @@ Enrutado por hash, sin librería: `#/`, `#/team/:id`, `#/team/:id/new-match`, `#
 
 `vite-plugin-pwa` (Workbox `generateSW`) precachea todos los recursos del build. Tras la primera carga correcta la app funciona sin red. `registerType: 'prompt'`: cuando hay versión nueva se muestra un aviso y **solo se actualiza si el usuario pulsa «Actualizar»**, para no recargar la app en mitad de un partido.
 
-## Preparación para sincronización (tarea posterior)
+## Preparación para sincronización
 
 - Identificadores UUID generados en el dispositivo para equipos, jugadores, partidos y eventos.
 - Todas las escrituras son `put` por id: repetirlas no duplica (idempotencia).

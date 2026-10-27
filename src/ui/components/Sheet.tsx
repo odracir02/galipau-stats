@@ -1,4 +1,6 @@
+import { X } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
+import { Icon } from './Icon';
 
 interface SheetProps {
   title: string;
@@ -21,7 +23,7 @@ export function Sheet({ title, onClose, children, footer }: SheetProps) {
         <div className="sheet-head">
           <h2>{title}</h2>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Cerrar">
-            ✕
+            <Icon as={X} />
           </button>
         </div>
         <div className="sheet-body">{children}</div>

@@ -1,64 +1,95 @@
 # GalipauStats
 
-Estadísticas de balonmano para entrenadores. El segundo entrenador registra el partido en directo desde el móvil; después se consultan las estadísticas del partido y de la temporada.
+Aplicación de estadísticas de balonmano para cuerpos técnicos. Durante el partido, un entrenador registra cada acción desde el móvil en dos o tres pulsaciones; después, el equipo técnico consulta el rendimiento del equipo, de cada jugador y de cada portero, por partido y por temporada.
 
-**Estado:** beta local (Tarea 001). Todo se guarda en el propio dispositivo (IndexedDB). Todavía no hay sincronización, cuentas, PDF ni despliegue.
+Funciona sin conexión a Internet: está pensada para pabellones sin cobertura.
 
-## Requisitos
+> **Estado:** beta. Los datos se guardan en el propio dispositivo. La sincronización entre dispositivos, los informes PDF y las gráficas avanzadas están previstos para versiones posteriores.
 
-- Node.js 20 o superior (desarrollado con Node 24) y npm.
+## Funcionalidades
 
-## Ejecutar en local
+- **Equipos y plantillas:** código corto por equipo, temporada, dorsales únicos y jugadores de campo y porteros. Los partidos conservan el nombre y el dorsal que tenía cada jugador en ese momento.
+- **Partidos:** rival, fecha, local o visitante y convocatoria, con propuesta automática de la convocatoria anterior.
+- **Cronómetro orientativo:** iniciar, pausar, ajustar, descanso y segunda parte. Muestra una cuenta atrás en los últimos cinco minutos de cada parte y se recupera tras bloquear el móvil, cambiar de aplicación o recargar.
+- **Registro en directo:** primero la acción y después el jugador.
+  - Lanzamientos: 9 m, 6 m, penalti y contraataque; resultado gol, fuera o parada.
+  - Portería: lanzamientos recibidos según procedencia.
+  - Pérdidas: pasos, dobles, pase fallado y otras.
+  - Recuperaciones y sanciones.
+  - Deshacer siempre visible y acciones pendientes de atribuir.
+- **Corrección:** cronología editable, acciones olvidadas y corrección del marcador separada de las estadísticas.
+- **Estadísticas:**
+  - Equipo: ataque, defensa, portería e intervalos de 5 minutos.
+  - Fichas completas de cada jugador y de cada portero.
+  - Acumulados de temporada calculados sobre totales.
+- **Instalable (PWA):** se añade a la pantalla de inicio en Android y iPhone.
+
+## Tecnologías
+
+React 19 · TypeScript (estricto) · Vite · vite-plugin-pwa (Workbox) · IndexedDB (`idb`) · Vitest · ESLint · lucide-react · Inter
+
+## Instalación
+
+Requisitos: Node.js 20 o superior y npm.
 
 ```bash
+git clone <url-del-repositorio> galipau-stats
+cd galipau-stats
 npm install
-npm run dev          # desarrollo: http://localhost:5173
 ```
 
-Para probar la PWA y el modo sin conexión hay que usar el build de producción (el service worker no se activa en `dev`):
+## Desarrollo local
+
+```bash
+npm run dev        # servidor de desarrollo → http://localhost:5173
+```
+
+El modo sin conexión solo funciona con el build de producción:
 
 ```bash
 npm run build
-npm run preview      # http://localhost:4173
+npm run preview    # → http://localhost:4173
 ```
 
-Para probar desde un móvil en la misma red wifi: `npm run preview -- --host` y abrir la IP que muestra. Ojo: fuera de `localhost` los navegadores solo instalan la PWA y activan el service worker con **HTTPS**, así que la prueba completa de instalación sin conexión en el móvil necesitará la vista previa publicada de una tarea posterior.
+Desde un móvil en la misma red: `npm run preview -- --host` y abrir la dirección IP que aparece. Sin HTTPS los navegadores no instalan la PWA ni activan el modo sin conexión; para eso hace falta un entorno publicado con HTTPS.
 
-## Scripts
+## Pruebas y calidad
 
-| Script              | Qué hace                                       |
-| ------------------- | ---------------------------------------------- |
-| `npm run dev`       | Servidor de desarrollo                         |
-| `npm run build`     | Comprobación de tipos + build de producción    |
-| `npm run preview`   | Sirve el build (con service worker)            |
-| `npm test`          | Pruebas automatizadas (Vitest)                 |
-| `npm run lint`      | ESLint                                         |
-| `npm run typecheck` | TypeScript estricto                            |
-| `npm run check`     | lint + test + build                            |
-| `npm run icons`     | Regenera los iconos PNG de la PWA              |
+```bash
+npm test           # pruebas automatizadas (motor estadístico, cronómetro, persistencia…)
+npm run lint       # ESLint
+npm run typecheck  # TypeScript
+npm run check      # lint + pruebas + build
+```
 
-> **Windows:** si `npm test` falla con «Vitest failed to find the runner», la terminal está en `c:\…` (unidad en minúscula). Abre la terminal en `C:\…` o haz `cd C:\Users\...\GalipauStats` y repite.
+> **Windows:** si `npm test` falla con «Vitest failed to find the runner», la terminal está en `c:\…` (unidad en minúscula). Abre la terminal en `C:\…` y repite.
 
-## Estructura
+## Arquitectura
 
 ```
 src/
-  domain/      Tipos, catálogo de acciones, validación, utilidades (sin React)
-  clock/       Cronómetro puro basado en referencias temporales
-  stats/       Motor estadístico (funciones puras)
-  data/        Interfaz Repository + implementación IndexedDB
-  services/    Reglas de negocio: equipos, partidos, eventos
-  app/         Infraestructura de UI: rutas, avisos, hooks
-  ui/          Pantallas y componentes React
-docs/          Documentación interna
-scripts/       Utilidades (generación de iconos)
+  domain/    Tipos, catálogo de acciones y validación (sin dependencias de interfaz)
+  clock/     Cronómetro basado en referencias temporales
+  stats/     Motor estadístico: funciones puras que derivan las cifras de los eventos
+  data/      Interfaz de repositorio + implementación IndexedDB
+  services/  Reglas de negocio de equipos, partidos y eventos
+  app/       Rutas, avisos y hooks
+  ui/        Pantallas y componentes
+docs/        Documentación técnica
+scripts/     Utilidades (generación de iconos)
 ```
+
+Principios:
+
+- **Los eventos son la fuente de verdad.** Las estadísticas se recalculan siempre a partir de ellos, de modo que corregir o borrar una acción actualiza todo de forma automática.
+- **Cada acción se guarda en el dispositivo antes de darse por registrada.** Las escrituras son idempotentes y los identificadores se generan en el propio dispositivo, para preparar la sincronización futura.
 
 ## Documentación
 
 - [Arquitectura](docs/ARQUITECTURA.md)
 - [Modelo de dominio y eventos](docs/MODELO_DATOS.md)
 - [Fórmulas estadísticas](docs/FORMULAS.md)
+- [Sistema de diseño](docs/DISENO.md)
 - [Decisiones técnicas](docs/DECISIONES.md)
 - [Limitaciones conocidas](docs/LIMITACIONES.md)
 - [Guía de pruebas manuales](docs/PRUEBAS_MANUALES.md)

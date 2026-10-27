@@ -1,7 +1,10 @@
+import { ChevronRight, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
 import { useLoad } from '../../app/useLoad';
+import { Icon } from '../components/Icon';
+import { Brand } from '../components/Logo';
 import { TopBar } from '../components/TopBar';
 import { OngoingMatchBanner } from './OngoingMatchBanner';
 import { TeamFormSheet } from './TeamFormSheet';
@@ -12,14 +15,14 @@ export function TeamsScreen() {
 
   return (
     <div className="screen">
-      <TopBar title="GalipauStats" subtitle="Estadísticas de balonmano" />
+      <TopBar title={<Brand />} subtitle="Estadísticas de balonmano" />
       <main className="content">
         <OngoingMatchBanner />
         {teams.error && <p className="form-error">{teams.error}</p>}
         {teams.data?.length === 0 && (
-          <div className="empty">
-            <p>Todavía no hay equipos en este dispositivo.</p>
-            <p className="hint">Crea tu equipo y añade su plantilla para empezar a registrar partidos.</p>
+          <div className="empty-card">
+            <strong>Todavía no hay equipos en este dispositivo</strong>
+            <span>Crea tu equipo y añade su plantilla para empezar a registrar partidos.</span>
           </div>
         )}
         <ul className="list">
@@ -32,13 +35,14 @@ export function TeamsScreen() {
                     {t.code} · Temporada {t.season}
                   </span>
                 </span>
-                <span className="chevron">›</span>
+                <Icon as={ChevronRight} className="chevron" />
               </button>
             </li>
           ))}
         </ul>
         <button type="button" className="btn btn-primary btn-block" onClick={() => setCreating(true)}>
-          + Nuevo equipo
+          <Icon as={Plus} />
+          Nuevo equipo
         </button>
       </main>
       {creating && (

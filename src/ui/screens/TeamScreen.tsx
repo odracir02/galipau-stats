@@ -1,3 +1,4 @@
+import { ChevronRight, Pencil, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
@@ -7,9 +8,11 @@ import { formatDate } from '../../domain/format';
 import { MATCH_STATUS_LABEL } from '../../domain/catalog';
 import type { Id, Match, Player, Team } from '../../domain/types';
 import { computeMatchStats, computeSeasonStats, perMatch } from '../../stats/engine';
+import { Icon } from '../components/Icon';
 import { Segmented } from '../components/Segmented';
 import { TopBar } from '../components/TopBar';
 import { StatsView } from '../stats/StatsView';
+import { Tile } from '../stats/StatTables';
 import { OngoingMatchBanner } from './OngoingMatchBanner';
 import { PlayerFormSheet } from './PlayerFormSheet';
 import { TeamFormSheet } from './TeamFormSheet';
@@ -33,7 +36,7 @@ export function TeamScreen({ teamId }: { teamId: Id }) {
         back={() => navigate({ name: 'teams' })}
         actions={
           <button type="button" className="icon-btn" onClick={() => setEditingTeam(true)} aria-label="Editar equipo">
-            ✎
+            <Icon as={Pencil} />
           </button>
         }
       />
@@ -83,10 +86,16 @@ function MatchList({ team }: { team: Team }) {
         className="btn btn-primary btn-block btn-lg"
         onClick={() => navigate({ name: 'newMatch', teamId: team.id })}
       >
-        + Nuevo partido
+        <Icon as={Plus} />
+        Nuevo partido
       </button>
       {data.error && <p className="form-error">{data.error}</p>}
-      {data.data?.length === 0 && <p className="empty">Todavía no hay partidos.</p>}
+      {data.data?.length === 0 && (
+        <div className="empty-card">
+          <strong>Todavía no hay partidos</strong>
+          <span>Crea el primero para empezar a registrar estadísticas.</span>
+        </div>
+      )}
       <ul className="list">
         {data.data?.map(({ match, score }) => (
           <li key={match.id}>
@@ -129,7 +138,8 @@ function Roster({ team }: { team: Team }) {
   return (
     <>
       <button type="button" className="btn btn-primary btn-block" onClick={() => setEditing({ key: Date.now() })}>
-        + Añadir jugador
+        <Icon as={Plus} />
+        Añadir jugador
       </button>
       {players.error && <p className="form-error">{players.error}</p>}
       {groups.map(([title, group]) => (
@@ -151,7 +161,7 @@ function Roster({ team }: { team: Team }) {
                     <strong>{p.name}</strong>
                     {!p.active && <span className="muted">Inactivo</span>}
                   </span>
-                  <span className="chevron">›</span>
+                  <Icon as={ChevronRight} className="chevron" />
                 </button>
               </li>
             ))}
@@ -235,27 +245,25 @@ function SeasonPanel({ team }: { team: Team }) {
           intervals={stats.intervals}
           pendingCount={stats.pendingCount}
           summary={
-            <section className="card">
-              <h3>Temporada {season}</h3>
-              <div className="summary-grid">
-                <div>
-                  <span className="big">{stats.matches}</span>
-                  <span className="muted">partidos</span>
-                </div>
-                <div>
-                  <span className="big">{stats.goalsFor}</span>
-                  <span className="muted">a favor · {avg(perMatch(stats.goalsFor, stats.matches))}/p</span>
-                </div>
-                <div>
-                  <span className="big">{stats.goalsAgainst}</span>
-                  <span className="muted">en contra · {avg(perMatch(stats.goalsAgainst, stats.matches))}/p</span>
-                </div>
+            <>
+              <div className="tiles">
+                <Tile label="Partidos" value={stats.matches} />
+                <Tile
+                  label="A favor"
+                  value={stats.goalsFor}
+                  sub={`${avg(perMatch(stats.goalsFor, stats.matches))}/p`}
+                />
+                <Tile
+                  label="En contra"
+                  value={stats.goalsAgainst}
+                  sub={`${avg(perMatch(stats.goalsAgainst, stats.matches))}/p`}
+                />
               </div>
               <p className="hint">
-                Los goles a favor/en contra incluyen correcciones manuales del marcador; el resto de cifras solo las
+                Goles a favor y en contra incluyen las correcciones manuales del marcador; el resto de cifras, solo las
                 acciones registradas.
               </p>
-            </section>
+            </>
           }
         />
       )}

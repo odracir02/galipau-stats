@@ -20,3 +20,14 @@ npm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Bases de datos y estado local
+*.db
+*.sqlite
+*.sqlite3
+.wrangler/
+
+# Artefactos de pruebas
+test-results/
+playwright-report/
+*.local

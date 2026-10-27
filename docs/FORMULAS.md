@@ -4,7 +4,9 @@ Implementación: [`src/stats/engine.ts`](../src/stats/engine.ts). Pruebas: `src/
 
 Todas las cifras se calculan a partir de los eventos **no borrados**. Un porcentaje sin denominador se muestra como «—» (sin datos), nunca como 0 %.
 
-## Jugadores de campo y equipo (ataque)
+## Lanzamientos propios y equipo (ataque)
+
+Se aplican a cualquier autor de un lanzamiento, también a un portero que marca (p. ej. a portería vacía).
 
 | Métrica            | Fórmula                                       |
 | ------------------ | --------------------------------------------- |

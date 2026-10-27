@@ -1,3 +1,4 @@
+import { ChartColumn, List, SquarePen } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { errorMessage } from '../../app/errors';
 import { repo } from '../../app/repo';
@@ -12,7 +13,7 @@ import type { EventPayload, Id, Match, MatchEvent, ScoreAdjustment, Team } from 
 import * as svc from '../../services/matchService';
 import { computeMatchStats } from '../../stats/engine';
 import { ConfirmSheet } from '../components/Sheet';
-import { Segmented } from '../components/Segmented';
+import { Icon } from '../components/Icon';
 import { ClockHeader } from '../match/ClockHeader';
 import { EventEditorSheet } from '../match/EventEditorSheet';
 import { playerLabel } from '../match/labels';
@@ -46,6 +47,12 @@ export function MatchScreen({ matchId }: { matchId: Id }) {
 }
 
 type Tab = 'record' | 'timeline' | 'stats';
+
+const TABS = [
+  { value: 'record', label: 'Registro', icon: SquarePen },
+  { value: 'timeline', label: 'Cronología', icon: List },
+  { value: 'stats', label: 'Estadísticas', icon: ChartColumn },
+] as const satisfies readonly { value: Tab; label: string; icon: unknown }[];
 type Overlay =
   | { name: 'menu' }
   | { name: 'clock' }
@@ -97,7 +104,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
     attempt(async () => {
       const e = await svc.recordEvent(repo, matchRef.current, payload, playerId, timing);
       setEvents((prev) => upsert(prev, e));
-      showToast(`✓ ${describePayload(e)} · ${playerLabel(squad, e.playerId)}`);
+      showToast(`${describePayload(e)} · ${playerLabel(squad, e.playerId)}`);
     });
 
   const toggleClock = () =>
@@ -192,20 +199,23 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
         )}
       </main>
 
-      <nav className="tabbar">
-        <Segmented
-          ariaLabel="Vista del partido"
-          value={tab}
-          onChange={(t) => {
-            if (t === 'timeline') setTimelineFilter('all');
-            setTab(t);
-          }}
-          options={[
-            { value: 'record', label: 'Registro' },
-            { value: 'timeline', label: 'Cronología', badge: pending },
-            { value: 'stats', label: 'Estadísticas' },
-          ]}
-        />
+      <nav className="tabbar" aria-label="Vista del partido">
+        {TABS.map((t) => (
+          <button
+            key={t.value}
+            type="button"
+            className="tab"
+            aria-current={tab === t.value ? 'page' : undefined}
+            onClick={() => {
+              if (t.value === 'timeline') setTimelineFilter('all');
+              setTab(t.value);
+            }}
+          >
+            <Icon as={t.icon} size={22} />
+            {t.label}
+            {t.value === 'timeline' && pending > 0 && <span className="badge">{pending}</span>}
+          </button>
+        ))}
       </nav>
 
       {overlay?.name === 'menu' && (
@@ -330,8 +340,8 @@ function MatchSummaryCard({
       </p>
       {adjusted && (
         <p className="hint">
-          Incluye corrección manual del marcador (nosotros {fmtSigned(s.ownAdjustment)}, rival{' '}
-          {fmtSigned(s.opponentAdjustment)}). Por acciones registradas: {s.ownFromEvents} – {s.opponentFromEvents}.
+          Por acciones: {s.ownFromEvents}–{s.opponentFromEvents} · Corrección manual: nosotros{' '}
+          {fmtSigned(s.ownAdjustment)}, rival {fmtSigned(s.opponentAdjustment)}
         </p>
       )}
     </section>

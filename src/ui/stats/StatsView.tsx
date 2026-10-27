@@ -9,8 +9,7 @@ import {
 } from '../../stats/engine';
 import { Segmented } from '../components/Segmented';
 import { PlayerCard } from './PlayerCard';
-import { GkSummary, GkTypeTable, KV, ShotTypeTable, type StatRow } from './StatTables';
-
+import { GkSummary, GkTypeTable, KV, ShotTypeTable, Tile, type StatRow } from './StatTables';
 
 interface Props {
   team: Counters;
@@ -61,6 +60,16 @@ function TeamStats({ team, intervals, summary }: { team: Counters; intervals: In
   return (
     <>
       {summary}
+      <div className="tiles">
+        <Tile
+          accent
+          label="Eficacia"
+          value={formatPct(efficiency(team.shots))}
+          sub={`${team.shots.goals}/${team.shots.attempts}`}
+        />
+        <Tile label="% paradas" value={formatPct(savePct(team.gk))} sub={`${team.gk.saves}/${team.gk.saves + team.gk.goals}`} />
+        <Tile label="Pérd. / Rec." value={`${team.turnovers.total} / ${team.recoveries}`} />
+      </div>
       <section className="card">
         <h3>Ataque</h3>
         <dl className="kv">
@@ -149,73 +158,89 @@ interface TableProps {
 function PlayerTable({ rows, mode, onOpen }: TableProps) {
   if (rows.length === 0) return <p className="empty">Sin jugadores de campo.</p>;
   return (
-    <div className="table-scroll">
-      <table className="table table-tap">
-        <thead>
-          <tr>
-            <th>Jugador</th>
-            {mode === 'season' && <th title="Partidos convocado">PJ</th>}
-            <th title="Goles / lanzamientos">G/L</th>
-            <th>Efic.</th>
-            <th title="Pérdidas">Pérd.</th>
-            <th title="Recuperaciones">Rec.</th>
-            <th title="Sanciones">Sanc.</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.playerId} onClick={() => onOpen(r)}>
-              <th scope="row">
-                <span className="dorsal">{r.number}</span> {r.name}
-              </th>
-              {mode === 'season' && <td>{r.matches}</td>}
-              <td>
-                {r.counters.shots.goals}/{r.counters.shots.attempts}
-              </td>
-              <td>{formatPct(efficiency(r.counters.shots))}</td>
-              <td>{r.counters.turnovers.total}</td>
-              <td>{r.counters.recoveries}</td>
-              <td>{sanctions(r.counters)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <>
+      <div className="card table-card">
+        <div className="table-scroll">
+          <table className="table table-tap">
+            <thead>
+              <tr>
+                <th>Jugador</th>
+                {mode === 'season' && <th title="Partidos convocado">PJ</th>}
+                <th title="Goles / lanzamientos">G/L</th>
+                <th>Efic.</th>
+                <th title="Pérdidas">Pérd.</th>
+                <th title="Recuperaciones">Rec.</th>
+                <th title="Sanciones">Sanc.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.playerId} onClick={() => onOpen(r)}>
+                  <th scope="row">
+                    <span className="dorsal">{r.number}</span> {r.name}
+                  </th>
+                  {mode === 'season' && <td>{r.matches}</td>}
+                  <td className="em">
+                    {r.counters.shots.goals}/{r.counters.shots.attempts}
+                  </td>
+                  <td>{formatPct(efficiency(r.counters.shots))}</td>
+                  <td>{r.counters.turnovers.total}</td>
+                  <td>{r.counters.recoveries}</td>
+                  <td>{sanctions(r.counters)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
       <p className="hint">Toca un jugador para ver su ficha completa.</p>
-    </div>
+    </>
   );
 }
 
 function GoalkeeperTable({ rows, mode, onOpen }: TableProps) {
   if (rows.length === 0) return <p className="empty">Sin porteros.</p>;
+  // La columna de goles solo aparece si algún portero ha lanzado (p. ej. a portería vacía).
+  const anyShots = rows.some((r) => r.counters.shots.attempts > 0);
   return (
-    <div className="table-scroll">
-      <table className="table table-tap">
-        <thead>
-          <tr>
-            <th>Portero</th>
-            {mode === 'season' && <th title="Partidos convocado">PJ</th>}
-            <th title="Paradas">Par.</th>
-            <th title="Goles encajados">GC</th>
-            <th>Fuera</th>
-            <th>% par.</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.playerId} onClick={() => onOpen(r)}>
-              <th scope="row">
-                <span className="dorsal">{r.number}</span> {r.name}
-              </th>
-              {mode === 'season' && <td>{r.matches}</td>}
-              <td>{r.counters.gk.saves}</td>
-              <td>{r.counters.gk.goals}</td>
-              <td>{r.counters.gk.out}</td>
-              <td>{formatPct(savePct(r.counters.gk))}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <>
+      <div className="card table-card">
+        <div className="table-scroll">
+          <table className="table table-tap">
+            <thead>
+              <tr>
+                <th>Portero</th>
+                {mode === 'season' && <th title="Partidos convocado">PJ</th>}
+                <th title="Paradas">Par.</th>
+                <th title="Goles encajados">GC</th>
+                <th>Fuera</th>
+                <th>% par.</th>
+                {anyShots && <th title="Goles marcados / lanzamientos">G/L</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.playerId} onClick={() => onOpen(r)}>
+                  <th scope="row">
+                    <span className="dorsal">{r.number}</span> {r.name}
+                  </th>
+                  {mode === 'season' && <td>{r.matches}</td>}
+                  <td>{r.counters.gk.saves}</td>
+                  <td>{r.counters.gk.goals}</td>
+                  <td>{r.counters.gk.out}</td>
+                  <td className="em">{formatPct(savePct(r.counters.gk))}</td>
+                  {anyShots && (
+                    <td>
+                      {r.counters.shots.goals}/{r.counters.shots.attempts}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
       <p className="hint">% paradas = paradas / (paradas + goles). Los lanzamientos fuera no cuentan.</p>
-    </div>
+    </>
   );
 }

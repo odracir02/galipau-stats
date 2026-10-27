@@ -1,6 +1,8 @@
+import { Undo2 } from 'lucide-react';
 import { describePayload } from '../../domain/catalog';
 import { formatClock } from '../../domain/format';
 import type { MatchEvent, SquadEntry } from '../../domain/types';
+import { Icon } from '../components/Icon';
 import { playerLabel } from './labels';
 
 interface Props {
@@ -18,11 +20,13 @@ export function LastActionBar({ last, squad, pendingCount, onUndo, onPending }: 
       <div className="last-text">
         {last ? (
           <>
-            <span className="last-time">{formatClock(last.matchTimeMs)}</span>{' '}
-            <strong>{describePayload(last)}</strong> · {playerLabel(squad, last.playerId)}
+            <span className="last-label">Última · {formatClock(last.matchTimeMs)}</span>
+            <span>
+              <strong>{describePayload(last)}</strong> · {playerLabel(squad, last.playerId)}
+            </span>
           </>
         ) : (
-          <span className="muted">Sin acciones registradas</span>
+          <span className="last-label">Sin acciones registradas</span>
         )}
       </div>
       {pendingCount > 0 && (
@@ -31,7 +35,8 @@ export function LastActionBar({ last, squad, pendingCount, onUndo, onPending }: 
         </button>
       )}
       <button type="button" className="btn btn-undo" onClick={onUndo} disabled={!last}>
-        ↶ Deshacer
+        <Icon as={Undo2} size={18} />
+        Deshacer
       </button>
     </div>
   );

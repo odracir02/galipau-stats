@@ -106,9 +106,11 @@ export const MATCH_STATUS_LABEL: Record<MatchStatus, string> = {
   finished: 'Finalizado',
 };
 
-/** Qué jugadores convocados pueden recibir cada tipo de acción. */
+/**
+ * Qué jugadores convocados pueden recibir cada tipo de acción. Un portero puede
+ * lanzar (p. ej. a portería vacía); solo los porteros reciben lanzamientos.
+ */
 export function eligiblePositions(kind: EventKind): readonly Position[] {
-  if (kind === 'shot') return ['field'];
   if (kind === 'gk_shot') return ['goalkeeper'];
   return ['field', 'goalkeeper'];
 }

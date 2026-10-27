@@ -96,3 +96,16 @@ export function GkTypeTable({ counters }: { counters: Counters }) {
     </table>
   );
 }
+
+/** Cifra clave destacada (eficacia, % paradas…). */
+export function Tile({ label, value, sub, accent }: { label: string; value: ReactNode; sub?: string; accent?: boolean }) {
+  return (
+    <div className={accent ? 'tile tile-accent' : 'tile'}>
+      <span className="tile-value">{value}</span>
+      <span className="tile-label">
+        {label}
+        {sub && ` · ${sub}`}
+      </span>
+    </div>
+  );
+}

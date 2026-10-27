@@ -1,6 +1,7 @@
 // Panel de registro en directo. Regla fundamental: primero la acción y después
 // el jugador. Al completar una acción se vuelve siempre al inicio y nunca queda
 // un jugador seleccionado.
+import { ChevronLeft } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import {
   DEFENSE_KINDS,
@@ -19,7 +20,9 @@ import {
   TURNOVER_TYPES,
 } from '../../domain/catalog';
 import type { EventTiming } from '../../domain/events';
-import type { EventPayload, Id, SquadEntry } from '../../domain/types';
+import type { EventPayload, Id, SimpleEventKind, SquadEntry } from '../../domain/types';
+import { Icon } from '../components/Icon';
+import { ACTION_ICON } from '../components/icons';
 
 type Step =
   | { name: 'home' }
@@ -36,6 +39,11 @@ interface Props {
   /** Guarda la acción; resuelve a true si quedó guardada en el dispositivo. */
   onRecord: (payload: EventPayload, playerId: Id | null, timing: EventTiming) => Promise<boolean>;
 }
+
+const CARD_MARK: Partial<Record<SimpleEventKind, string>> = {
+  yellow: 'card-mark card-mark-yellow',
+  red: 'card-mark card-mark-red',
+};
 
 export function RecordPanel({ squad, getTiming, onRecord }: Props) {
   const [step, setStep] = useState<Step>({ name: 'home' });
@@ -56,41 +64,45 @@ export function RecordPanel({ squad, getTiming, onRecord }: Props) {
   switch (step.name) {
     case 'home':
       return (
-        <div className="rec-home">
-          <button type="button" className="act act-shot" onClick={() => setStep({ name: 'shot', timing: getTiming() })}>
-            <span className="act-title">Lanzamiento</span>
-            <span className="act-sub">Gol · Fuera · Parada</span>
-          </button>
-          <button type="button" className="act act-gk" onClick={() => setStep({ name: 'gk', timing: getTiming() })}>
-            <span className="act-title">Portería</span>
-            <span className="act-sub">Lanzamiento recibido</span>
-          </button>
-          <button
-            type="button"
-            className="act act-turnover"
+        <div className="rec-grid">
+          <ActionButton
+            icon={ACTION_ICON.shot}
+            title="Lanzamiento"
+            sub="Gol · Fuera · Parada"
+            onClick={() => setStep({ name: 'shot', timing: getTiming() })}
+          />
+          <ActionButton
+            icon={ACTION_ICON.gk}
+            title="Portería"
+            sub="Lanzamiento recibido"
+            onClick={() => setStep({ name: 'gk', timing: getTiming() })}
+          />
+          <ActionButton
+            icon={ACTION_ICON.turnover}
+            title="Pérdida"
+            sub="Pasos · Dobles · Pase"
             onClick={() => setStep({ name: 'turnover', timing: getTiming() })}
-          >
-            <span className="act-title">Pérdida</span>
-            <span className="act-sub">Pasos · Dobles · Pase</span>
-          </button>
-          <button type="button" className="act act-recovery" onClick={() => choose({ kind: 'recovery' }, getTiming())}>
-            <span className="act-title">Recuperación</span>
-          </button>
-          <button
-            type="button"
-            className="act act-defense"
+          />
+          <ActionButton
+            icon={ACTION_ICON.recovery}
+            title="Recuperación"
+            sub="Balón recuperado"
+            onClick={() => choose({ kind: 'recovery' }, getTiming())}
+          />
+          <ActionButton
+            wide
+            icon={ACTION_ICON.defense}
+            title="Defensa y sanciones"
+            sub="Amarilla · 2 min · Roja · Golpe franco · Penalti"
             onClick={() => setStep({ name: 'defense', timing: getTiming() })}
-          >
-            <span className="act-title">Defensa y sanciones</span>
-            <span className="act-sub">Amarilla · 2 min · Roja · Golpe franco · Penalti</span>
-          </button>
+          />
         </div>
       );
 
     case 'shot':
       return (
         <StepFrame title="Lanzamiento" onBack={home}>
-          <div className="matrix" style={{ gridTemplateColumns: 'minmax(5.5rem, 1.1fr) repeat(3, 1fr)' }}>
+          <div className="matrix">
             <span />
             {FIELD_SHOT_RESULTS.map((r) => (
               <span key={r} className="matrix-head">
@@ -117,8 +129,8 @@ export function RecordPanel({ squad, getTiming, onRecord }: Props) {
 
     case 'gk':
       return (
-        <StepFrame title="Portería · lanzamiento recibido" onBack={home}>
-          <div className="matrix" style={{ gridTemplateColumns: 'minmax(5.5rem, 1.1fr) repeat(3, 1fr)' }}>
+        <StepFrame title="Lanzamiento recibido" onBack={home}>
+          <div className="matrix">
             <span />
             {GK_SHOT_RESULTS.map((r) => (
               <span key={r} className="matrix-head">
@@ -154,7 +166,7 @@ export function RecordPanel({ squad, getTiming, onRecord }: Props) {
                 className="opt"
                 onClick={() => choose({ kind: 'turnover', turnoverType: t }, step.timing)}
               >
-                {t === 'general' ? 'Pérdida (otra)' : TURNOVER_LABEL[t]}
+                {t === 'general' ? 'Otra pérdida' : TURNOVER_LABEL[t]}
               </button>
             ))}
           </div>
@@ -166,12 +178,8 @@ export function RecordPanel({ squad, getTiming, onRecord }: Props) {
         <StepFrame title="Defensa y sanciones" onBack={home}>
           <div className="options">
             {DEFENSE_KINDS.map((k) => (
-              <button
-                key={k}
-                type="button"
-                className={`opt opt-${k}`}
-                onClick={() => choose({ kind: k }, step.timing)}
-              >
+              <button key={k} type="button" className="opt" onClick={() => choose({ kind: k }, step.timing)}>
+                {CARD_MARK[k] && <span className={CARD_MARK[k]} aria-hidden="true" />}
                 {SIMPLE_KIND_LABEL[k]}
               </button>
             ))}
@@ -181,27 +189,37 @@ export function RecordPanel({ squad, getTiming, onRecord }: Props) {
 
     case 'player': {
       const allowed = eligiblePositions(step.payload.kind);
-      const candidates = squad
-        .filter((s) => allowed.includes(s.position))
-        .sort((a, b) => a.number - b.number);
+      const byNumber = (a: SquadEntry, b: SquadEntry) => a.number - b.number;
+      const field = squad.filter((s) => s.position === 'field' && allowed.includes('field')).sort(byNumber);
+      const gks = squad.filter((s) => s.position === 'goalkeeper' && allowed.includes('goalkeeper')).sort(byNumber);
+      // En lanzamientos los porteros van al final, marcados «POR»: es la excepción (portería vacía).
+      const total = field.length + gks.length;
+      const tile = (s: SquadEntry) => (
+        <button
+          key={s.playerId}
+          type="button"
+          className="player"
+          disabled={saving}
+          onClick={() => void pickPlayer(s.playerId)}
+        >
+          {s.position === 'goalkeeper' && <span className="tag-gk">POR</span>}
+          <span className="player-num">{s.number}</span>
+          <span className="player-name">{s.name}</span>
+        </button>
+      );
       return (
         <StepFrame title={`${describePayload(step.payload)} · ¿quién?`} onBack={home}>
-          <div className={`players ${candidates.length <= 4 ? 'players-few' : ''}`}>
-            {candidates.map((s) => (
-              <button
-                key={s.playerId}
-                type="button"
-                className={`player ${s.position === 'goalkeeper' ? 'player-gk' : ''}`}
-                disabled={saving}
-                onClick={() => void pickPlayer(s.playerId)}
-              >
-                <span className="player-num">{s.number}</span>
-                <span className="player-name">{s.name}</span>
-              </button>
-            ))}
+          <div className={`players ${total <= 4 ? 'players-few' : ''}`}>
+            {field.map(tile)}
+            {gks.map(tile)}
           </div>
-          <button type="button" className="btn btn-block btn-pending" disabled={saving} onClick={() => void pickPlayer(null)}>
-            Sin identificar (asignar después)
+          <button
+            type="button"
+            className="btn btn-block btn-pending"
+            disabled={saving}
+            onClick={() => void pickPlayer(null)}
+          >
+            Sin identificar · asignar después
           </button>
         </StepFrame>
       );
@@ -209,12 +227,33 @@ export function RecordPanel({ squad, getTiming, onRecord }: Props) {
   }
 }
 
+function ActionButton(props: {
+  icon: typeof ACTION_ICON.shot;
+  title: string;
+  sub: string;
+  wide?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={`act ${props.wide ? 'act-wide' : ''}`} onClick={props.onClick}>
+      <span className="act-icon">
+        <Icon as={props.icon} />
+      </span>
+      <span className="act-text">
+        <span className="act-title">{props.title}</span>
+        <span className="act-sub">{props.sub}</span>
+      </span>
+    </button>
+  );
+}
+
 function StepFrame({ title, onBack, children }: { title: string; onBack: () => void; children: ReactNode }) {
   return (
     <div className="rec-step">
       <div className="rec-step-head">
-        <button type="button" className="btn btn-back" onClick={onBack}>
-          ← Cancelar
+        <button type="button" className="btn btn-ghost btn-back" onClick={onBack}>
+          <Icon as={ChevronLeft} />
+          Cancelar
         </button>
         <strong>{title}</strong>
       </div>

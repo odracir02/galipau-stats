@@ -1,8 +1,10 @@
+import { ChevronRight } from 'lucide-react';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
 import { useLoad } from '../../app/useLoad';
 import { formatDate } from '../../domain/format';
 import type { Id, Match } from '../../domain/types';
+import { Icon } from '../components/Icon';
 
 /** Recuperación de partidos interrumpidos: acceso directo a los que siguen abiertos. */
 export function OngoingMatchBanner({ teamId }: { teamId?: Id }) {
@@ -17,10 +19,15 @@ export function OngoingMatchBanner({ teamId }: { teamId?: Id }) {
     <div className="banner-stack">
       {ongoing.data.map((m) => (
         <button key={m.id} type="button" className="banner" onClick={() => navigate({ name: 'match', matchId: m.id })}>
-          <span>
-            <strong>Partido en curso</strong> · vs {m.opponent} · {formatDate(m.date)}
+          <span className="banner-dot" />
+          <span className="banner-text">
+            <strong>Partido en curso · vs {m.opponent}</strong>
+            <span>{formatDate(m.date)} · toca para continuar</span>
           </span>
-          <span className="banner-cta">Continuar ›</span>
+          <span className="banner-cta">
+            Continuar
+            <Icon as={ChevronRight} size={18} />
+          </span>
         </button>
       ))}
     </div>
