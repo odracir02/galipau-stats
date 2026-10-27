@@ -1,4 +1,4 @@
-import { ChevronRight, Pencil, Plus } from 'lucide-react';
+import { ChevronRight, Pencil, Plus, Trophy } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
@@ -6,7 +6,8 @@ import { showToast } from '../../app/toast';
 import { useLoad } from '../../app/useLoad';
 import { formatDate } from '../../domain/format';
 import { MATCH_STATUS_LABEL } from '../../domain/catalog';
-import type { Id, Match, Player, Team } from '../../domain/types';
+import type { Id, Player, Team } from '../../domain/types';
+import { loadSeasonItems } from '../../services/statsService';
 import { computeMatchStats, computeSeasonStats, perMatch } from '../../stats/engine';
 import { Icon } from '../components/Icon';
 import { Segmented } from '../components/Segmented';
@@ -35,9 +36,19 @@ export function TeamScreen({ teamId }: { teamId: Id }) {
         subtitle={`${t.code} · Temporada ${t.season}`}
         back={() => navigate({ name: 'teams' })}
         actions={
-          <button type="button" className="icon-btn" onClick={() => setEditingTeam(true)} aria-label="Editar equipo">
-            <Icon as={Pencil} />
-          </button>
+          <>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => navigate({ name: 'rankings', teamId: t.id })}
+              aria-label="Rankings"
+            >
+              <Icon as={Trophy} />
+            </button>
+            <button type="button" className="icon-btn" onClick={() => setEditingTeam(true)} aria-label="Editar equipo">
+              <Icon as={Pencil} />
+            </button>
+          </>
         }
       />
       <main className="content">
@@ -185,17 +196,8 @@ function Roster({ team }: { team: Team }) {
   );
 }
 
-/** Partidos que cuentan para la temporada: los que se han empezado o tienen acciones. */
-function countsForSeason(match: Match, eventCount: number): boolean {
-  return match.status !== 'ready' || eventCount > 0;
-}
-
 function SeasonPanel({ team }: { team: Team }) {
-  const data = useLoad(async () => {
-    const matches = await repo.listMatches(team.id);
-    const withEvents = await Promise.all(matches.map(async (m) => ({ match: m, events: await repo.listEvents(m.id) })));
-    return withEvents.filter(({ match, events }) => countsForSeason(match, events.filter((e) => !e.deletedAt).length));
-  }, [team.id]);
+  const data = useLoad(() => loadSeasonItems(repo, team.id), [team.id]);
 
   const seasons = useMemo(() => {
     const set = new Set((data.data ?? []).map((i) => i.match.season));
@@ -235,6 +237,16 @@ function SeasonPanel({ team }: { team: Team }) {
           Solo finalizados
         </label>
       </div>
+      <button type="button" className="list-item rank-link" onClick={() => navigate({ name: 'rankings', teamId: team.id })}>
+        <span className="rank-link-icon">
+          <Icon as={Trophy} />
+        </span>
+        <span className="list-main">
+          <strong>Rankings</strong>
+          <span className="muted">Pistolero, francotirador, el muro…</span>
+        </span>
+        <Icon as={ChevronRight} className="chevron" />
+      </button>
       {stats.matches === 0 ? (
         <p className="empty">No hay partidos registrados en esta temporada.</p>
       ) : (

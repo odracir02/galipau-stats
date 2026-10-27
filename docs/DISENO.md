@@ -15,6 +15,7 @@ Estética deportiva y sobria. Una sola fuente de verdad: los tokens de `:root` e
 | `--c-accent` | `#C9243D` | Acción principal, gol propio, pestaña activa, reloj parado («Reanudar») |
 | `--c-secondary` | `#E9892C` | Uso puntual: cuenta atrás, pendientes, etiqueta de portero |
 | `--c-danger` | `#B42318` | Solo errores y acciones destructivas |
+| `--c-gold` / `--c-gold-text` | `#D6A83A` / `#8A6514` | Solo rankings: corona del líder y primer puesto |
 
 Reglas:
 
@@ -49,6 +50,15 @@ Un único juego, `lucide-react`, con trazo 2 y tamaño 20 px por defecto (compon
 - **Intervalos de 5 minutos**: goles a favor hacia arriba (rojo) y en contra hacia abajo (oscuro), con números y leyenda; la dirección distingue las series sin depender del color.
 - Las tablas completas quedan en desplegables «Ver cifras exactas».
 - Tarjetas de cifras con columnas adaptativas (2 en móvil estrecho, 3 cuando caben).
+
+## Rankings
+
+- Cabecera con trofeo; acceso desde el trofeo de la cabecera del equipo y desde la pestaña Temporada.
+- Selector en carrusel horizontal de píldoras (se desplaza dentro de sí mismo, no la página).
+- Título y descripción de la clasificación; el mínimo de los porcentajes, en negrita.
+- Tarjeta oscura del líder con corona dorada; si hay empate, «Líderes empatados».
+- Lista compacta: puesto, dorsal, nombre, partidos jugados y cifra (en porcentajes, también aciertos/intentos).
+- Estado vacío con trofeo gris cuando no hay partidos o nadie cumple el mínimo.
 
 ## Pantalla de partido
 

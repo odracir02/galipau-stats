@@ -143,3 +143,19 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 79. Cambiar a un minuto anterior → Guardar. ✔ Se guarda sin aviso.
 80. Repetir con un minuto posterior → «Guardar igualmente». ✔ Se guarda; las sanciones no cambian.
 81. Mover la 3.ª exclusión a un minuto posterior a la acción. ✔ La acción deja de considerarse posterior y ya no avisa.
+
+## O. Rankings
+
+82. Con un equipo sin partidos, pulsar el trofeo de la cabecera del equipo.
+    - ✔ Pantalla «Rankings» con trofeo y estado vacío «Todavía no hay partidos».
+83. Jugar (o usar) dos partidos con goles, lanzamientos, paradas, recuperaciones, exclusiones y pérdidas de varios jugadores.
+84. Volver a Rankings (también desde Temporada → «Rankings»). Recorrer las ocho clasificaciones del selector.
+    - ✔ Cada una muestra su descripción; el francotirador y el muro indican su mínimo.
+    - ✔ Las cifras coinciden con Temporada → Jugadores / Porteros.
+    - ✔ Tarjeta oscura del líder con corona; empates con el mismo puesto (1, 1, 3) y «Líderes empatados».
+    - ✔ Nadie con 0 en la cifra aparece en la lista; nunca más de 10 filas.
+85. Francotirador con un jugador de 9 lanzamientos. ✔ No aparece; con el 10.º, sí.
+86. El muro: un portero con muchos lanzamientos fuera. ✔ No cambian su %.
+87. Editar un gol a otro jugador y borrar otro desde la cronología. Volver a Rankings. ✔ Las cifras cambian.
+88. Eliminar uno de los partidos. ✔ Sus acciones dejan de contar.
+89. Probar a 320 px y en el iPhone. ✔ El selector se desliza en horizontal sin mover la página; los nombres largos se recortan sin desbordar.

@@ -66,6 +66,28 @@ Con partes de 30 min hay 12 tramos (5', 10', … 60'). Un evento se asigna segú
 - Cuentan los partidos que se han iniciado o tienen acciones (un partido creado pero nunca empezado no cuenta). Filtro opcional «Solo finalizados».
 - Medias por partido = total / partidos.
 
+## Rankings
+
+Cada ranking lee una cifra del acumulado de temporada (mismos partidos que la pestaña Temporada, sin el filtro «Solo finalizados»). No hay fórmulas nuevas. Código: `src/stats/rankings.ts`.
+
+| Ranking | Cifra | Entra quien… |
+| ------- | ----- | ------------ |
+| El pistolero | goles | tiene al menos 1 gol |
+| El francotirador | eficacia = goles / lanzamientos | tiene al menos **10 lanzamientos** |
+| El muro | % paradas = paradas / (paradas + goles encajados); los fuera no cuentan | tiene al menos **20 tiros a puerta** (paradas + goles encajados) |
+| Muro defensivo | paradas de portero | tiene al menos 1 parada |
+| El ladrón | recuperaciones | tiene al menos 1 |
+| El reincidente | exclusiones de 2 minutos (la 3.ª cuenta; la roja por acumulación no suma otra) | tiene al menos 1 |
+| El generoso | pérdidas totales (incluye pasos, dobles y pases fallados) | tiene al menos 1 |
+| Más lanzamientos | goles + fuera + parados | tiene al menos 1 |
+
+- Orden de mayor a menor. Los empatados comparten puesto y el siguiente salta (1, 1, 3). Dentro de un empate se presentan por dorsal.
+- Los porcentajes se comparan redondeados a un decimal, como se muestran: dos «66,7 %» empatan.
+- Se muestran como máximo 10 jugadores. Si en el último puesto visible hay más empatados de los que caben, se indica cuántos quedan fuera.
+- Los mínimos están en `RANKING_THRESHOLDS` y se muestran en la pantalla.
+- Solo cuentan acciones atribuidas a un jugador. Los partidos eliminados y las acciones borradas no cuentan.
+- Nombre y dorsal: los de la convocatoria más reciente del jugador en esa temporada.
+
 ## Lo que NO se calcula
 
 Minutos jugados, tiempo en pista, +/−, ni ninguna métrica que no se pueda derivar de los eventos registrados.

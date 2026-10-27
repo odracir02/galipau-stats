@@ -23,6 +23,7 @@ Funciona sin conexión a Internet: está pensada para pabellones sin cobertura.
   - Panel de equipo: indicadores principales, eficacia por tipo de lanzamiento, portería por procedencia, balance de balón, disciplina y evolución por intervalos de 5 minutos.
   - Fichas completas de cada jugador y de cada portero.
   - Acumulados de temporada calculados sobre totales.
+- **Rankings del equipo:** Top 10 de la temporada en ocho clasificaciones (goleadores, eficacia, % de paradas, paradas, recuperaciones, exclusiones, pérdidas y lanzamientos), con empates y mínimos para los porcentajes.
 - **Partidos:** se pueden eliminar (por ejemplo, los de prueba) sin afectar a la temporada ni a los demás partidos.
 - **Instalable (PWA):** se añade a la pantalla de inicio en Android y iPhone.
 

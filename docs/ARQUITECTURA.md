@@ -12,9 +12,9 @@ ui/ (React)  ──►  services/  ──►  data/Repository  ──►  Indexe
 
 - **domain/**: tipos (`types.ts`), catálogo cerrado de acciones y etiquetas (`catalog.ts`), validación (`validation.ts`), utilidades de eventos y formato. No depende de React ni del almacenamiento.
 - **clock/**: funciones puras `start`, `pause`, `setTime`, `shift`, `elapsedMs`, `countdownMs`… Reciben el instante actual como parámetro, por eso son fáciles de probar.
-- **stats/**: `computeMatchStats` y `computeSeasonStats`. Reciben partidos y eventos y devuelven contadores. No guardan nada.
+- **stats/**: `computeMatchStats` y `computeSeasonStats`. Reciben partidos y eventos y devuelven contadores. No guardan nada. `rankings.ts` clasifica una lista de candidatos (jugador + contadores) sin saber de qué equipo salen: hoy recibe los de un equipo y una temporada; un ranking de club podrá pasarle los de varios equipos. Devuelve la clasificación completa (`rankPlayers`), de la que salen el Top 10 (`topOf`) y el puesto de un jugador concreto (`positionOf`).
 - **data/**: `Repository` es la interfaz de acceso a datos; `IndexedDbRepository` la implementa con la librería `idb`. Cada escritura espera a que la transacción se confirme (`durability: 'strict'`) antes de resolver.
-- **services/**: reglas de negocio (`teamService`, `matchService`). Validan, construyen objetos nuevos (sin mutar) y los guardan antes de devolverlos.
+- **services/**: reglas de negocio (`teamService`, `matchService`) y carga de datos para la temporada y los rankings (`statsService`). Validan, construyen objetos nuevos (sin mutar) y los guardan antes de devolverlos.
 - **app/** y **ui/**: React. Las pantallas llaman a servicios y recalculan estadísticas con `useMemo` a partir de los eventos en memoria.
 
 ## Flujo de un registro en directo
@@ -39,7 +39,7 @@ Las migraciones se añaden en `openStatsDb` (bloque `upgrade`, por versión). El
 
 ## Rutas
 
-Enrutado por hash, sin librería: `#/`, `#/team/:id`, `#/team/:id/new-match`, `#/match/:id`. Funciona con cualquier hosting estático y con el service worker.
+Enrutado por hash, sin librería: `#/`, `#/team/:id`, `#/team/:id/new-match`, `#/team/:id/rankings`, `#/match/:id`. Funciona con cualquier hosting estático y con el service worker.
 
 ## PWA y sin conexión
 

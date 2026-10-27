@@ -37,6 +37,9 @@
   --c-secondary: #e9892c;
   --c-secondary-soft: #fdf1e5;
   --c-secondary-text: #9a4f0c;
+  /* Dorado: solo para la corona y el primer puesto de los rankings. */
+  --c-gold: #d6a83a;
+  --c-gold-text: #8a6514;
   --c-danger: #b42318;
   --c-danger-soft: #fdecea;
   --c-success: #1e7a4c;
@@ -209,6 +212,9 @@ svg {
 
 .topbar-title > span {
   display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--fs-xs);
   color: var(--c-on-header-2);
 }
@@ -2358,4 +2364,221 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
   font-size: 1.5rem;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------------------
+   Rankings
+--------------------------------------------------------------------------- */
+.title-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.rank-link .rank-link-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: var(--r-sm);
+  background: var(--c-header);
+  color: var(--c-gold);
+}
+
+/* Selector: carrusel horizontal de opciones; no desplaza la página. */
+.rank-picker {
+  display: flex;
+  gap: 6px;
+  margin: 0 calc(-1 * var(--s-4));
+  padding: 2px var(--s-4);
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-padding: 0 var(--s-4);
+}
+
+.rank-picker::-webkit-scrollbar {
+  display: none;
+}
+
+.rank-picker button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  min-height: 40px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-pill);
+  background: var(--c-surface);
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rank-picker button.on {
+  background: var(--c-header);
+  border-color: var(--c-header);
+  color: var(--c-on-header);
+}
+
+.rank-intro h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.rank-intro p {
+  margin: var(--s-1) 0 0;
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+}
+
+.rank-intro .rank-min {
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.rank-leader {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  border-radius: var(--r-lg);
+  background: var(--c-header);
+  color: var(--c-on-header);
+}
+
+.rank-crown {
+  flex: none;
+  color: var(--c-gold);
+}
+
+.rank-leader-who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rank-leader-label {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-gold);
+}
+
+.rank-leader-who strong {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--fs-md);
+  font-weight: 700;
+}
+
+.rank-leader-who .dorsal {
+  background: var(--c-header-3);
+  color: var(--c-on-header);
+}
+
+.rank-leader-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: none;
+}
+
+.rank-leader-value strong {
+  font-size: 1.75rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rank-leader-value span {
+  font-size: var(--fs-xs);
+  color: var(--c-on-header-2);
+}
+
+.rank-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+}
+
+.rank-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 52px;
+  padding: var(--s-2) var(--s-4) var(--s-2) var(--s-3);
+}
+
+.rank-list li + li {
+  border-top: 1px solid var(--c-border);
+}
+
+.rank-pos {
+  flex: none;
+  width: 1.5rem;
+  text-align: center;
+  font-weight: 700;
+  color: var(--c-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.rank-list li.first .rank-pos {
+  color: var(--c-gold-text);
+}
+
+.rank-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+}
+
+.rank-name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rank-name small,
+.rank-value small {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--c-text-3);
+}
+
+.rank-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: none;
+}
+
+.rank-value strong {
+  font-size: var(--fs-lg);
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rank-empty-icon {
+  color: var(--c-text-3);
 }

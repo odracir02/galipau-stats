@@ -3,6 +3,7 @@ import { useRoute } from './app/router';
 import { Toasts } from './ui/components/Toasts';
 import { MatchScreen } from './ui/screens/MatchScreen';
 import { NewMatchScreen } from './ui/screens/NewMatchScreen';
+import { RankingsScreen } from './ui/screens/RankingsScreen';
 import { TeamScreen } from './ui/screens/TeamScreen';
 import { TeamsScreen } from './ui/screens/TeamsScreen';
 
@@ -38,6 +39,9 @@ export function App() {
       break;
     case 'newMatch':
       screen = <NewMatchScreen key={route.teamId} teamId={route.teamId} />;
+      break;
+    case 'rankings':
+      screen = <RankingsScreen key={route.teamId} teamId={route.teamId} />;
       break;
     case 'match':
       screen = <MatchScreen key={route.matchId} matchId={route.matchId} />;

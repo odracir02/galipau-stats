@@ -33,3 +33,10 @@
 | D29 | Eliminación de partidos con el borrado lógico existente | Permite restaurar más adelante y no reaparecer al sincronizar. Las acciones se conservan pero dejan de contar porque el partido no se lista. |
 | D30 | Gráficas propias con CSS/SVG (anillo, barras, intervalos) | Son pocas y sencillas; una librería añadiría peso sin aportar nada. Todas muestran los valores en texto. |
 | D31 | Cifras exactas en desplegables «Ver cifras exactas» | Las barras resumen; las tablas completas siguen disponibles sin alargar la pantalla. |
+| D32 | Rankings calculados sobre el acumulado de temporada del motor | Las cifras coinciden siempre con las de la pestaña Temporada; no hay fórmulas duplicadas. |
+| D33 | El cálculo recibe candidatos genéricos (jugador + contadores) y devuelve la clasificación completa | El Top 10 y la posición individual salen de la misma lista; un ranking de club solo tendrá que reunir candidatos de varios equipos. |
+| D34 | Empates con puesto compartido (1, 1, 3) y orden por dorsal dentro del empate | Es el criterio habitual de las clasificaciones. El dorsal solo decide el orden de presentación, no el puesto. |
+| D35 | Top 10 estricto: si hay más empatados en el último puesto, se avisa de cuántos no caben | Respeta el máximo de diez sin ocultar el empate. |
+| D36 | Porcentajes comparados con un decimal | Lo que se ve es lo que clasifica: dos jugadores con «66,7 %» comparten puesto. |
+| D37 | Mínimos: 10 lanzamientos (francotirador) y 20 tiros a puerta (el muro), en `RANKING_THRESHOLDS` | Evitan que un 1/1 lidere. Equivalen a dos o tres partidos de un lanzador habitual y a un partido de un portero. Se cambian en un solo sitio. |
+| D38 | Rankings en una pantalla propia (`#/team/:id/rankings`) | Una cuarta pestaña no cabe con holgura a 320 px y los rankings necesitan su propio selector. |
