@@ -40,3 +40,24 @@
 | D36 | Porcentajes comparados con un decimal | Lo que se ve es lo que clasifica: dos jugadores con «66,7 %» comparten puesto. |
 | D37 | Mínimos: 10 lanzamientos (francotirador) y 20 tiros a puerta (el muro), en `RANKING_THRESHOLDS` | Evitan que un 1/1 lidere. Equivalen a dos o tres partidos de un lanzador habitual y a un partido de un portero. Se cambian en un solo sitio. |
 | D38 | Rankings en una pantalla propia (`#/team/:id/rankings`) | Una cuarta pestaña no cabe con holgura a 320 px y los rankings necesitan su propio selector. |
+| D39 | Backend en `server/` con su propio `package.json` | El build de Pages (raíz) no instala Wrangler ni compila el Worker: el despliegue actual no cambia. |
+| D40 | Sin framework ni ORM en el Worker: enrutado propio y SQL parametrizado | Cuatro rutas; SQL explícito y migraciones versionadas de D1. Menos dependencias y nada que actualizar. |
+| D41 | Pruebas de D1 con el SQLite integrado en Node (`node:sqlite`) tras una interfaz mínima de D1 | D1 es SQLite: se prueban las migraciones, restricciones y consultas reales sin dependencias nuevas. La migración se comprobó además en la D1 local de Wrangler. |
+| D42 | Mismos UUID en el dispositivo y en el servidor; campos remotos (club, versión…) aparte | La subida es idempotente y los datos locales no cambian. |
+| D43 | Claves foráneas compuestas (`id, team_id` / `id, club_id`) | El aislamiento entre equipos y clubes lo garantiza también la base de datos, no solo el código. |
+| D44 | Entrenador y consulta: identidad por dispositivo con token aleatorio (solo HMAC en el servidor), sin cuentas | Cubre los casos acordados (entrenador, consulta compartida) sin contraseñas ni datos personales. Los roles administrativos usan identidades aparte (D51). |
+| D45 | Códigos de 12 símbolos sin confundibles, solo hash, rotación = revocar + crear, límite de intentos en D1 | Difíciles de adivinar, fáciles de dictar y revocables. El límite en D1 es exacto; el de Cloudflare es aproximado. |
+| D46 | Sin relación con el equipo o club → 404; con permiso insuficiente → 403 | No se revela qué equipos o clubes existen. |
+| D47 | Concurrencia optimista por `version` + `opId` idempotente + registro de cambios con `seq` | Reintentos seguros, conflictos detectados y descarga incremental sin relojes de dispositivo. |
+| D48 | Un dispositivo registra cada partido (`recorder_device_id`) | Evita conflictos en directo; la transferencia controlada cubre los casos excepcionales. |
+| D49 | `people` opcional para jugadores en varios equipos | Ranking de club sin duplicar personas; solo el nombre visible (minimización). |
+| D50 | Validación de acciones compartida (`src/domain/validation.ts`) entre aplicación y Worker | Las reglas de catálogo, convocatoria y porteros son idénticas en ambos lados. |
+| D51 | Cuatro roles en dos sujetos: dispositivos (`coach`, `viewer` en `grants`) e identidades administrativas (`superadmin`, `club_admin` en `admin_roles`) | Los roles administrativos exigen una persona con credencial fuerte; los de equipo, solo un dispositivo. La base de datos impide mezclarlos. |
+| D52 | Llave de acceso (WebAuthn) como credencial administrativa, TOTP opcional, sesiones cortas y verificación reciente para operaciones críticas | Resistente al phishing y sin contraseñas que guardar. |
+| D53 | Ninguna ruta crea superadministradores; el primero se crea por consola con la cuenta de Cloudflare | Quien no controla la cuenta no puede escalar. El SQL no hace nada si ya hay uno. |
+| D54 | El administrador de club no nombra administradores | Evita que un club se autogestione sin control del propietario; lo hace el superadministrador. |
+| D55 | Clave del límite de intentos: solo `CF-Connecting-IP`, IPv6 por /64, sin cabecera = contador compartido | El cliente no puede cambiar su clave con cabeceras inventadas. |
+| D56 | Revocar un código puede retirar también los accesos concedidos con él | Respuesta definida ante un código filtrado, sin tocar otros accesos. |
+| D57 | Códigos de invitación de 12 símbolos (≈59 bits) | Con 10 y muchos códigos vigentes, una red de bots muy grande podría acertar en meses; con 12, siglos. |
+| D58 | Node 24 como mínimo declarado (`engines`), igual que `.node-version` | Las pruebas del servidor usan el SQLite integrado en Node. Pages ya compila con Node 24: la compilación no cambia. |
+| D59 | Worker local con nombre propio y prueba automática de la separación de entornos | Un `deploy` sin `--env` no puede sustituir a producción; local y preview no pueden apuntar a la base de producción. |

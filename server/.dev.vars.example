@@ -1,0 +1,4 @@
+# Copiar a .dev.vars (no se sube al repositorio) para wrangler dev.
+# Valor de ejemplo solo para desarrollo local; en Cloudflare se configura con
+# «wrangler secret put TOKEN_PEPPER --env preview|production».
+TOKEN_PEPPER=solo-para-desarrollo-local-cambiar

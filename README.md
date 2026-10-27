@@ -33,7 +33,7 @@ React 19 · TypeScript (estricto) · Vite · vite-plugin-pwa (Workbox) · Indexe
 
 ## Instalación
 
-Requisitos: Node.js 22.12 o superior (el proyecto fija Node 24 en `.node-version`) y npm.
+Requisitos: Node.js 24 (fijado en `.node-version`) y npm.
 
 ```bash
 git clone <url-del-repositorio> galipau-stats
@@ -91,6 +91,9 @@ Principios:
 
 - [Arquitectura](docs/ARQUITECTURA.md)
 - [Despliegue e instalación en iPhone](docs/DESPLIEGUE.md)
+- [Backend: Cloudflare Workers + D1](docs/BACKEND.md) (base preparada, aún sin uso)
+- [Protocolo de sincronización](docs/SINCRONIZACION.md)
+- [Permisos, seguridad y privacidad](docs/SEGURIDAD.md)
 - [Modelo de dominio y eventos](docs/MODELO_DATOS.md)
 - [Fórmulas estadísticas](docs/FORMULAS.md)
 - [Sistema de diseño](docs/DISENO.md)

@@ -52,3 +52,4 @@ Enrutado por hash, sin librería: `#/`, `#/team/:id`, `#/team/:id/new-match`, `#
 - Borrados lógicos (`deletedAt`) en eventos y partidos: se podrán propagar.
 - `createdAt`/`updatedAt` en todos los registros, con marcas monotónicas en eventos.
 - La UI solo conoce la interfaz `Repository`; se podrá envolver con una versión que encole cambios hacia Cloudflare Workers + D1 sin tocar pantallas ni servicios.
+- El backend ya existe en `server/` (Worker + D1, sin desplegar). Reutiliza `src/domain` para validar con las mismas reglas. Ver [BACKEND.md](BACKEND.md) y [SINCRONIZACION.md](SINCRONIZACION.md).

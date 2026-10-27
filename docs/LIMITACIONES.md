@@ -23,6 +23,13 @@
 - Sin PDF, sincronización, autenticación ni invitaciones (fuera del alcance de esta versión).
 - La guionización de etiquetas largas depende del navegador; en anchos estrechos las tarjetas de cifras pasan a dos columnas para que no se corten.
 
+## Backend (preparado, sin uso)
+
+- El Worker y D1 existen solo en el repositorio y en local. No hay recursos en Cloudflare ni sincronización en la app.
+- Faltan las rutas de alta de club y equipo, canje de códigos, transferencia de partidos y subida de partidos y plantillas (Tarea 005C).
+- El inicio de sesión administrativo (llave de acceso) y sus rutas no existen todavía: el modelo, las reglas y el alta del primer superadministrador están preparados.
+- La tabla de intentos de canje necesitará una purga periódica cuando se despliegue.
+
 ## PWA
 
 - En iOS no hay aviso automático de instalación: Safari → Compartir → «Añadir a pantalla de inicio».

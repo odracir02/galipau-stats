@@ -1,0 +1,20 @@
+{
+  "name": "galipaustats-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "API de GalipauStats: Cloudflare Worker y base de datos D1.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrations:local": "wrangler d1 migrations list DB --local",
+    "bundle:check": "wrangler deploy --dry-run --env=\"\" --outdir .wrangler/dry-run",
+    "bootstrap:superadmin": "node scripts/bootstrap-superadmin.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.153.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

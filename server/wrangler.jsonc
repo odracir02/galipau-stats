@@ -1,0 +1,61 @@
+// Worker de la API de GalipauStats (Cloudflare Workers + D1).
+// Ver docs/BACKEND.md. Los identificadores de base de datos de preview y
+// production son marcadores: se rellenan cuando se creen los recursos reales.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Nombre propio del entorno local: un «deploy» sin --env nunca puede
+  // sustituir al Worker de producción.
+  "name": "galipau-stats-api-local",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+
+  // Entorno local (wrangler dev / migraciones --local). No toca Cloudflare.
+  "vars": {
+    "ENVIRONMENT": "local",
+    "ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:4173"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "galipau-stats-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "env": {
+    // Pruebas: lo usará la vista previa de develop.
+    "preview": {
+      "name": "galipau-stats-api-preview",
+      "vars": {
+        "ENVIRONMENT": "preview",
+        "ALLOWED_ORIGINS": "https://develop.galipau-stats.pages.dev"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "galipau-stats-preview",
+          "database_id": "00000000-0000-0000-0000-000000000001",
+          "migrations_dir": "migrations"
+        }
+      ]
+    },
+    // Producción: lo usará main. Base de datos distinta de la de pruebas.
+    "production": {
+      "name": "galipau-stats-api",
+      "vars": {
+        "ENVIRONMENT": "production",
+        "ALLOWED_ORIGINS": "https://galipau-stats.pages.dev"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "galipau-stats-production",
+          "database_id": "00000000-0000-0000-0000-000000000002",
+          "migrations_dir": "migrations"
+        }
+      ]
+    }
+  }
+}
