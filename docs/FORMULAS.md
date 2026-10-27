@@ -16,6 +16,19 @@ Se aplican a cualquier autor de un lanzamiento, también a un portero que marca 
 | Pérdidas (total)   | pérdida general + pasos + dobles + pase fallado |
 | Sanciones          | amarillas + exclusiones + rojas               |
 
+## Tarjetas rojas y descalificación
+
+Implementación: [`src/stats/discipline.ts`](../src/stats/discipline.ts). Las rojas **no** se cuentan evento a evento: se derivan recorriendo las acciones en orden de tiempo de partido.
+
+- **Roja directa**: un evento `red`.
+- **Roja por acumulación**: la **tercera** exclusión de un jugador en el partido. No existe como evento: es una consecuencia derivada.
+- **Una sola descalificación por jugador y partido**: cuenta la que ocurre primero. Una roja registrada cuando el jugador ya estaba descalificado (p. ej. tras su 3.ª exclusión) no suma otra; una 4.ª exclusión tampoco.
+- Rojas = rojas directas + rojas por acumulación (las dos cuentan como una tarjeta roja y se muestran desglosadas).
+- Las rojas sin jugador asignado cuentan, cada una, en el equipo. Las exclusiones sin jugador no acumulan para nadie.
+- La roja por acumulación cuenta en el intervalo de 5 minutos de la exclusión que la provoca.
+- Corregir o borrar una exclusión recalcula todo: si el jugador deja de tener tres, pierde la roja y vuelve a estar disponible.
+- Se aplica igual a jugadores de campo y porteros.
+
 Por tipo de lanzamiento (9 m, 6 m, penalti, contraataque) se aplican las mismas fórmulas.
 
 ## Porteros

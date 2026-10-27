@@ -1561,6 +1561,12 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
   white-space: nowrap;
 }
 
+.tl-discipline {
+  color: var(--c-accent);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
 .tl-pending {
   color: var(--c-secondary-text);
   font-weight: 600;

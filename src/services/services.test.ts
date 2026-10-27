@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { IndexedDbRepository } from '../data/indexedDbRepository';
 import { elapsedMs, MINUTE_MS } from '../clock/clock';
+import { availableForNewActions, disqualifications } from '../stats/discipline';
 import { computeMatchStats, computeSeasonStats } from '../stats/engine';
 import type { Match, Player, Team } from '../domain/types';
 import { ValidationError } from '../domain/validation';
@@ -357,5 +358,81 @@ describe('temporada desde persistencia', () => {
     expect(p7.matches).toBe(2);
     expect(p7.counters.shots).toMatchObject({ goals: 1, attempts: 2 });
     expect(p7.counters.exclusions).toBe(1);
+  });
+});
+
+describe('descalificación por tercera exclusión (persistencia)', () => {
+  const at = (minute: number) => ({ period: (minute >= 30 ? 2 : 1) as 1 | 2, matchTimeMs: minute * MINUTE_MS });
+  const excl = (match: Match, key: string, minute: number) =>
+    recordEvent(repo, match, { kind: 'exclusion' }, id(key), at(minute));
+
+  it('eliminar la tercera exclusión restaura la disponibilidad y quita la roja', async () => {
+    const match = await newMatch();
+    await excl(match, 'p7', 5);
+    await excl(match, 'p7', 12);
+    const third = await excl(match, 'p7', 40);
+    let events = await repo.listEvents(match.id);
+    expect(availableForNewActions(match.squad, events).map((s) => s.playerId)).not.toContain(id('p7'));
+    expect(computeMatchStats(match, events).players.get(id('p7'))!.reds).toBe(1);
+
+    await deleteEvent(repo, third);
+    events = await repo.listEvents(match.id);
+    expect(availableForNewActions(match.squad, events).map((s) => s.playerId)).toContain(id('p7'));
+    expect(computeMatchStats(match, events).players.get(id('p7'))).toMatchObject({ exclusions: 2, reds: 0 });
+  });
+
+  it('corregir una exclusión a otro jugador recalcula ambas fichas', async () => {
+    const match = await newMatch();
+    await excl(match, 'p7', 5);
+    await excl(match, 'p7', 12);
+    const third = await excl(match, 'p7', 40);
+    await excl(match, 'p14', 20);
+    await excl(match, 'p14', 25);
+    await updateEvent(repo, match, third, { playerId: id('p14') });
+    const events = await repo.listEvents(match.id);
+    const s = computeMatchStats(match, events);
+    expect(s.players.get(id('p7'))).toMatchObject({ exclusions: 2, reds: 0 });
+    expect(s.players.get(id('p14'))).toMatchObject({ exclusions: 3, reds: 1, redsAccumulated: 1 });
+    expect(s.team).toMatchObject({ exclusions: 5, reds: 1 });
+    const available = availableForNewActions(match.squad, events).map((s) => s.playerId);
+    expect(available).toContain(id('p7'));
+    expect(available).not.toContain(id('p14'));
+  });
+
+  it('registrar además una roja directa tras la tercera exclusión no duplica', async () => {
+    const match = await newMatch();
+    await excl(match, 'g1', 5);
+    await excl(match, 'g1', 12);
+    await excl(match, 'g1', 40);
+    await recordEvent(repo, match, { kind: 'red' }, id('g1'), at(40));
+    const s = computeMatchStats(match, await repo.listEvents(match.id));
+    expect(s.players.get(id('g1'))).toMatchObject({ reds: 1, redsAccumulated: 1, redsDirect: 0 });
+    expect(s.team.reds).toBe(1);
+  });
+
+  it('se puede atribuir al descalificado una acción olvidada anterior', async () => {
+    const match = await newMatch();
+    await excl(match, 'p7', 5);
+    await excl(match, 'p7', 12);
+    await excl(match, 'p7', 40);
+    await recordEvent(repo, match, { kind: 'shot', shotType: 'nine_m', result: 'goal' }, id('p7'), at(8));
+    const s = computeMatchStats(match, await repo.listEvents(match.id));
+    expect(s.players.get(id('p7'))!.shots.goals).toBe(1);
+    expect(s.score.own).toBe(1);
+  });
+
+  it('tras recargar, la descalificación y las estadísticas se reconstruyen igual', async () => {
+    const match = await newMatch();
+    await excl(match, 'p7', 5);
+    await excl(match, 'p7', 12);
+    await excl(match, 'p7', 40);
+    const fresh = new IndexedDbRepository(dbName);
+    const reloaded = (await fresh.getMatch(match.id))!;
+    const events = await fresh.listEvents(match.id);
+    expect(disqualifications(events).get(id('p7'))!.type).toBe('accumulated');
+    expect(computeMatchStats(reloaded, events).players.get(id('p7'))).toMatchObject({ exclusions: 3, reds: 1 });
+    // Convocatoria e historial intactos.
+    expect(reloaded.squad.map((s) => s.playerId)).toContain(id('p7'));
+    expect(events.filter((e) => e.kind === 'red')).toHaveLength(0);
   });
 });

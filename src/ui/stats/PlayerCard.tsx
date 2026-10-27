@@ -2,7 +2,7 @@ import { formatPct } from '../../domain/format';
 import type { Counters } from '../../stats/engine';
 import { efficiency, perMatch, sanctions, savePct } from '../../stats/engine';
 import { Sheet } from '../components/Sheet';
-import { GkSummary, GkTypeTable, KV, ShotTypeTable, Tile, type StatRow } from './StatTables';
+import { GkSummary, GkTypeTable, KV, RedsValue, ShotTypeTable, Tile, type StatRow } from './StatTables';
 
 const avg = (value: number | null) =>
   value === null ? '—' : value.toLocaleString('es-ES', { maximumFractionDigits: 1 });
@@ -74,7 +74,7 @@ export function PlayerCard({ row, mode, onClose }: { row: StatRow; mode: 'match'
         <dl className="kv">
           <KV k="Amarillas" v={c.yellows} />
           <KV k="Exclusiones 2 min" v={c.exclusions} />
-          <KV k="Rojas" v={c.reds} />
+          <KV k="Rojas" v={<RedsValue counters={c} />} />
           <KV k="Sanciones (total)" v={sanctions(c)} strong />
           <KV k="Golpes francos" v={c.freeThrows} />
           <KV k="Penaltis cometidos" v={c.penaltiesCommitted} />

@@ -84,3 +84,17 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 49. Con teclado (ordenador):
     - ✔ Tab recorre los botones con un foco visible.
     - ✔ Escape cierra las hojas.
+
+## J. Descalificación por tercera exclusión
+
+50. Registrar tres exclusiones al mismo jugador. ✔ En la tercera, el aviso dice «3.ª exclusión: roja por acumulación».
+51. Iniciar cualquier acción. ✔ Ese jugador ya no aparece en la selección y debajo se indica «Descalificados (no disponibles)».
+52. Cronología. ✔ La tercera exclusión lleva la nota «Roja por acumulación»; no aparece ninguna roja como acción.
+53. Estadísticas → Jugadores → su ficha. ✔ Exclusiones 3 · Rojas «1 · por acumulación» · Sanciones 4. Equipo: «Expulsiones (rojas) 1 · por acumulación».
+54. Registrar también una roja directa a ese jugador desde «Añadir acción olvidada». ✔ Sigue habiendo 1 roja; la cronología marca la directa «Ya descalificado: no suma».
+55. «Añadir acción olvidada»: en la lista de jugadores aparece «(descalificado)» y se le puede atribuir un gol de antes. ✔ Cuenta en su ficha y en el marcador.
+56. Recargar la página. ✔ Sigue descalificado y con las mismas cifras.
+57. Eliminar la tercera exclusión. ✔ Desaparece la roja y vuelve a estar disponible.
+58. Cambiar una de sus exclusiones a otro jugador que ya tenía dos. ✔ La roja pasa al otro jugador; el primero vuelve a estar disponible.
+59. Repetir con un portero. ✔ Mismo comportamiento.
+60. Roja directa a un jugador sin exclusiones. ✔ «1 · directa» y deja de estar disponible.

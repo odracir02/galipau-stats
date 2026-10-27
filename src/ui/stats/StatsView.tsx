@@ -9,7 +9,7 @@ import {
 } from '../../stats/engine';
 import { Segmented } from '../components/Segmented';
 import { PlayerCard } from './PlayerCard';
-import { GkSummary, GkTypeTable, KV, ShotTypeTable, Tile, type StatRow } from './StatTables';
+import { GkSummary, GkTypeTable, KV, RedsValue, ShotTypeTable, Tile, type StatRow } from './StatTables';
 
 interface Props {
   team: Counters;
@@ -93,7 +93,7 @@ function TeamStats({ team, intervals, summary }: { team: Counters; intervals: In
         <dl className="kv">
           <KV k="Amarillas" v={team.yellows} />
           <KV k="Exclusiones" v={team.exclusions} />
-          <KV k="Expulsiones (rojas)" v={team.reds} />
+          <KV k="Expulsiones (rojas)" v={<RedsValue counters={team} />} />
           <KV k="Sanciones (total)" v={sanctions(team)} strong />
           <KV k="Recuperaciones" v={team.recoveries} />
           <KV k="Golpes francos" v={team.freeThrows} />

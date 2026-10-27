@@ -26,7 +26,7 @@ Campos comunes: `id`, `matchId`, `playerId` (null = **pendiente de atribución**
 | `recovery`          | —                                                            | Cualquier convocado |
 | `yellow`            | —                                                            | Cualquier convocado |
 | `exclusion`         | — (2 minutos)                                                | Cualquier convocado |
-| `red`               | —                                                            | Cualquier convocado |
+| `red`               | — (roja **directa**; la roja por acumulación no es un evento, se deriva de la 3.ª exclusión) | Cualquier convocado |
 | `free_throw`        | — (golpe franco cometido)                                    | Cualquier convocado |
 | `penalty_committed` | — (penalti cometido en defensa)                              | Cualquier convocado |
 
@@ -41,6 +41,7 @@ Un evento de pasos/dobles/pase fallado es **un único evento** (`turnover` con s
 - **Eliminar**: `deleteEvent` marca `deletedAt` (borrado lógico). Un evento borrado no cuenta en nada.
 - **Deshacer**: anula la última acción **registrada** (mayor `createdAt`, no mayor minuto). Las marcas `createdAt` son estrictamente crecientes en la sesión para evitar empates.
 - **Ajustar el reloj** no modifica `matchTimeMs` de los eventos ya registrados.
+- **Descalificación**: se deriva de los eventos (`redCards`, `disqualifications`). El jugador descalificado no aparece en la selección rápida del registro, pero sigue en la convocatoria, la cronología y las estadísticas, y el editor permite atribuirle acciones olvidadas (marcado «descalificado»).
 
 ## Validación
 

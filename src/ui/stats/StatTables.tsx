@@ -109,3 +109,17 @@ export function Tile({ label, value, sub, accent }: { label: string; value: Reac
     </div>
   );
 }
+
+/** Número de rojas con su origen: «1 · por acumulación», «2 · 1 directa, 1 por acumulación». */
+export function RedsValue({ counters: c }: { counters: Counters }) {
+  if (c.reds === 0) return <>0</>;
+  const parts: string[] = [];
+  if (c.redsDirect) parts.push(`${c.redsDirect} ${c.redsDirect === 1 ? 'directa' : 'directas'}`);
+  if (c.redsAccumulated) parts.push(`${c.redsAccumulated} por acumulación`);
+  const detail = parts.length === 1 ? parts[0]!.replace(/^\d+ /, '') : parts.join(', ');
+  return (
+    <>
+      {c.reds} <span className="muted">· {detail}</span>
+    </>
+  );
+}

@@ -25,3 +25,6 @@
 | D21 | Iconos de `lucide-react` | Un único juego homogéneo (mismo trazo); solo se empaquetan los iconos usados. |
 | D22 | Tipografía Inter empaquetada (solo subconjunto latino) | Aspecto uniforme en Android e iPhone y disponible sin conexión (≈48 kB). |
 | D23 | Cronómetro y botón de pausa en la misma fila de la cabecera | Gana altura útil para el registro sin reducir el área táctil del botón (60 px). |
+| D24 | Roja por acumulación derivada, sin evento | Borrar o corregir una exclusión la elimina o la traslada sola; no puede quedar una roja «huérfana» ni duplicada. |
+| D25 | Una descalificación por jugador y partido, la primera en tiempo de partido | Evita contar dos rojas si se registra una roja directa tras la 3.ª exclusión. Orden por minuto (no por orden de registro) para que una exclusión olvidada añadida después se sitúe correctamente. |
+| D26 | El descalificado solo desaparece de la selección rápida | Sus acciones anteriores olvidadas se pueden atribuir desde el editor; la validación no lo bloquea. |

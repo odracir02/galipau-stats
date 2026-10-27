@@ -35,6 +35,8 @@ const KINDS: readonly EventKind[] = ['shot', 'gk_shot', 'turnover', ...SIMPLE_KI
 
 interface Props {
   squad: readonly SquadEntry[];
+  /** Descalificados: se pueden elegir (acciones olvidadas anteriores), pero se señalan. */
+  disqualified: ReadonlySet<Id>;
   /** Evento a corregir; si no se da, se crea una acción olvidada. */
   event?: MatchEvent;
   defaultTiming: EventTiming;
@@ -69,7 +71,7 @@ function Chips<T extends string | number>({
   );
 }
 
-export function EventEditorSheet({ squad, event, defaultTiming, onSave, onDelete, onClose }: Props) {
+export function EventEditorSheet({ squad, disqualified, event, defaultTiming, onSave, onDelete, onClose }: Props) {
   const [kind, setKind] = useState<EventKind>(event?.kind ?? 'shot');
   const [shotType, setShotType] = useState<FieldShotType>(event?.kind === 'shot' ? event.shotType : 'nine_m');
   const [shotResult, setShotResult] = useState<FieldShotResult>(event?.kind === 'shot' ? event.result : 'goal');
@@ -204,6 +206,7 @@ export function EventEditorSheet({ squad, event, defaultTiming, onSave, onDelete
             {candidates.map((c) => (
               <option key={c.playerId} value={c.playerId}>
                 {c.number} · {c.name}
+                {disqualified.has(c.playerId) ? ' (descalificado)' : ''}
               </option>
             ))}
           </select>

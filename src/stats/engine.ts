@@ -3,6 +3,7 @@
 // a calcular. Ver docs/FORMULAS.md.
 import { FIELD_SHOT_TYPES, GK_SHOT_TYPES } from '../domain/catalog';
 import { MINUTE_MS, periodEndMs, periodStartMs } from '../clock/clock';
+import { redCards, type RedCard } from './discipline';
 import type {
   FieldShotType,
   GkShotType,
@@ -49,7 +50,11 @@ export interface Counters {
   recoveries: number;
   yellows: number;
   exclusions: number;
+  /** Rojas = directas + por acumulación (ver discipline.ts). */
   reds: number;
+  redsDirect: number;
+  /** Rojas derivadas de la tercera exclusión; no existen como evento. */
+  redsAccumulated: number;
   freeThrows: number;
   penaltiesCommitted: number;
 }
@@ -74,6 +79,8 @@ export function emptyCounters(): Counters {
     yellows: 0,
     exclusions: 0,
     reds: 0,
+    redsDirect: 0,
+    redsAccumulated: 0,
     freeThrows: 0,
     penaltiesCommitted: 0,
   };
@@ -119,7 +126,8 @@ function addEvent(c: Counters, e: MatchEvent): void {
       c.exclusions++;
       return;
     case 'red':
-      c.reds++;
+      // Las rojas no se cuentan evento a evento: salen de redCards(), que
+      // añade la roja por acumulación y evita duplicados.
       return;
     case 'free_throw':
       c.freeThrows++;
@@ -170,14 +178,30 @@ export function sumCounters(a: Counters, b: Counters): Counters {
     yellows: a.yellows + b.yellows,
     exclusions: a.exclusions + b.exclusions,
     reds: a.reds + b.reds,
+    redsDirect: a.redsDirect + b.redsDirect,
+    redsAccumulated: a.redsAccumulated + b.redsAccumulated,
     freeThrows: a.freeThrows + b.freeThrows,
     penaltiesCommitted: a.penaltiesCommitted + b.penaltiesCommitted,
   };
 }
 
-export function countEvents(events: readonly MatchEvent[]): Counters {
+function addRedCard(c: Counters, card: RedCard): void {
+  c.reds++;
+  if (card.type === 'direct') c.redsDirect++;
+  else c.redsAccumulated++;
+}
+
+/** Contadores de todo menos las rojas. */
+function countRaw(events: readonly MatchEvent[]): Counters {
   const c = emptyCounters();
   for (const e of events) if (e.deletedAt === null) addEvent(c, e);
+  return c;
+}
+
+/** Contadores de un conjunto completo de eventos de un partido (rojas incluidas). */
+export function countEvents(events: readonly MatchEvent[]): Counters {
+  const c = countRaw(events);
+  for (const card of redCards(events)) addRedCard(c, card);
   return c;
 }
 
@@ -260,14 +284,20 @@ export function computeIntervals(match: Pick<Match, 'halfMinutes'>, events: read
     if (e.deletedAt !== null) continue;
     buckets[intervalIndex(e, match.halfMinutes)]?.push(e);
   }
-  return buckets.map((bucket, i) => {
+  const intervals = buckets.map((bucket, i) => {
     const period: Period = i < perHalf ? 1 : 2;
     const endMinute = Math.min(
       (period - 1) * match.halfMinutes + ((i % perHalf) + 1) * INTERVAL_MINUTES,
       period * match.halfMinutes,
     );
-    return { endMinute, period, counters: countEvents(bucket) };
+    return { endMinute, period, counters: countRaw(bucket) };
   });
+  // Cada roja cae en el tramo del evento que la provoca (p. ej. la 3.ª exclusión).
+  for (const card of redCards(events)) {
+    const iv = intervals[intervalIndex(card, match.halfMinutes)];
+    if (iv) addRedCard(iv.counters, card);
+  }
+  return intervals;
 }
 
 export function computeScore(match: Pick<Match, 'scoreAdjustment'>, team: Counters): Score {
@@ -305,6 +335,11 @@ export function computeMatchStats(
       players.set(e.playerId, c);
     }
     addEvent(c, e);
+  }
+  for (const card of redCards(live)) {
+    if (card.playerId === null) continue;
+    const c = players.get(card.playerId);
+    if (c) addRedCard(c, card);
   }
 
   return {

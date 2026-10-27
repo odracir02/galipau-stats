@@ -4,6 +4,7 @@ import { describePayload } from '../../domain/catalog';
 import { compareEvents } from '../../domain/events';
 import { formatClock } from '../../domain/format';
 import type { MatchEvent, SquadEntry } from '../../domain/types';
+import type { RedCard } from '../../stats/discipline';
 import { Icon } from '../components/Icon';
 import { iconForKind } from '../components/icons';
 import { Segmented } from '../components/Segmented';
@@ -12,13 +13,15 @@ import { playerLabel } from './labels';
 interface Props {
   events: readonly MatchEvent[];
   squad: readonly SquadEntry[];
+  /** Rojas derivadas, para señalar qué evento las provoca. */
+  cards: readonly RedCard[];
   initialFilter: 'all' | 'pending';
   onEdit: (event: MatchEvent) => void;
   onAdd: () => void;
 }
 
 /** Cronología editable: lo más reciente arriba. Tocar una acción la abre para corregirla. */
-export function Timeline({ events, squad, initialFilter, onEdit, onAdd }: Props) {
+export function Timeline({ events, squad, cards, initialFilter, onEdit, onAdd }: Props) {
   const [filter, setFilter] = useState(initialFilter);
   const live = useMemo(
     () => events.filter((e) => e.deletedAt === null).sort(compareEvents).reverse(),
@@ -26,6 +29,13 @@ export function Timeline({ events, squad, initialFilter, onEdit, onAdd }: Props)
   );
   const pending = live.filter((e) => e.playerId === null);
   const shown = filter === 'pending' ? pending : live;
+  const triggers = new Map(cards.map((c) => [c.triggerEventId, c.type]));
+  /** Nota de disciplina: qué exclusión provoca la roja y qué roja no suma por estar ya descalificado. */
+  const disciplineNote = (e: MatchEvent): string | null => {
+    if (triggers.get(e.id) === 'accumulated') return 'Roja por acumulación';
+    if (e.kind === 'red' && e.playerId !== null && !triggers.has(e.id)) return 'Ya descalificado: no suma';
+    return null;
+  };
 
   return (
     <div className="timeline">
@@ -59,6 +69,7 @@ export function Timeline({ events, squad, initialFilter, onEdit, onAdd }: Props)
                 <span className="tl-main">
                   <strong>{describePayload(e)}</strong>
                   <span className={e.playerId === null ? 'tl-pending' : 'muted'}>{playerLabel(squad, e.playerId)}</span>
+                  {disciplineNote(e) && <span className="tl-discipline">{disciplineNote(e)}</span>}
                 </span>
                 <Icon as={ChevronRight} className="chevron" />
               </button>

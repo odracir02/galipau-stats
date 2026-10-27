@@ -17,7 +17,8 @@ export function showToast(text: string, kind: Toast['kind'] = 'ok'): void {
   // Solo el último aviso de confirmación: no se apilan durante el registro rápido.
   toasts = [...toasts.filter((t) => t.kind === 'error'), toast].slice(-3);
   emit();
-  window.setTimeout(() => dismissToast(toast.id), kind === 'error' ? 7000 : 1800);
+  const ms = kind === 'error' ? 7000 : kind === 'info' ? 3500 : 1800;
+  window.setTimeout(() => dismissToast(toast.id), ms);
 }
 
 export function dismissToast(id: number): void {

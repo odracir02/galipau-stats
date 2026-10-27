@@ -33,7 +33,10 @@ type Step =
   | { name: 'player'; timing: EventTiming; payload: EventPayload };
 
 interface Props {
+  /** Convocados disponibles para acciones nuevas (sin los descalificados). */
   squad: readonly SquadEntry[];
+  /** Convocados descalificados: no se pueden elegir aquí, solo desde el editor. */
+  unavailable: readonly SquadEntry[];
   /** Momento de partido actual; se toma en la primera pulsación de la acción. */
   getTiming: () => EventTiming;
   /** Guarda la acción; resuelve a true si quedó guardada en el dispositivo. */
@@ -45,7 +48,7 @@ const CARD_MARK: Partial<Record<SimpleEventKind, string>> = {
   red: 'card-mark card-mark-red',
 };
 
-export function RecordPanel({ squad, getTiming, onRecord }: Props) {
+export function RecordPanel({ squad, unavailable, getTiming, onRecord }: Props) {
   const [step, setStep] = useState<Step>({ name: 'home' });
   const [saving, setSaving] = useState(false);
   const home = () => setStep({ name: 'home' });
@@ -221,6 +224,13 @@ export function RecordPanel({ squad, getTiming, onRecord }: Props) {
           >
             Sin identificar · asignar después
           </button>
+          {unavailable.length > 0 && (
+            <p className="hint">
+              Descalificados (no disponibles):{' '}
+              {unavailable.map((s) => `${s.number} · ${s.name}`).join(', ')}. Sus acciones anteriores se pueden
+              añadir desde la cronología.
+            </p>
+          )}
         </StepFrame>
       );
     }

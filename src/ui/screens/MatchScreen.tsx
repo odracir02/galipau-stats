@@ -11,6 +11,7 @@ import { lastRecorded, type EventTiming } from '../../domain/events';
 import { formatDate } from '../../domain/format';
 import type { EventPayload, Id, Match, MatchEvent, ScoreAdjustment, Team } from '../../domain/types';
 import * as svc from '../../services/matchService';
+import { disqualifications, redCards } from '../../stats/discipline';
 import { computeMatchStats } from '../../stats/engine';
 import { ConfirmSheet } from '../components/Sheet';
 import { Icon } from '../components/Icon';
@@ -86,6 +87,11 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
   const stats = useMemo(() => computeMatchStats(match, events), [match, events]);
   const last = useMemo(() => lastRecorded(events), [events]);
   const squad = match.squad;
+  // Descalificaciones derivadas de los eventos: se recalculan solas al corregir o borrar.
+  const cards = useMemo(() => redCards(events), [events]);
+  const disqualified = useMemo(() => new Set(disqualifications(events).keys()), [events]);
+  const available = useMemo(() => squad.filter((s) => !disqualified.has(s.playerId)), [squad, disqualified]);
+  const unavailable = useMemo(() => squad.filter((s) => disqualified.has(s.playerId)), [squad, disqualified]);
 
   /** Ejecuta una operación mostrando el error si falla. Devuelve si tuvo éxito. */
   async function attempt(op: () => Promise<void>): Promise<boolean> {
@@ -104,7 +110,13 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
     attempt(async () => {
       const e = await svc.recordEvent(repo, matchRef.current, payload, playerId, timing);
       setEvents((prev) => upsert(prev, e));
-      showToast(`${describePayload(e)} · ${playerLabel(squad, e.playerId)}`);
+      const card = e.playerId === null ? undefined : disqualifications(upsert(events, e)).get(e.playerId);
+      const label = `${describePayload(e)} · ${playerLabel(squad, e.playerId)}`;
+      if (card?.triggerEventId === e.id && card.type === 'accumulated') {
+        showToast(`${label} · 3.ª exclusión: roja por acumulación`, 'info');
+      } else {
+        showToast(label);
+      }
     });
 
   const toggleClock = () =>
@@ -170,7 +182,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
                   setTab('timeline');
                 }}
               />
-              <RecordPanel squad={squad} getTiming={getTiming} onRecord={record} />
+              <RecordPanel squad={available} unavailable={unavailable} getTiming={getTiming} onRecord={record} />
             </>
           ))}
         {tab === 'timeline' && (
@@ -179,6 +191,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
               key={timelineFilter}
               events={events}
               squad={squad}
+              cards={cards}
               initialFilter={timelineFilter}
               onEdit={(event) => setOverlay({ name: 'edit', event })}
               onAdd={() => setOverlay({ name: 'add', timing: getTiming() })}
@@ -294,6 +307,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
       {overlay?.name === 'edit' && (
         <EventEditorSheet
           squad={squad}
+          disqualified={disqualified}
           event={overlay.event}
           defaultTiming={overlay.event}
           onSave={(payload, playerId, timing) => saveEdit(overlay.event, payload, playerId, timing)}
@@ -304,6 +318,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
       {overlay?.name === 'add' && (
         <EventEditorSheet
           squad={squad}
+          disqualified={disqualified}
           defaultTiming={overlay.timing}
           onSave={record}
           onClose={() => setOverlay(null)}
