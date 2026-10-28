@@ -99,6 +99,11 @@ Correspondencia con IndexedDB:
 | Método y ruta | Permiso | Uso |
 | ------------- | ------- | --- |
 | `GET /api/health` | ninguno | Comprobación |
+| `POST /api/invites/redeem` | código de invitación (con o sin token) | Canjear un código. Sin token crea el dispositivo y devuelve su token una vez; con token añade el equipo |
+| `GET /api/session` | token de dispositivo | Equipos del dispositivo con su rol y si están disponibles |
+| `POST /api/session/teams/:teamId/leave` | token de dispositivo | Dejar un equipo (retira el permiso propio) |
+| `POST /api/session/logout` | token de dispositivo | Cerrar la sesión: revoca dispositivo, tokens y permisos |
+| `GET /api/teams/:teamId/codes` | consulta | Códigos que el rol puede ver |
 | `GET /api/teams/:teamId` | consulta | Datos del equipo y rol del dispositivo |
 | `GET /api/teams/:teamId/changes?since=N` | consulta | Cambios posteriores al cursor N |
 | `POST /api/sync/events` | entrenador, administrador de club o superadministrador | Subir una acción (alta, edición o borrado) |
@@ -107,7 +112,6 @@ Autenticación: `Authorization: Bearer <token del dispositivo>`. Las rutas de ad
 
 De fases posteriores son:
 
-- las rutas de crear equipos, gestionar códigos y canjearlos;
 - la transferencia de partidos;
 - la subida de partidos y plantillas.
 

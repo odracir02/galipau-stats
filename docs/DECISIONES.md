@@ -81,3 +81,7 @@
 | D77 | El entrenador ve los dos códigos pero no los regenera; consulta solo ve el suyo | Requisito aprobado; regenerar y revocar son administrativos. |
 | D78 | Clubes `active`/`suspended` (migración aditiva 0003); la suspensión corta el acceso operativo y solo el superadministrador la gestiona | Reversible, sin borrar datos. |
 | D79 | El módulo de entrada del Worker solo exporta el manejador | Con archivos estáticos, el runtime rechaza otras exportaciones con nombre y el Worker no arrancaría. |
+| D80 | Canje público con token opcional; con un token no válido, 401 sin crear dispositivo | Evita crear dispositivos huérfanos cuando la app tiene un token caducado o revocado; la app sabe que debe volver a empezar. |
+| D81 | El token se entrega una vez en el cuerpo de la respuesta y solo se acepta en `Authorization` | Fuera de URLs, historiales y registros. |
+| D82 | `GET /api/session` muestra los equipos no disponibles en vez de ocultarlos | La app puede explicar la situación (club suspendido) sin borrar datos locales; el acceso sigue cerrado. |
+| D83 | Cerrar sesión revoca el dispositivo completo; dejar un equipo, solo ese permiso | Dos acciones claras para el usuario; ninguna toca otros dispositivos. |

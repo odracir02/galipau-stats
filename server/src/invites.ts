@@ -342,7 +342,16 @@ export async function redeemInvite(
     );
   }
   statements.push(db.prepare('UPDATE invites SET use_count = use_count + 1 WHERE id = ?').bind(invite.id));
-  await db.batch(statements);
+  try {
+    await db.batch(statements);
+  } catch (e) {
+    // Dos canjes simultáneos del mismo dispositivo para el mismo equipo: el
+    // segundo choca con el permiso único y no cambia nada. Basta con reintentar.
+    if (/UNIQUE constraint failed: grants/.test(String(e))) {
+      throw new HttpError(409, 'redeem_conflict', 'El canje ya se está procesando. Inténtalo de nuevo.');
+    }
+    throw e;
+  }
   return { deviceId, token, teamId: invite.team_id, role };
 }
 

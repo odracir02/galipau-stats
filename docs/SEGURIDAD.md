@@ -117,6 +117,17 @@ No puede:
   - del dispositivo entero.
 - Un dispositivo puede tener varios tokens, lo que permite rotarlos.
 
+**Canje y sesión** (`POST /api/invites/redeem`, `/api/session`):
+- El primer canje (sin token) crea el dispositivo y devuelve su token **una sola vez, en el cuerpo** de la respuesta, con `Cache-Control: no-store`. Nunca en la URL, ni en registros, ni en otras respuestas.
+- El token solo se acepta en la cabecera `Authorization: Bearer`; un token en la URL se ignora (401).
+- Con un token válido, el canje añade el equipo a ese dispositivo con su propio rol y nunca rebaja un rol mayor. **Con un token no válido responde 401 y no crea ningún dispositivo.**
+- El código de consulta concede exactamente `viewer`: no registra partidos ni ve el código de entrenador.
+- Código inexistente, caducado, revocado, ya agotado o de un club suspendido o eliminado: siempre el mismo 404 (`invalid_code`). El identificador del equipo (p. ej. `SMA2627`) no sirve como código.
+- Límite de intentos por la IP que pone Cloudflare (`CF-Connecting-IP`); las cabeceras que envía el cliente no lo reinician.
+- `GET /api/session` lista los equipos del dispositivo. Los de un club suspendido o eliminado aparecen como `unavailable` para que la app avise, pero siguen sin acceso.
+- **Dejar un equipo** retira solo ese permiso, aunque el club esté suspendido. **Cerrar sesión** revoca el dispositivo, todos sus tokens y permisos; no afecta a otros dispositivos. Volver exige un canje nuevo.
+- CORS solo para los orígenes de la app y sin credenciales: la sesión del dispositivo no usa cookies, y las de Access no sirven aquí.
+
 **Códigos de invitación**
 
 | | Código de entrenador | Código de jugador/familia |

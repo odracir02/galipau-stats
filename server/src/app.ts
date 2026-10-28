@@ -1,9 +1,13 @@
 // Lógica del Worker de GalipauStats: API y panel de administración, en el mismo
 // origen. El punto de entrada es index.ts.
-// Pendientes: canje de códigos, transferencia de partidos y sincronización completa.
+// Pendientes: transferencia de partidos y sincronización completa.
 //
 // Dispositivos (Authorization: Bearer <token de dispositivo>; CORS solo para la PWA, sin cookies):
 //   GET  /api/health                         sin autenticación
+//   POST /api/invites/redeem                 canjear un código (sin token: dispositivo nuevo)
+//   GET  /api/session                        equipos y roles del dispositivo
+//   POST /api/session/teams/:teamId/leave    dejar un equipo
+//   POST /api/session/logout                 cerrar la sesión del dispositivo
 //   GET  /api/teams/:teamId                  consulta (cualquier rol del equipo)
 //   GET  /api/teams/:teamId/codes            códigos del equipo que el rol puede ver
 //   GET  /api/teams/:teamId/changes?since=N  consulta: cambios posteriores a N
@@ -46,9 +50,10 @@ import { codeKey } from './codecrypt';
 import { assertSafeAdminWrite } from './csrf';
 import type { Db } from './db';
 import { HttpError, notFound } from './errors';
-import { createInvite, readTeamCodes, revokeTeamCode, type InviteSecrets } from './invites';
+import { clientKeyFromRequest, createInvite, readTeamCodes, redeemInvite, revokeTeamCode, type InviteSecrets } from './invites';
 import { rowToTeam, type TeamRow } from './mapping';
 import { TEAM_ROLES, type TeamRole } from './model';
+import { getSession, leaveTeam, logout, teamSummary } from './session';
 import { applyEventOp, pullChanges, type EventOp } from './sync';
 
 /** Archivos estáticos del panel (binding ASSETS de Workers). */
@@ -134,6 +139,36 @@ async function inviteSecrets(env: Env): Promise<InviteSecrets> {
   return { pepper: devicePepper(env), codeKey: await codeKey(env.INVITE_CODE_KEY) };
 }
 
+/**
+ * Canje de un código. Sin token crea un dispositivo y devuelve su token una
+ * sola vez, en el cuerpo (nunca en la URL). Con token válido añade el equipo a
+ * ese dispositivo; con un token no válido responde 401 y no crea nada. El
+ * límite de intentos usa la IP que pone Cloudflare.
+ */
+async function redeem(request: Request, env: Env): Promise<Response> {
+  const pepper = devicePepper(env);
+  const presented = bearerToken(request);
+  const auth = presented ? await authenticate(env.DB, presented, pepper) : undefined;
+  const body = await readJson<{ code?: unknown; deviceLabel?: unknown }>(request);
+  const code = typeof body?.code === 'string' ? body.code : '';
+  if (!code || code.length > 40) throw new HttpError(400, 'bad_request', 'Código no válido.');
+  const label = body?.deviceLabel;
+  if (label !== undefined && label !== null && (typeof label !== 'string' || label.length > 60)) {
+    throw new HttpError(400, 'bad_request', 'Nombre de dispositivo no válido.');
+  }
+  // Sin caracteres de control (saltos de línea, nulos…): es un texto que se mostrará.
+  const printable = typeof label === 'string' ? [...label].filter((ch) => ch.charCodeAt(0) >= 32 && ch.charCodeAt(0) !== 127).join('') : '';
+  const deviceLabel = printable.trim() || null;
+  const result = await redeemInvite(env.DB, { code, clientKey: clientKeyFromRequest(request), deviceLabel, auth }, pepper);
+  const response = {
+    deviceId: result.deviceId,
+    role: result.role,
+    team: await teamSummary(env.DB, result.teamId),
+    ...(result.token ? { token: result.token } : {}),
+  };
+  return json(response, result.token ? 201 : 200);
+}
+
 function teamRole(value: string | undefined): TeamRole {
   if (!TEAM_ROLES.includes(value as TeamRole)) throw notFound();
   return value as TeamRole;
@@ -153,7 +188,24 @@ async function route(request: Request, env: Env): Promise<Response> {
 
   if (parts[1] === 'admin') return adminRoute(request, env, parts.slice(2));
 
+  if (request.method === 'POST' && parts[1] === 'invites' && parts[2] === 'redeem' && parts.length === 3) {
+    return redeem(request, env);
+  }
+
   const auth = await authenticate(env.DB, bearerToken(request), devicePepper(env));
+
+  if (parts[1] === 'session') {
+    if (request.method === 'GET' && parts.length === 2) return json(await getSession(env.DB, auth));
+    if (request.method === 'POST' && parts.length === 3 && parts[2] === 'logout') {
+      await logout(env.DB, auth);
+      return json({ ok: true });
+    }
+    if (request.method === 'POST' && parts.length === 5 && parts[2] === 'teams' && parts[4] === 'leave') {
+      await leaveTeam(env.DB, auth, parts[3]!);
+      return json({ ok: true });
+    }
+    throw notFound();
+  }
 
   if (request.method === 'GET' && parts[1] === 'teams' && parts[2] && parts.length === 3) {
     const team = await authorize(env.DB, auth, parts[2], 'team.read');
