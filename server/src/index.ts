@@ -18,6 +18,7 @@
 import { accessConfig } from './access';
 import { adminProfile, appointClubAdmin, createClub, deleteClub, listClubs, revokeClubAdmin } from './admin';
 import { authenticate, authenticateAdmin, authorize, bearerToken } from './auth';
+import { assertSafeAdminWrite } from './csrf';
 import type { Db } from './db';
 import { HttpError, notFound } from './errors';
 import { rowToTeam, type TeamRow } from './mapping';
@@ -134,6 +135,9 @@ async function adminRoute(request: Request, env: Env, path: string[]): Promise<R
   if (path[0] === 'critical' && config && !config.criticalEnabled) {
     throw new HttpError(503, 'critical_disabled', 'Las operaciones críticas no están habilitadas en este entorno.');
   }
+  // Escrituras: solo desde el propio origen y con JSON declarado (antes de
+  // autenticar, sin llegar a la base de datos).
+  assertSafeAdminWrite(request);
   const auth = await authenticateAdmin(env.DB, request, config);
   const m = request.method;
 

@@ -125,8 +125,12 @@ export interface AuthorizedTeam {
  * él responde 404 (no revela que exista); con permiso insuficiente, 403.
  */
 export async function authorize(db: Db, auth: AuthContext, teamId: Id, action: Action): Promise<AuthorizedTeam> {
+  // Un equipo solo es accesible si ni él ni su club están eliminados.
   const team = await db
-    .prepare('SELECT id, club_id AS clubId FROM teams WHERE id = ? AND deleted_at IS NULL')
+    .prepare(
+      `SELECT t.id, t.club_id AS clubId FROM teams t JOIN clubs c ON c.id = t.club_id
+       WHERE t.id = ? AND t.deleted_at IS NULL AND c.deleted_at IS NULL`,
+    )
     .bind(teamId)
     .first<{ id: string; clubId: string }>();
   if (!team) throw notFound();

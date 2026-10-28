@@ -81,6 +81,46 @@ Las operaciones críticas (crear o eliminar clubes, nombrar o retirar administra
 - Con ese valor, las rutas críticas responden **503 `critical_disabled`**, y ningún token cuenta como crítico, ni siquiera en las funciones internas.
 - Solo se cambia a `"enabled"`, entorno por entorno, después de superar la [verificación manual](#verificación-manual-del-segundo-factor).
 
+### Protección CSRF de las escrituras administrativas
+
+La cookie de Access (`CF_Authorization`) tiene `SameSite=None` por defecto: el navegador la envía también en peticiones iniciadas desde otra web. Por eso el Worker no se fía solo de la sesión. Toda petición de administración `POST`, `PUT`, `PATCH` o `DELETE` pasa por [`csrf.ts`](../server/src/csrf.ts) **antes de autenticar**, sin llegar a la base de datos:
+
+| Situación | Resultado |
+| --------- | --------- |
+| `Sec-Fetch-Site` presente y distinto de `same-origin` (`cross-site`, `same-site`, `none`, vacío…) | **403** `csrf_rejected` (`fetch_site`) |
+| `Origin` presente y distinto del origen exacto de la API (incluido `null`, otro esquema, puerto o subdominio) | **403** `csrf_rejected` (`origin`) |
+| Ni `Sec-Fetch-Site` ni `Origin` | **403** `csrf_rejected` (`missing_headers`) |
+| Mismo origen, pero `POST`/`PUT`/`PATCH` sin `Content-Type: application/json` | **415** `unsupported_media_type` |
+| Mismo origen y JSON | Sigue la autenticación y autorización normales |
+
+- Si faltan las dos cabeceras se **rechaza**. Los navegadores actuales envían al menos una en estas peticiones. Un script, que no lleva la cookie de la víctima, puede añadir `Origin` sin problema.
+- Las lecturas (`GET`) no cambian: no modifican nada, y sin CORS la otra web no puede leer la respuesta.
+- No depende de la configuración de cookies de Cloudflare. Aun así, conviene endurecerla (ver más abajo).
+- El panel de administración futuro funcionará sin cambios: el navegador envía `Sec-Fetch-Site: same-origin` y `Origin` en un `fetch` del mismo origen con JSON.
+
+### Antigüedad del token crítico: por qué no se impone todavía un límite
+
+Lo que se sabe por la documentación de Access:
+
+- La caducidad del token de aplicación (`exp`) es la duración de sesión de la política o, si no hay, la de la aplicación (24 h por defecto).
+- Cuando caduca el token de aplicación y la sesión global sigue vigente, Access emite **otro token sin volver a pedir el inicio de sesión**.
+- El segundo factor se exige cuando el último queda fuera de su propia duración. Las duraciones de MFA no determinan cuánto dura el acceso a la aplicación.
+- **No está documentado** si `iat` es la hora de emisión del token o la del inicio de sesión. Desde luego **no es la hora de la última biometría**: un token renovado en silencio tiene un `iat` nuevo aunque la biometría sea anterior.
+
+Consecuencias:
+
+- Un límite de 15 minutos sobre `iat` no garantiza biometría reciente.
+- Con una sesión de aplicación más larga provocaría **bloqueos falsos**: el Worker rechazaría un token que Access sigue considerando válido y que no renovaría, así que el usuario quedaría atascado hasta cerrar sesión.
+- No se impone. La biometría reciente la garantiza la configuración de MFA de la aplicación crítica, comprobada a mano.
+
+Propuesta segura, para cuando se pueda medir:
+
+1. En preview, con la aplicación crítica configurada con sesión de 15 minutos, medir `iat` y `exp` de un token crítico real (paso 6 de la verificación manual).
+2. Si `exp − iat` coincide con la sesión configurada, añadir en el Worker la comprobación **`exp − iat ≤ 15 min`** para los tokens críticos. Confirma criptográficamente que la sesión crítica es corta y no puede bloquear a nadie si la configuración es correcta. Si alguien alargara la sesión, el Worker dejaría de aceptar operaciones críticas: un fallo seguro y visible.
+3. Si no coincide, no añadir el límite y documentar lo observado.
+
+En ningún caso se tratará `iat` como hora de la biometría.
+
 ## Operaciones implementadas
 
 | Ruta | Quién | Notas |
@@ -163,6 +203,11 @@ Según la documentación de Access, **la aplicación de la ruta más específica
 
 - Se incluye cada ruta con y sin `/*`, porque un comodín en la ruta no cubre la ruta padre.
 - Una política compartida (*reusable policy*) para los correos evita que las listas se desincronicen, pero cada aplicación debe tenerla asignada.
+- **Cookies**, en las dos aplicaciones (*Settings → Cookie settings*):
+  - `SameSite` en `Lax` (o `Strict` si no causa redirecciones en bucle);
+  - `HttpOnly` activado (por defecto);
+  - **Binding Cookie** activada.
+  - Complementa, no sustituye, la protección CSRF del Worker.
 - Copiar el *Application Audience (AUD) Tag* de cada aplicación y el dominio del equipo en `server/wrangler.jsonc` (`ACCESS_TEAM_DOMAIN`, `ACCESS_AUD_ADMIN`, `ACCESS_AUD_CRITICAL`). No son secretos.
   - El dominio va con esquema: `https://<equipo>.cloudflareaccess.com`, igual que el emisor (`iss`) de los JWT.
   - `ACCESS_AUD_CRITICAL` es opcional: sin ella, la administración general funciona y las operaciones críticas quedan desactivadas aunque `ADMIN_CRITICAL_OPS` diga `enabled`.
@@ -188,12 +233,20 @@ Se hace **en cada entorno** (primero preview), con el Worker desplegado y las op
 **Segundo factor**
 5. Con el superadministrador: al iniciar sesión, Access pide el segundo factor (Face ID, Touch ID o llave) **además** del proveedor de identidad.
 6. Pedir `<api>/api/admin/critical/clubs` (por ejemplo, con `GET`, que el Worker responderá con 404 o 503) y anotar la hora. Access debe pedir el segundo factor.
+   - Para la propuesta de antigüedad del token, anotar también `iat` y `exp` del token crítico.
+   - Se obtiene en las herramientas del navegador (cookie `CF_Authorization` de la API, con la ruta crítica abierta) y se decodifica **en local**, nunca en webs externas. Por ejemplo:
+     ```bash
+     node -e "const p=JSON.parse(Buffer.from(process.argv[1].split('.')[1],'base64url'));console.log({iat:p.iat,exp:p.exp,vida_min:(p.exp-p.iat)/60})" "<token>"
+     ```
+   - Solo se apuntan esos tres valores; el token no se guarda ni se comparte.
 7. Volver a pedirlo **antes** de que pase la duración configurada → no lo pide.
 8. Volver a pedirlo **después** de esa duración → **lo pide de nuevo**, aunque la sesión general siga abierta. Este es el punto clave. Si no lo pide, la configuración no garantiza el segundo factor reciente y las operaciones críticas **no se habilitan**.
 9. Revisar el registro de Access (*Logs → Access*) para confirmar los inicios de sesión y los segundos factores de los pasos anteriores.
 
 **Habilitar**
 10. Poner `ADMIN_CRITICAL_OPS = "enabled"` solo en ese entorno, desplegar y repetir el paso 8 con una operación real. Por ejemplo, crear un club de prueba en preview: responde 201 y aparece en `admin_audit`.
+    - Por la protección CSRF, la operación se lanza **desde la propia API en el navegador**: abrir `<api>/api/admin/me` y, en la consola, `fetch('/api/admin/critical/clubs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Club de prueba' }) })`.
+    - Comprobar también que la misma petición desde otra web es rechazada con 403.
 11. Repetir la verificación cuando se cambie cualquier ajuste de Access (políticas, MFA, duraciones) y, como rutina, periódicamente.
 
 Si la cuenta no permite configurar el segundo factor con duración corta por aplicación o por política, las operaciones críticas siguen desactivadas, y los clubes y administradores se gestionan por consola hasta resolverlo.

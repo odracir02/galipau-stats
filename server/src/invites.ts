@@ -173,7 +173,8 @@ export async function redeemInvite(
   const invite = await db
     .prepare(
       `SELECT i.id, i.club_id, i.team_id, i.role FROM invites i JOIN teams t ON t.id = i.team_id
-       WHERE i.code_hash = ? AND i.revoked_at IS NULL AND i.expires_at > ? AND t.deleted_at IS NULL
+       JOIN clubs c ON c.id = t.club_id
+       WHERE i.code_hash = ? AND i.revoked_at IS NULL AND i.expires_at > ? AND t.deleted_at IS NULL AND c.deleted_at IS NULL
          AND (i.max_uses IS NULL OR i.use_count < i.max_uses)`,
     )
     .bind(await hashSecret(normalizeInviteCode(args.code), pepper), nowIso)

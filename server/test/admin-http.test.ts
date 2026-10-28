@@ -35,9 +35,11 @@ async function call(path: string, { email, critical = false, method = 'GET', bod
   body?: unknown;
   headers?: Record<string, string>;
 } = {}) {
-  const h = new Headers(headers);
+  // Como el panel de administración: navegador en el mismo origen que la API.
+  // Las pruebas de CSRF sustituyen estas cabeceras.
+  const h = new Headers({ 'Sec-Fetch-Site': 'same-origin', Origin: 'https://api.example', ...headers });
   if (email) h.set('Cf-Access-Jwt-Assertion', await issuer.sign(claimsFor(email, { aud: critical ? CONFIG.criticalAud : CONFIG.adminAud })));
-  if (body !== undefined) h.set('Content-Type', 'application/json');
+  if (body !== undefined && !h.has('Content-Type')) h.set('Content-Type', 'application/json');
   const res = await worker.fetch(
     new Request(`https://api.example${path}`, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) }),
     env,

@@ -159,7 +159,17 @@ Limitaciones y controles al desplegar:
 - Toda consulta parte de un equipo o club autorizado. Los permisos de un club no sirven para otro.
 - La base de datos lo refuerza con claves foráneas compuestas: una acción, convocatoria, permiso o invitación no puede apuntar a un equipo de otro club. Una persona solo se vincula a jugadores de su club.
 - La vinculación de un equipo a un club la hace un administrador, nunca por coincidencia de nombre ni de código.
+- **Clubes y equipos eliminados** (borrado lógico): `authorize()` solo deja pasar equipos no eliminados **de clubes no eliminados**, para cualquier rol, superadministrador incluido. Así, eliminar un club corta en el acto:
+  - la lectura y la escritura de sus equipos;
+  - la sincronización y la descarga de cambios;
+  - la gestión de sus códigos;
+  - el canje de sus invitaciones, que tiene su propia comprobación.
+  - Los datos no se borran.
 - CORS: cada entorno solo acepta su propia aplicación. CORS no es la protección; la protección es la credencial.
+
+## Protección CSRF de la administración
+
+Las escrituras administrativas (`POST`, `PUT`, `PATCH`, `DELETE`) solo se aceptan desde el propio origen de la API y, si llevan cuerpo, con `Content-Type: application/json`. Si faltan las cabeceras `Sec-Fetch-Site` y `Origin`, se rechaza. Detalle y tabla de respuestas: [AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#protección-csrf-de-las-escrituras-administrativas).
 
 ## Secretos y entornos
 
