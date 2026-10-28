@@ -26,6 +26,19 @@ export interface Repository {
   listEvents(matchId: Id): Promise<MatchEvent[]>;
   getEvent(id: Id): Promise<MatchEvent | undefined>;
   saveEvent(event: MatchEvent): Promise<void>;
+
+  /**
+   * Todo lo guardado, incluidos partidos y acciones eliminados lógicamente,
+   * leído en una sola transacción de lectura (copia coherente). Solo lectura.
+   */
+  readAll(): Promise<LocalSnapshot>;
+}
+
+export interface LocalSnapshot {
+  teams: Team[];
+  players: Player[];
+  matches: Match[];
+  events: MatchEvent[];
 }
 
 export class StorageError extends Error {

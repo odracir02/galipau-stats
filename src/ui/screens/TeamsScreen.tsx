@@ -1,4 +1,4 @@
-import { ChevronRight, Plus } from 'lucide-react';
+import { ChevronRight, DatabaseBackup, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
@@ -6,16 +6,26 @@ import { useLoad } from '../../app/useLoad';
 import { Icon } from '../components/Icon';
 import { Brand } from '../components/Logo';
 import { TopBar } from '../components/TopBar';
+import { BackupSheet } from './BackupSheet';
 import { OngoingMatchBanner } from './OngoingMatchBanner';
 import { TeamFormSheet } from './TeamFormSheet';
 
 export function TeamsScreen() {
   const teams = useLoad(() => repo.listTeams(), []);
   const [creating, setCreating] = useState(false);
+  const [backup, setBackup] = useState(false);
 
   return (
     <div className="screen">
-      <TopBar title={<Brand />} subtitle="Estadísticas de balonmano" />
+      <TopBar
+        title={<Brand />}
+        subtitle="Estadísticas de balonmano"
+        actions={
+          <button type="button" className="icon-btn" onClick={() => setBackup(true)} aria-label="Copia de seguridad">
+            <Icon as={DatabaseBackup} />
+          </button>
+        }
+      />
       <main className="content">
         <OngoingMatchBanner />
         {teams.error && <p className="form-error">{teams.error}</p>}
@@ -45,6 +55,7 @@ export function TeamsScreen() {
           Nuevo equipo
         </button>
       </main>
+      {backup && <BackupSheet onClose={() => setBackup(false)} />}
       {creating && (
         <TeamFormSheet
           onClose={() => setCreating(false)}

@@ -1,10 +1,10 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { Id, Match, MatchEvent, Player, Team } from '../domain/types';
 import { compareEvents } from '../domain/events';
-import { StorageError, type Repository } from './repository';
+import { StorageError, type LocalSnapshot, type Repository } from './repository';
 
 export const DB_NAME = 'galipaustats';
-const DB_VERSION = 1;
+export const DB_VERSION = 1;
 
 interface StatsDB extends DBSchema {
   teams: { key: Id; value: Team };
@@ -109,6 +109,21 @@ export class IndexedDbRepository implements Repository {
   }
   saveEvent(event: MatchEvent) {
     return this.put('events', event, 'guardar la acción');
+  }
+
+  readAll(): Promise<LocalSnapshot> {
+    return this.run('leer los datos', async (db) => {
+      // Una sola transacción de solo lectura sobre los cuatro almacenes.
+      const tx = db.transaction(['teams', 'players', 'matches', 'events'], 'readonly');
+      const [teams, players, matches, events] = await Promise.all([
+        tx.objectStore('teams').getAll(),
+        tx.objectStore('players').getAll(),
+        tx.objectStore('matches').getAll(),
+        tx.objectStore('events').getAll(),
+      ]);
+      await tx.done;
+      return clone({ teams, players, matches, events });
+    });
   }
 }
 
