@@ -40,7 +40,18 @@ export function CountBar({ label, count, max }: { label: string; count: number; 
 }
 
 /** Indicador circular para el porcentaje principal de una vista. */
-export function Ring({ pct, label, size = 88 }: { pct: number | null; label: string; size?: number }) {
+export function Ring({
+  pct,
+  label,
+  size = 88,
+  tone = 'attack',
+}: {
+  pct: number | null;
+  label: string;
+  size?: number;
+  /** Color: ataque (acento) o portería (color propio). */
+  tone?: 'attack' | 'keeper';
+}) {
   const stroke = 9;
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
@@ -48,7 +59,7 @@ export function Ring({ pct, label, size = 88 }: { pct: number | null; label: str
   const text = pct === null ? '—' : formatPct(pct);
   return (
     <svg
-      className="ring"
+      className={tone === 'keeper' ? 'ring ring-keeper' : 'ring'}
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}

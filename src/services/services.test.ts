@@ -95,6 +95,23 @@ describe('equipos y plantilla', () => {
     expect((await repo.getPlayer(id('p7')))!.number).toBe(70);
   });
 
+  it('nombre público opcional: compartible entre equipos del club y sin tocar id ni código', async () => {
+    const named = await updateTeam(repo, team, { ...team, publicName: '  BM   Burjassot ' });
+    expect(named).toMatchObject({ id: team.id, code: 'SM2627', name: team.name, publicName: 'BM Burjassot' });
+    // Otro equipo del mismo club puede usar el mismo nombre público; su código sigue siendo único.
+    const other = await createTeam(repo, { name: 'Senior Femenino A', code: 'SFA2627', season: '2026/27', maxSquad: 16, publicName: 'BM Burjassot' });
+    expect(other.publicName).toBe('BM Burjassot');
+    expect(other.id).not.toBe(team.id);
+    // Vaciarlo lo quita; el resto del equipo no cambia.
+    const cleared = await updateTeam(repo, named, { ...named, publicName: '' });
+    expect(cleared).not.toHaveProperty('publicName');
+    expect(await repo.getTeam(team.id)).toEqual(cleared);
+    // Sin el campo, un equipo creado antes de esta versión sigue igual.
+    const plain = await createTeam(repo, { name: 'Juvenil', code: 'JM2627', season: '2026/27', maxSquad: 16 });
+    expect(plain).not.toHaveProperty('publicName');
+    await expect(updateTeam(repo, plain, { ...plain, publicName: 'x'.repeat(41) })).rejects.toThrow(ValidationError);
+  });
+
   it('actualizar la temporada del equipo no cambia la de partidos existentes', async () => {
     const match = await newMatch();
     await updateTeam(repo, team, { ...team, season: '2027/28' });

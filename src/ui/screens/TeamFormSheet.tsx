@@ -4,7 +4,7 @@ import { errorMessage } from '../../app/errors';
 import { newId } from '../../domain/ids';
 import { seasonFor } from '../../domain/format';
 import type { Team } from '../../domain/types';
-import { createTeam, DEFAULT_MAX_SQUAD, updateTeam } from '../../services/teamService';
+import { createTeam, DEFAULT_MAX_SQUAD, MAX_PUBLIC_NAME, updateTeam } from '../../services/teamService';
 import { Sheet } from '../components/Sheet';
 
 interface Props {
@@ -16,6 +16,7 @@ interface Props {
 export function TeamFormSheet({ team, onClose, onSaved }: Props) {
   const [name, setName] = useState(team?.name ?? '');
   const [code, setCode] = useState(team?.code ?? '');
+  const [publicName, setPublicName] = useState(team?.publicName ?? '');
   const [season, setSeason] = useState(team?.season ?? seasonFor());
   const [maxSquad, setMaxSquad] = useState(String(team?.maxSquad ?? DEFAULT_MAX_SQUAD));
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +29,7 @@ export function TeamFormSheet({ team, onClose, onSaved }: Props) {
     if (saving) return;
     setSaving(true);
     try {
-      const input = { name, code, season, maxSquad: Number(maxSquad) };
+      const input = { name, code, publicName, season, maxSquad: Number(maxSquad) };
       onSaved(team ? await updateTeam(repo, team, input) : await createTeam(repo, input, draftId));
     } catch (err) {
       setError(errorMessage(err));
@@ -62,6 +63,17 @@ export function TeamFormSheet({ team, onClose, onSaved }: Props) {
             autoComplete="off"
           />
           <small>Identifica el equipo. No es una contraseña.</small>
+        </label>
+        <label>
+          Nombre en el marcador
+          <input
+            value={publicName}
+            onChange={(e) => setPublicName(e.target.value)}
+            placeholder="BM Burjassot"
+            maxLength={MAX_PUBLIC_NAME}
+            autoComplete="off"
+          />
+          <small>Opcional. Aparece en el marcador y en los resultados; si lo dejas vacío, se usa el nombre.</small>
         </label>
         <div className="form-row">
           <label>

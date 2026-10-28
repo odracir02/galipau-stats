@@ -43,11 +43,14 @@ Por tipo de lanzamiento (9 m, 6 m, penalti, contraataque) se aplican las mismas 
 
 Los lanzamientos **fuera** cuentan como recibidos pero **no** entran en el % de paradas. Mismo cálculo por procedencia (9 m, 6 m, extremo, contraataque, penalti).
 
+**Eficacia de portería** (indicador circular del equipo, junto a la eficacia ofensiva) = el mismo % de paradas, calculado sobre todos los lanzamientos recibidos por el equipo (incluidos los pendientes de atribución), una sola vez por acción. En la temporada se suman paradas y goles de todos los partidos y se calcula al final. Sin tiros a puerta registrados se muestra «—», no 0 %.
+
 ## Marcador
 
 - Propio = goles de `shot` (incluidos los pendientes de atribución) + `scoreAdjustment.own`.
 - Rival = goles de `gk_shot` (incluidos pendientes) + `scoreAdjustment.opponent`.
 - Nunca inferior a 0.
+- **Resultado** de un partido finalizado: victoria si propio > rival, derrota si propio < rival y empate si son iguales, con el marcador ya corregido. Propio y rival son siempre nuestros goles y los del rival, juguemos de local o de visitante; no se compara el lado izquierdo con el derecho del marcador.
 - La corrección manual solo cambia el marcador. **No** cambia goles, lanzamientos ni eficacias de nadie, y la pantalla muestra siempre cuánto viene de acciones y cuánto de corrección.
 
 ## Acciones pendientes de atribución
@@ -75,7 +78,6 @@ Cada ranking lee una cifra del acumulado de temporada (mismos partidos que la pe
 | El pistolero | goles | tiene al menos 1 gol |
 | El francotirador | eficacia = goles / lanzamientos | tiene al menos **10 lanzamientos** |
 | El muro | % paradas = paradas / (paradas + goles encajados); los fuera no cuentan | tiene al menos **20 tiros a puerta** (paradas + goles encajados) |
-| Muro defensivo | paradas de portero | tiene al menos 1 parada |
 | El ladrón | recuperaciones | tiene al menos 1 |
 | El reincidente | exclusiones de 2 minutos (la 3.ª cuenta; la roja por acumulación no suma otra) | tiene al menos 1 |
 | El generoso | pérdidas totales (incluye pasos, dobles y pases fallados) | tiene al menos 1 |
@@ -83,7 +85,7 @@ Cada ranking lee una cifra del acumulado de temporada (mismos partidos que la pe
 
 - Orden de mayor a menor. Los empatados comparten puesto y el siguiente salta (1, 1, 3). Dentro de un empate se presentan por dorsal.
 - Los porcentajes se comparan redondeados a un decimal, como se muestran: dos «66,7 %» empatan.
-- Se muestran como máximo 10 jugadores. Si en el último puesto visible hay más empatados de los que caben, se indica cuántos quedan fuera.
+- Se muestran como máximo 10 jugadores, contando al líder. El líder (o los empatados en el primer puesto) aparece solo en la tarjeta destacada; la lista empieza por el siguiente clasificado con su puesto real. Si en el último puesto visible hay más empatados de los que caben, se indica cuántos quedan fuera.
 - Los mínimos están en `RANKING_THRESHOLDS` y se muestran en la pantalla.
 - Solo cuentan acciones atribuidas a un jugador. Los partidos eliminados y las acciones borradas no cuentan.
 - Nombre y dorsal: los de la convocatoria más reciente del jugador en esa temporada.

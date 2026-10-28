@@ -3,6 +3,7 @@ import { ev, goal, makeMatch, SQUAD } from '../test/fixtures';
 import type { EventPayload, MatchEvent, SquadEntry } from '../domain/types';
 import { computeSeasonStats, savePct, type MatchWithEvents } from './engine';
 import {
+  podiumOf,
   positionOf,
   RANKING_LIMIT,
   RANKING_THRESHOLDS,
@@ -102,6 +103,37 @@ describe('rankings: Top 10', () => {
     expect(top.hiddenTies).toBe(2);
   });
 
+  it('el líder va solo en la tarjeta y la lista empieza por el segundo; en total, Top 10', () => {
+    const events = squad.flatMap((s, i) => times(i + 1, goal(), s.playerId));
+    const ranked = rank('top_scorer', [{ match: makeMatch({ squad }), events }]);
+    const view = podiumOf(ranked);
+    expect(view.leaders.map((e) => e.player.playerId)).toEqual(['j14']);
+    expect(view.rest[0]).toMatchObject({ position: 2, player: { playerId: 'j13' } });
+    expect(view.rest.some((e) => e.player.playerId === 'j14')).toBe(false);
+    expect(view.leaders.length + view.rest.length).toBe(RANKING_LIMIT);
+    expect(view.rest.at(-1)!.position).toBe(10);
+    // Fuera del Top 10 se sigue pudiendo consultar el puesto de un jugador.
+    expect(positionOf(ranked, 'j3')?.position).toBe(12);
+  });
+
+  it('con líderes empatados van todos a la tarjeta y la lista sigue con el puesto real', () => {
+    // j1 y j2 empatan en cabeza con 5; j3 tiene 3 (puesto 3, no 2).
+    const events = [...times(5, recovery, 'j1'), ...times(5, recovery, 'j2'), ...times(3, recovery, 'j3')];
+    const view = podiumOf(rank('thief', [{ match: makeMatch({ squad }), events }]));
+    expect(view.leaders.map((e) => [e.position, e.player.playerId])).toEqual([
+      [1, 'j1'],
+      [1, 'j2'],
+    ]);
+    expect(view.rest.map((e) => [e.position, e.player.playerId])).toEqual([[3, 'j3']]);
+  });
+
+  it('con un solo clasificado la lista queda vacía', () => {
+    const view = podiumOf(rank('top_scorer', [{ match: makeMatch(), events: [ev(goal(), 'p7')] }]));
+    expect(view.leaders).toHaveLength(1);
+    expect(view.rest).toEqual([]);
+    expect(view.hiddenTies).toBe(0);
+  });
+
   it('con menos de diez participantes los muestra todos', () => {
     const top = topOf(rank('top_scorer', [{ match: makeMatch(), events: [ev(goal(), 'p7')] }]));
     expect(top.entries).toHaveLength(1);
@@ -162,11 +194,20 @@ describe('rankings: porcentajes y mínimos', () => {
     // Misma cifra que el panel de porteros.
     const stats = computeSeasonStats(items);
     expect(r[0]!.value).toBe(savePct(stats.players.get('g1')!.counters.gk));
+  });
 
-    // Muro defensivo: número de paradas, sin mínimo.
-    expect(summary(rank('saves', items))).toEqual([
-      [1, 'g12', 15],
-      [2, 'g1', 12],
+  it('los porteros tienen un único ranking: El muro, por porcentaje (sin «Muro defensivo»)', () => {
+    const keeper = RANKINGS.filter((d) => /portero/i.test(d.description));
+    expect(keeper.map((d) => d.id)).toEqual(['wall']);
+    expect(RANKINGS.some((d) => d.title === 'Muro defensivo' || (d.id as string) === 'saves')).toBe(false);
+    expect(RANKINGS.map((d) => d.id)).toEqual([
+      'top_scorer',
+      'sharpshooter',
+      'wall',
+      'thief',
+      'repeat_offender',
+      'generous',
+      'shots',
     ]);
   });
 
@@ -234,5 +275,6 @@ describe('rankings: sin datos', () => {
       expect(rank(def.id, [{ match: makeMatch(), events: [] }])).toEqual([]);
     }
     expect(topOf([])).toEqual({ entries: [], hiddenTies: 0 });
+    expect(podiumOf([])).toEqual({ leaders: [], rest: [], hiddenTies: 0 });
   });
 });

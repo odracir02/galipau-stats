@@ -8,7 +8,7 @@ import { useLoad } from '../../app/useLoad';
 import { useWakeLock } from '../../app/useWakeLock';
 import { describePayload } from '../../domain/catalog';
 import { buildEvent, lastRecorded, type EventTiming } from '../../domain/events';
-import { formatClock, formatDate } from '../../domain/format';
+import { formatClock, formatDate, opponentLabel, publicTeamName } from '../../domain/format';
 import type { EventPayload, Id, Match, MatchEvent, ScoreAdjustment, Team } from '../../domain/types';
 import * as svc from '../../services/matchService';
 import { actionAfterDisqualification, disqualifications, redCards } from '../../stats/discipline';
@@ -177,7 +177,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
     <div className="screen match-screen">
       <ClockHeader
         match={match}
-        teamCode={team.code}
+        teamName={publicTeamName(team)}
         score={stats.score}
         onToggle={toggleClock}
         onMenu={() => setOverlay({ name: 'menu' })}
@@ -225,13 +225,13 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
           <div className="content">
             <StatsView
               mode="match"
-              context={`${match.venue === 'home' ? 'vs' : '@'} ${match.opponent} · ${formatDate(match.date)}`}
+              context={`${opponentLabel(match.opponent)} · ${formatDate(match.date)}`}
               redCards={disqualifications(events)}
               team={stats.team}
               rows={squad.map((s) => ({ ...s, counters: stats.players.get(s.playerId)! }))}
               intervals={stats.intervals}
               pendingCount={pending}
-              summary={<MatchSummaryCard match={match} teamName={team.name} stats={stats} />}
+              summary={<MatchSummaryCard match={match} teamName={publicTeamName(team)} stats={stats} />}
             />
           </div>
         )}
@@ -323,9 +323,14 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
           onCancel={() => setOverlay(null)}
           onConfirm={() =>
             void attempt(async () => {
-              setMatch(await svc.finishMatch(repo, matchRef.current));
+              // Solo se sale cuando el partido ya está guardado como finalizado; si
+              // falla, se queda aquí con el aviso de error.
+              const finished = await svc.finishMatch(repo, matchRef.current);
+              setMatch(finished);
               setOverlay(null);
-              setTab('stats');
+              showToast('Partido finalizado');
+              // La pantalla del equipo se monta de nuevo: abre en «Partidos» y relee la lista.
+              navigate({ name: 'team', teamId: finished.teamId });
             })
           }
         />
@@ -336,9 +341,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
           message={
             <>
               <p>
-                <strong>
-                  {match.venue === 'home' ? 'vs' : '@'} {match.opponent}
-                </strong>{' '}
+                <strong>{opponentLabel(match.opponent)}</strong>{' '}
                 · {formatDate(match.date)}
               </p>
               <p>

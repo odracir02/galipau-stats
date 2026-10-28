@@ -16,6 +16,12 @@ export interface Team {
   name: string;
   /** Código corto identificativo (p. ej. SM2627). No es una contraseña. */
   code: string;
+  /**
+   * Nombre público con el que aparece en marcadores y resultados (p. ej. BM
+   * Burjassot). Opcional: varios equipos del mismo club pueden compartirlo, ya
+   * que no identifica al equipo (para eso están `id` y `code`).
+   */
+  publicName?: string;
   /** Temporada vigente, propuesta por defecto al crear partidos (p. ej. 2026/27). */
   season: string;
   /** Límite configurable de convocados por partido. */

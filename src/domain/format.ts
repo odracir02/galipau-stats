@@ -1,4 +1,14 @@
-import type { LocalDate } from './types';
+import type { LocalDate, Team } from './types';
+
+/** Nombre con el que el equipo aparece en marcadores y resultados. */
+export function publicTeamName(team: Pick<Team, 'name' | 'publicName'>): string {
+  return team.publicName?.trim() || team.name;
+}
+
+/** Rival con la misma presentación en todos los partidos, sea local o visitante. */
+export function opponentLabel(opponent: string): string {
+  return `vs ${opponent}`;
+}
 
 /** Formatea milisegundos de partido como mm:ss (los minutos pueden pasar de 60). */
 export function formatClock(ms: number): string {

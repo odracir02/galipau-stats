@@ -4,7 +4,7 @@ Definición exacta en [`src/domain/types.ts`](../src/domain/types.ts).
 
 ## Entidades
 
-**Team**: `id`, `name`, `code` (código corto, p. ej. `SM2627`; identifica, no es contraseña), `season` (temporada vigente), `maxSquad` (límite de convocados, 16 por defecto).
+**Team**: `id`, `name`, `code` (código corto, p. ej. `SM2627`; identifica, no es contraseña), `season` (temporada vigente), `maxSquad` (límite de convocados, 16 por defecto), `publicName` opcional (nombre en el marcador y los resultados, p. ej. «BM Burjassot»; varios equipos del mismo club pueden compartirlo porque no identifica al equipo; si falta, se usa `name`). `publicName` es por ahora solo local: la sincronización todavía no lo transporta.
 
 **Player**: `id` estable (UUID, nunca el dorsal), `teamId`, `name`, `number`, `position` (`field` | `goalkeeper`), `active`. El dorsal es único entre los jugadores **activos** del equipo.
 

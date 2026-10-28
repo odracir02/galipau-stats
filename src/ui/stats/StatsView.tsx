@@ -6,7 +6,7 @@ import { useState, type ReactNode } from 'react';
 import { formatPct } from '../../domain/format';
 import type { Id } from '../../domain/types';
 import type { RedCard } from '../../stats/discipline';
-import { efficiency, sanctions, savePct, type Counters, type IntervalStats } from '../../stats/engine';
+import { efficiency, onTarget, sanctions, savePct, type Counters, type IntervalStats } from '../../stats/engine';
 import { Icon } from '../components/Icon';
 import { Segmented } from '../components/Segmented';
 import { IntervalChart, Meter, Ring } from './charts';
@@ -96,6 +96,7 @@ function TeamStats({
   summary: ReactNode;
 }) {
   const s = team.shots;
+  const g = team.gk;
   const hasIntervalData = intervals?.some((iv) => iv.counters.shots.goals + iv.counters.gk.goals > 0) ?? false;
   return (
     <>
@@ -103,28 +104,41 @@ function TeamStats({
 
       <section className="card">
         <h3>Resumen</h3>
-        <div className="hero">
-          <Ring pct={efficiency(s)} label="Eficacia ofensiva" />
-          <div className="hero-text">
-            <span className="hero-label">Eficacia ofensiva</span>
-            <strong>
-              {s.goals} {s.goals === 1 ? 'gol' : 'goles'} / {s.attempts}{' '}
-              {s.attempts === 1 ? 'lanzamiento' : 'lanzamientos'}
-            </strong>
-            <span className="muted">
-              {s.out} fuera · {s.saved} {s.saved === 1 ? 'parado' : 'parados'}
-            </span>
+        <div className="hero-pair">
+          <div className="hero">
+            <Ring pct={efficiency(s)} label="Eficacia ofensiva" />
+            <div className="hero-text">
+              <span className="hero-label">Eficacia ofensiva</span>
+              <strong>
+                {s.goals} {s.goals === 1 ? 'gol' : 'goles'} / {s.attempts}{' '}
+                {s.attempts === 1 ? 'lanzamiento' : 'lanzamientos'}
+              </strong>
+              <span className="muted">
+                {s.out} fuera · {s.saved} {s.saved === 1 ? 'parado' : 'parados'}
+              </span>
+            </div>
+          </div>
+          <div className="hero">
+            <Ring pct={savePct(g)} label="Eficacia de portería" tone="keeper" />
+            <div className="hero-text">
+              <span className="hero-label">Eficacia de portería</span>
+              {onTarget(g) === 0 ? (
+                <strong>Sin tiros a puerta</strong>
+              ) : (
+                <strong>
+                  {g.saves} {g.saves === 1 ? 'parada' : 'paradas'} / {onTarget(g)} a puerta
+                </strong>
+              )}
+              <span className="muted">
+                {g.goals} {g.goals === 1 ? 'gol recibido' : 'goles recibidos'} · {g.out} fuera
+              </span>
+            </div>
           </div>
         </div>
         <div className="tiles">
           <Tile label="Goles" value={s.goals} />
           <Tile label="Lanzamientos" value={s.attempts} />
-          <Tile
-            accent
-            label="% paradas"
-            value={formatPct(savePct(team.gk))}
-            sub={`${team.gk.saves}/${team.gk.saves + team.gk.goals}`}
-          />
+          <Tile label="Paradas" value={g.saves} sub={`${g.goals} recibidos`} />
           <Tile label="Pérdidas" value={team.turnovers.total} />
           <Tile label="Recuperaciones" value={team.recoveries} />
           <Tile label="Exclusiones · rojas" value={`${team.exclusions} · ${team.reds}`} />

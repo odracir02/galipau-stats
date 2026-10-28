@@ -5,6 +5,7 @@ import {
   computeSeasonStats,
   efficiency,
   intervalIndex,
+  matchResult,
   onTarget,
   sanctions,
   savePct,
@@ -311,5 +312,65 @@ describe('gol de portero', () => {
     expect(g.gk).toEqual({ goals: 1, saves: 0, out: 0, received: 1 });
     expect(savePct(g.gk)).toBe(0);
     expect(s.score).toMatchObject({ own: 1, opponent: 1 });
+  });
+});
+
+describe('eficacia de portería del equipo', () => {
+  const gkSave = { kind: 'gk_shot', shotType: 'nine_m', result: 'save' } as const;
+  const gkGoal = { kind: 'gk_shot', shotType: 'six_m', result: 'goal' } as const;
+  const gkOut = { kind: 'gk_shot', shotType: 'wing', result: 'out' } as const;
+
+  it('paradas / (paradas + goles recibidos) de todos los porteros, pendientes incluidas, una vez por acción', () => {
+    const events = [
+      ev(gkSave, 'g1', 2),
+      ev(gkSave, 'g12', 3),
+      ev(gkSave, null, 4), // pendiente de atribuir: cuenta para el equipo
+      ev(gkGoal, 'g1', 5),
+      ev(gkOut, 'g1', 6), // fuera: no entra
+      ev(gkSave, 'g1', 7, { deleted: true }), // borrada: no entra
+    ];
+    const s = computeMatchStats(makeMatch(), events);
+    expect(s.team.gk).toMatchObject({ saves: 3, goals: 1, out: 1 });
+    expect(onTarget(s.team.gk)).toBe(4);
+    expect(savePct(s.team.gk)).toBe(75);
+    // Los goles recibidos del indicador son los mismos del marcador rival.
+    expect(s.team.gk.goals).toBe(s.score.opponentFromEvents);
+    // Suma de porteros + pendientes, sin contar nada dos veces.
+    const byKeepers = s.players.get('g1')!.gk.saves + s.players.get('g12')!.gk.saves;
+    expect(byKeepers + 1).toBe(s.team.gk.saves);
+  });
+
+  it('sin tiros a puerta no hay porcentaje (se muestra «—»), aunque haya lanzamientos fuera', () => {
+    expect(savePct(computeMatchStats(makeMatch(), []).team.gk)).toBeNull();
+    expect(savePct(computeMatchStats(makeMatch(), [ev(gkOut, 'g1')]).team.gk)).toBeNull();
+  });
+
+  it('en la temporada se suman paradas y goles y se calcula sobre el total', () => {
+    const season = computeSeasonStats([
+      // 1 de 1 (100 %)
+      { match: makeMatch({ id: 'm1' }), events: [ev(gkSave, 'g1', 2)] },
+      // 1 de 3 (33,3 %)
+      {
+        match: makeMatch({ id: 'm2', date: '2026-11-01' }),
+        events: [ev(gkSave, 'g1', 2, { matchId: 'm2' }), ev(gkGoal, 'g1', 3, { matchId: 'm2' }), ev(gkGoal, 'g1', 4, { matchId: 'm2' })],
+      },
+    ]);
+    // 2 de 4 = 50 %, no la media de porcentajes (66,7 %).
+    expect(savePct(season.team.gk)).toBe(50);
+  });
+});
+
+describe('resultado del partido', () => {
+  it('compara nuestros goles con los del rival, con correcciones y sin importar el campo', () => {
+    const win = [ev(goal(), 'p7'), ev(goal(), 'p14')];
+    // Visitante: el marcador se pinta rival–nosotros, pero el resultado es nuestro.
+    expect(matchResult(computeMatchStats(makeMatch({ venue: 'away' }), win).score)).toBe('win');
+    expect(matchResult(computeMatchStats(makeMatch({ venue: 'home' }), win).score)).toBe('win');
+    // La corrección manual cambia el resultado.
+    const adjusted = makeMatch({ venue: 'away', scoreAdjustment: { own: 0, opponent: 3 } });
+    expect(matchResult(computeMatchStats(adjusted, win).score)).toBe('loss');
+    const draw = makeMatch({ scoreAdjustment: { own: 0, opponent: 2 } });
+    expect(matchResult(computeMatchStats(draw, win).score)).toBe('draw');
+    expect(matchResult({ own: 0, opponent: 0 })).toBe('draw');
   });
 });

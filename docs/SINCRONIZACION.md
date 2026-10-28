@@ -69,3 +69,5 @@ No se fuerza. Cuando el usuario vincule un equipo local a un club (005C), la app
 
 - Cliente: `outbox`, `syncMeta`, subida, descarga e interfaz de conflictos.
 - Servidor: operaciones de partido, convocatoria, jugadores y equipo con el mismo esquema que las acciones, transferencia de partido y rutas de invitación.
+- Cambios simultáneos de un partido en el propio dispositivo: hoy cada cambio (cronómetro, marcador, finalizar…) guarda el partido completo a partir de la última copia en memoria, de modo que dos cambios casi simultáneos podrían pisarse. Al añadir la cola de operaciones, los cambios del partido deben aplicarse en orden sobre la versión guardada.
+- Nombre en el marcador (`publicName` del equipo): hoy es solo local. Habrá que transportarlo o derivarlo del nombre del club, sin usarlo nunca como identificador.

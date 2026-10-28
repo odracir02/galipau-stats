@@ -16,10 +16,15 @@ export interface TeamInput {
   code: string;
   season: string;
   maxSquad: number;
+  /** Nombre público para marcadores (p. ej. BM Burjassot); vacío = se usa `name`. */
+  publicName?: string;
 }
+
+export const MAX_PUBLIC_NAME = 40;
 
 function validateTeam(input: TeamInput): TeamInput {
   const name = input.name.trim();
+  const publicName = (input.publicName ?? '').trim().replace(/\s+/g, ' ');
   const season = input.season.trim();
   const code = normalizeTeamCode(input.code);
   if (!name) throw new ValidationError('El nombre del equipo es obligatorio.');
@@ -27,7 +32,9 @@ function validateTeam(input: TeamInput): TeamInput {
   assertValidTeamCode(code);
   if (!Number.isInteger(input.maxSquad) || input.maxSquad < 1 || input.maxSquad > 40)
     throw new ValidationError('El máximo de convocados debe estar entre 1 y 40.');
-  return { name, season, code, maxSquad: input.maxSquad };
+  if (publicName.length > MAX_PUBLIC_NAME)
+    throw new ValidationError(`El nombre público admite como máximo ${MAX_PUBLIC_NAME} caracteres.`);
+  return { name, season, code, maxSquad: input.maxSquad, ...(publicName && { publicName }) };
 }
 
 async function assertCodeFree(repo: Repository, code: string, ownId: Id | null): Promise<void> {
@@ -51,6 +58,8 @@ export async function updateTeam(repo: Repository, team: Team, input: TeamInput)
   const clean = validateTeam(input);
   await assertCodeFree(repo, clean.code, team.id);
   const updated: Team = { ...team, ...clean, updatedAt: new Date().toISOString() };
+  // Si se deja vacío el nombre público, el equipo deja de tenerlo.
+  if (!clean.publicName) delete updated.publicName;
   await repo.saveTeam(updated);
   return updated;
 }

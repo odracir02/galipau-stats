@@ -313,6 +313,19 @@ export function computeScore(match: Pick<Match, 'scoreAdjustment'>, team: Counte
   };
 }
 
+export type MatchResult = 'win' | 'loss' | 'draw';
+
+/**
+ * Resultado para nuestro equipo. `own` y `opponent` ya son nuestros goles y los
+ * del rival (con correcciones), sea cual sea el campo: no se compara el lado
+ * izquierdo con el derecho del marcador.
+ */
+export function matchResult(score: Pick<Score, 'own' | 'opponent'>): MatchResult {
+  if (score.own > score.opponent) return 'win';
+  if (score.own < score.opponent) return 'loss';
+  return 'draw';
+}
+
 export function computeMatchStats(
   match: Pick<Match, 'squad' | 'scoreAdjustment' | 'halfMinutes'>,
   events: readonly MatchEvent[],

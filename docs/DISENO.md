@@ -14,7 +14,10 @@ Estética deportiva y sobria. Una sola fuente de verdad: los tokens de `:root` e
 | `--c-text-2` / `--c-text-3` | `#5F6B78` / `#8A949F` | Texto secundario / terciario |
 | `--c-accent` | `#C9243D` | Acción principal, gol propio, pestaña activa, reloj parado («Reanudar») |
 | `--c-secondary` | `#E9892C` | Uso puntual: cuenta atrás, pendientes, etiqueta de portero |
-| `--c-danger` | `#B42318` | Solo errores y acciones destructivas |
+| `--c-danger` | `#B42318` | Errores, acciones destructivas y etiqueta «Derrota» |
+| `--c-success` | `#1E7A4C` | Etiqueta «Victoria» |
+| `--c-warning-soft` / `--c-warning-text` | `#FDF4CF` / `#7A5B00` | Etiqueta «Empate» |
+| `--c-keeper` | `#1D6F8F` | Indicador circular de eficacia de portería |
 | `--c-gold` / `--c-gold-text` | `#D6A83A` / `#8A6514` | Solo rankings: corona del líder y primer puesto |
 
 Reglas:
@@ -56,8 +59,8 @@ Un único juego, `lucide-react`, con trazo 2 y tamaño 20 px por defecto (compon
 - Cabecera con trofeo; acceso desde el trofeo de la cabecera del equipo y desde la pestaña Temporada.
 - Selector en carrusel horizontal de píldoras (se desplaza dentro de sí mismo, no la página).
 - Título y descripción de la clasificación; el mínimo de los porcentajes, en negrita.
-- Tarjeta oscura del líder con corona dorada; si hay empate, «Líderes empatados».
-- Lista compacta: puesto, dorsal, nombre, partidos jugados y cifra (en porcentajes, también aciertos/intentos).
+- Tarjeta oscura del líder con corona dorada; si hay empate, «Líderes empatados» con todos sus nombres.
+- Lista compacta, sin repetir al líder (empieza por el segundo clasificado): puesto, dorsal, nombre, partidos jugados y cifra (en porcentajes, también aciertos/intentos). Entre tarjeta y lista, como máximo el Top 10.
 - Estado vacío con trofeo gris cuando no hay partidos o nadie cumple el mínimo.
 
 ## Pantalla de partido

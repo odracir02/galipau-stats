@@ -4,12 +4,12 @@ import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
 import { showToast } from '../../app/toast';
 import { useLoad } from '../../app/useLoad';
-import { formatDate } from '../../domain/format';
-import { MATCH_STATUS_LABEL } from '../../domain/catalog';
+import { formatDate, opponentLabel } from '../../domain/format';
 import type { Id, Player, Team } from '../../domain/types';
 import { loadSeasonItems } from '../../services/statsService';
 import { computeMatchStats, computeSeasonStats, perMatch } from '../../stats/engine';
 import { Icon } from '../components/Icon';
+import { statusBadge } from '../match/labels';
 import { Segmented } from '../components/Segmented';
 import { TopBar } from '../components/TopBar';
 import { StatsView } from '../stats/StatsView';
@@ -86,7 +86,10 @@ function MatchList({ team }: { team: Team }) {
   const data = useLoad(async () => {
     const matches = await repo.listMatches(team.id);
     return Promise.all(
-      matches.map(async (m) => ({ match: m, score: computeMatchStats(m, await repo.listEvents(m.id)).score })),
+      matches.map(async (m) => {
+        const score = computeMatchStats(m, await repo.listEvents(m.id)).score;
+        return { match: m, score, badge: statusBadge(m.status, score) };
+      }),
     );
   }, [team.id]);
 
@@ -108,7 +111,7 @@ function MatchList({ team }: { team: Team }) {
         </div>
       )}
       <ul className="list">
-        {data.data?.map(({ match, score }) => (
+        {data.data?.map(({ match, score, badge }) => (
           <li key={match.id}>
             <button
               type="button"
@@ -116,9 +119,7 @@ function MatchList({ team }: { team: Team }) {
               onClick={() => navigate({ name: 'match', matchId: match.id })}
             >
               <span className="list-main">
-                <strong>
-                  {match.venue === 'home' ? 'vs' : '@'} {match.opponent}
-                </strong>
+                <strong>{opponentLabel(match.opponent)}</strong>
                 <span className="muted">
                   {formatDate(match.date)} · {match.venue === 'home' ? 'Local' : 'Visitante'} · {match.season}
                 </span>
@@ -127,7 +128,7 @@ function MatchList({ team }: { team: Team }) {
                 <span className="score-sm">
                   {score.own} – {score.opponent}
                 </span>
-                <span className={`status status-${match.status}`}>{MATCH_STATUS_LABEL[match.status]}</span>
+                <span className={`status status-${badge.tone}`}>{badge.label}</span>
               </span>
             </button>
           </li>

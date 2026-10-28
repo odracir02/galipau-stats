@@ -8,7 +8,8 @@ import { Icon } from '../components/Icon';
 
 interface Props {
   match: Match;
-  teamCode: string;
+  /** Nombre público de nuestro equipo (nunca su código interno). */
+  teamName: string;
   score: Score;
   onToggle: () => void;
   onMenu: () => void;
@@ -16,7 +17,7 @@ interface Props {
 }
 
 /** Cabecera compacta y fija: marcador, cronómetro y botón de pausa/reanudación. */
-export function ClockHeader({ match, teamCode, score, onToggle, onMenu, onScore }: Props) {
+export function ClockHeader({ match, teamName, score, onToggle, onMenu, onScore }: Props) {
   const now = useNow(match.clock.running);
   const t = elapsedMs(match.clock, now);
   const remaining =
@@ -45,7 +46,7 @@ export function ClockHeader({ match, teamCode, score, onToggle, onMenu, onScore 
     <header className={`match-head ${match.clock.running ? 'is-running' : 'is-stopped'}`}>
       <div className="mh-top">
         <button type="button" className="mh-score" onClick={onScore} aria-label="Marcador. Pulsa para corregirlo">
-          <span className="mh-team mh-team-own">{teamCode}</span>
+          <span className="mh-team mh-team-own">{teamName}</span>
           <span className="mh-goals">
             {score.own}–{score.opponent}
             {adjusted && <sup title="Incluye corrección manual">*</sup>}

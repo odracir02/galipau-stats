@@ -52,7 +52,7 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 
 ## F. Estadísticas
 
-32. Estadísticas → Equipo: comprobar a mano goles, lanzamientos, eficacia, pérdidas, sanciones e intervalos.
+32. Estadísticas → Equipo: comprobar a mano goles, lanzamientos, eficacia, pérdidas, sanciones e intervalos. ✔ Dos indicadores circulares: eficacia ofensiva y eficacia de portería (paradas / (paradas + goles recibidos), con las cifras absolutas; «—» si no hay tiros a puerta). En la cabecera del partido aparece el nombre en el marcador del equipo (Editar equipo → «Nombre en el marcador»), no su código.
 33. Jugadores → tocar un jugador. ✔ Ficha completa (lanzamientos por tipo, pérdidas desglosadas, sanciones…).
 34. Porteros → ficha. ✔ % paradas = paradas / (paradas + goles), los «fuera» no cuentan.
 
@@ -61,7 +61,7 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 35. Cerrar la pestaña y volver a abrir. ✔ En Inicio aparece «Partido en curso · Continuar».
 36. DevTools → Network → Offline y recargar. ✔ La app carga y se pueden registrar acciones.
 37. ⋮ → Finalizar partido con alguna acción pendiente. ✔ Avisa de las pendientes pero permite finalizar.
-38. Volver al equipo. ✔ Historial con fecha, rival, L/V, temporada, resultado y estado «Finalizado».
+38. Confirmar «Finalizar». ✔ Vuelve sola a la pantalla del equipo, pestaña «Partidos», con el resultado y la etiqueta «Victoria» (verde), «Derrota» (roja) o «Empate» (amarilla) según nuestro marcador, también como visitante y con correcciones. Rival siempre como «vs Rival»; Local/Visitante en la línea de información.
 39. Abrir el partido finalizado. ✔ Se abre en Estadísticas; se puede corregir desde la cronología; ⋮ → Reabrir.
 40. Pestaña Temporada con dos partidos. ✔ Totales sumados; PJ por jugador; porcentajes sobre totales.
 41. Cambiar nombre o dorsal de un jugador en la plantilla. ✔ Los partidos anteriores muestran el nombre/dorsal de entonces.
@@ -149,11 +149,12 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 82. Con un equipo sin partidos, pulsar el trofeo de la cabecera del equipo.
     - ✔ Pantalla «Rankings» con trofeo y estado vacío «Todavía no hay partidos».
 83. Jugar (o usar) dos partidos con goles, lanzamientos, paradas, recuperaciones, exclusiones y pérdidas de varios jugadores.
-84. Volver a Rankings (también desde Temporada → «Rankings»). Recorrer las ocho clasificaciones del selector.
+84. Volver a Rankings (también desde Temporada → «Rankings»). Recorrer las siete clasificaciones del selector («Muro defensivo» ya no existe).
     - ✔ Cada una muestra su descripción; el francotirador y el muro indican su mínimo.
     - ✔ Las cifras coinciden con Temporada → Jugadores / Porteros.
     - ✔ Tarjeta oscura del líder con corona; empates con el mismo puesto (1, 1, 3) y «Líderes empatados».
-    - ✔ Nadie con 0 en la cifra aparece en la lista; nunca más de 10 filas.
+    - ✔ El líder no se repite en la lista, que empieza por el 2.º clasificado; entre tarjeta y lista, nunca más de 10 jugadores.
+    - ✔ Nadie con 0 en la cifra aparece en la lista.
 85. Francotirador con un jugador de 9 lanzamientos. ✔ No aparece; con el 10.º, sí.
 86. El muro: un portero con muchos lanzamientos fuera. ✔ No cambian su %.
 87. Editar un gol a otro jugador y borrar otro desde la cronología. Volver a Rankings. ✔ Las cifras cambian.

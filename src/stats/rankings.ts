@@ -23,7 +23,6 @@ export type RankingId =
   | 'top_scorer'
   | 'sharpshooter'
   | 'wall'
-  | 'saves'
   | 'thief'
   | 'repeat_offender'
   | 'generous'
@@ -97,15 +96,6 @@ export const RANKINGS: readonly RankingDefinition[] = [
     format: 'pct',
     minimum: `Mínimo ${T.minGkOnTarget} tiros a puerta (paradas + goles encajados).`,
     measure: (c) => ratio(c.gk.saves, onTarget(c.gk), T.minGkOnTarget, savePct(c.gk)),
-  },
-  {
-    id: 'saves',
-    short: 'Muro defensivo',
-    title: 'Muro defensivo',
-    description: 'Más paradas de portero.',
-    format: 'count',
-    unit: ['parada', 'paradas'],
-    measure: (c) => count(c.gk.saves),
   },
   {
     id: 'thief',
@@ -188,6 +178,28 @@ export function topOf(ranked: readonly RankedEntry[], limit = RANKING_LIMIT): To
   const last = entries.at(-1);
   const hiddenTies = last ? ranked.slice(limit).filter((e) => e.position === last.position).length : 0;
   return { entries, hiddenTies };
+}
+
+export interface PodiumView {
+  /** Primer clasificado (o empatados en el primer puesto): tarjeta destacada. */
+  leaders: RankedEntry[];
+  /** Resto del Top 10, sin repetir a los líderes: empieza por el segundo clasificado. */
+  rest: RankedEntry[];
+  hiddenTies: number;
+}
+
+/**
+ * Reparto para la pantalla: los líderes van en la tarjeta destacada y la lista
+ * continúa con los siguientes. Entre ambos suman como máximo `limit` jugadores
+ * y los puestos son los de la clasificación real (empates incluidos).
+ */
+export function podiumOf(ranked: readonly RankedEntry[], limit = RANKING_LIMIT): PodiumView {
+  const { entries, hiddenTies } = topOf(ranked, limit);
+  return {
+    leaders: entries.filter((e) => e.position === 1),
+    rest: entries.filter((e) => e.position !== 1),
+    hiddenTies,
+  };
 }
 
 /** Puesto de un jugador en la clasificación completa (también fuera del Top 10). */

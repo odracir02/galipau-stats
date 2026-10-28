@@ -146,7 +146,10 @@ describe('comprobación de integridad', () => {
     expect(validateBackup({ ...good, counts: { ...good.counts, events: 99 } })).toContain('El recuento de «events» no coincide.');
     const dup = { ...good, teams: [...good.teams, good.teams[0]!], counts: { ...good.counts, teams: good.teams.length + 1 } };
     expect(validateBackup(dup).some((p) => p.startsWith('Identificador repetido en «teams»'))).toBe(true);
-    const orphan = { ...good, players: good.players.slice(1), counts: { ...good.counts, players: good.players.length - 1 } };
+    // Se quita un jugador convocado (los ids son aleatorios: no vale «el primero»).
+    const called = good.matches[0]!.squad[0]!.playerId;
+    const players = good.players.filter((p) => p.id !== called);
+    const orphan = { ...good, players, counts: { ...good.counts, players: players.length } };
     expect(validateBackup(orphan).some((p) => /sin jugador en la copia|jugador que no está/.test(p))).toBe(true);
     const lost = { ...good, matches: [], counts: { ...good.counts, matches: 0 } };
     expect(validateBackup(lost).some((p) => p.includes('partido que no está'))).toBe(true);

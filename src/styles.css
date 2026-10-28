@@ -44,6 +44,10 @@
   --c-danger-soft: #fdecea;
   --c-success: #1e7a4c;
   --c-success-soft: #e7f4ed;
+  --c-warning-soft: #fdf4cf;
+  --c-warning-text: #7a5b00;
+  /* Portería: color propio para distinguirla de la eficacia ofensiva. */
+  --c-keeper: #1d6f8f;
   --c-focus: #2f6fdb;
   --c-scrim: rgba(23, 33, 44, 0.48);
 
@@ -409,6 +413,25 @@ svg {
 .status-finished {
   border-color: transparent;
   background: var(--c-surface-2);
+}
+
+/* Partidos finalizados: resultado para nuestro equipo. */
+.status-win {
+  border-color: transparent;
+  background: var(--c-success-soft);
+  color: var(--c-success);
+}
+
+.status-loss {
+  border-color: transparent;
+  background: var(--c-danger-soft);
+  color: var(--c-danger);
+}
+
+.status-draw {
+  border-color: transparent;
+  background: var(--c-warning-soft);
+  color: var(--c-warning-text);
 }
 
 .dorsal {
@@ -1974,6 +1997,43 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
   stroke: var(--c-accent);
 }
 
+.ring-keeper .ring-fill {
+  stroke: var(--c-keeper);
+}
+
+/* Eficacia ofensiva y de portería, una junto a otra. En móvil cada una apila
+   el anillo sobre su texto para que ambas quepan sin cortar las cifras. */
+.hero-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-3);
+  margin-bottom: var(--s-3);
+}
+
+.hero-pair .hero {
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-2);
+  margin-bottom: 0;
+  text-align: center;
+}
+
+.hero-pair .hero-text strong {
+  font-size: var(--fs-sm);
+}
+
+@media (min-width: 560px) {
+  .hero-pair .hero {
+    flex-direction: row;
+    align-items: center;
+    text-align: left;
+  }
+
+  .hero-pair .hero-text strong {
+    font-size: var(--fs-md);
+  }
+}
+
 .ring-text {
   fill: var(--c-text);
   font-size: 15px;
@@ -2484,7 +2544,24 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
   font-weight: 700;
 }
 
-.rank-leader-who .dorsal {
+.rank-leader-names {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-weight: 700;
+}
+
+.rank-leader-names li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rank-leader-who .dorsal,
+.rank-leader-names .dorsal {
   background: var(--c-header-3);
   color: var(--c-on-header);
 }
@@ -2540,9 +2617,6 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
   font-variant-numeric: tabular-nums;
 }
 
-.rank-list li.first .rank-pos {
-  color: var(--c-gold-text);
-}
 
 .rank-name {
   flex: 1;
