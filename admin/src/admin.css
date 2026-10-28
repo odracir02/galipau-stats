@@ -1,0 +1,51 @@
+/* Panel de administración: solo lo que no está en src/styles.css. */
+
+.notice svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.status-suspended {
+  border-color: transparent;
+  background: var(--c-danger-soft);
+  color: var(--c-danger);
+}
+
+.card.form h3,
+.code-card h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.code-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.code-value {
+  padding: var(--s-3);
+  border: 1px dashed var(--c-border-strong);
+  border-radius: var(--r-md);
+  background: var(--c-surface-2);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.code-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+/* En ordenador, contenido algo más ancho que en la PWA. */
+@media (min-width: 900px) {
+  .screen {
+    max-width: 760px;
+  }
+}

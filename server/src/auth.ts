@@ -125,11 +125,12 @@ export interface AuthorizedTeam {
  * él responde 404 (no revela que exista); con permiso insuficiente, 403.
  */
 export async function authorize(db: Db, auth: AuthContext, teamId: Id, action: Action): Promise<AuthorizedTeam> {
-  // Un equipo solo es accesible si ni él ni su club están eliminados.
+  // Un equipo solo es accesible si ni él ni su club están eliminados y el club
+  // está activo (no suspendido).
   const team = await db
     .prepare(
       `SELECT t.id, t.club_id AS clubId FROM teams t JOIN clubs c ON c.id = t.club_id
-       WHERE t.id = ? AND t.deleted_at IS NULL AND c.deleted_at IS NULL`,
+       WHERE t.id = ? AND t.deleted_at IS NULL AND c.deleted_at IS NULL AND c.status = 'active'`,
     )
     .bind(teamId)
     .first<{ id: string; clubId: string }>();
@@ -142,10 +143,16 @@ export async function authorize(db: Db, auth: AuthContext, teamId: Id, action: A
 
 /** Operaciones sobre un club: superadministrador o administrador de ESE club. */
 export async function authorizeClub(db: Db, auth: AuthContext, clubId: Id, action: ClubAction): Promise<{ id: Id; role: 'superadmin' | 'club_admin' }> {
-  const club = await db.prepare('SELECT id FROM clubs WHERE id = ? AND deleted_at IS NULL').bind(clubId).first<{ id: string }>();
+  const club = await db
+    .prepare('SELECT id, status FROM clubs WHERE id = ? AND deleted_at IS NULL')
+    .bind(clubId)
+    .first<{ id: string; status: string }>();
   if (!club) throw notFound();
   const role = isSuperadmin(auth) ? 'superadmin' : isClubAdmin(auth, clubId) ? 'club_admin' : null;
   if (!role) throw notFound();
+  // Un club suspendido solo lo gestiona el superadministrador (para poder
+  // revisarlo y reactivarlo); su administrador de club deja de verlo.
+  if (club.status !== 'active' && role !== 'superadmin') throw notFound();
   if (!clubRoleAllows(role, action)) throw forbidden();
   requireCritical(auth, action);
   return { id: club.id, role };

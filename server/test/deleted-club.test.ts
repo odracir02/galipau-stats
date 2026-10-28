@@ -8,7 +8,7 @@ import worker from '../src/index';
 import { createInvite, redeemInvite, revokeTeamAccess } from '../src/invites';
 import type { AuthContext } from '../src/model';
 import { applyEventOp, pullChanges } from '../src/sync';
-import { addAdmin, addDevice, addMatch, NOW, PEPPER, twoClubs } from './seed';
+import { addAdmin, addDevice, addMatch, NOW, PEPPER, twoClubs, secrets } from './seed';
 import { migratedDb, type SqliteD1 } from './sqliteD1';
 
 let db: SqliteD1;
@@ -81,10 +81,10 @@ describe('club eliminado', () => {
 
   it('las invitaciones de sus equipos dejan de canjearse y no se pueden crear ni gestionar', async () => {
     const ca = await addAdmin(db, 'ca', [{ role: 'club_admin', clubId: 'A' }]);
-    const inv = await createInvite(db, ca.auth, { teamId: 'a1', role: 'viewer' }, PEPPER);
+    const inv = await createInvite(db, ca.auth, { teamId: 'a1', role: 'viewer' }, await secrets());
     deleteClub('A');
     expect(await codeOf(redeemInvite(db, { code: inv.code, clientKey: `198.51.100.${++n}` }, PEPPER))).toBe('404 invalid_code');
-    expect(await codeOf(createInvite(db, ca.auth, { teamId: 'a1', role: 'viewer' }, PEPPER))).toBe('404 not_found');
+    expect(await codeOf(createInvite(db, ca.auth, { teamId: 'a1', role: 'viewer' }, await secrets()))).toBe('404 not_found');
     expect(await codeOf(revokeTeamAccess(db, ca.auth, 'a1', 'coach-a'))).toBe('404 not_found');
   });
 

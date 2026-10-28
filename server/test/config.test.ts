@@ -121,3 +121,15 @@ describe('base de datos de preview', () => {
   });
 });
 
+describe('panel de administración y códigos', () => {
+  it('el panel se sirve desde el Worker, que se ejecuta siempre primero', () => {
+    const raw = config as unknown as { assets?: { directory: string; binding: string; run_worker_first: boolean }; build?: { command: string } };
+    expect(raw.assets).toEqual({ directory: './admin-dist', binding: 'ASSETS', run_worker_first: true });
+    expect(raw.build?.command).toContain('build:admin');
+  });
+
+  it('la clave de cifrado de códigos es un secreto, nunca una variable', () => {
+    for (const cfg of Object.values(envs)) expect(Object.keys(cfg.vars)).not.toContain('INVITE_CODE_KEY');
+  });
+});
+

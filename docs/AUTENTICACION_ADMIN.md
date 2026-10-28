@@ -5,6 +5,7 @@ Cómo se identifican el **superadministrador** y los **administradores de club**
 > **Estado:**
 >
 > - **Preview:** las dos aplicaciones de Access (general y crítica) están creadas y configuradas, y el Worker está desplegado. El primer superadministrador está dado de alta y vinculado a su cuenta. La aplicación crítica ya pide autenticación y biometría, pero **la funcionalidad crítica no está habilitada en el Worker**: `ADMIN_CRITICAL_OPS = "disabled"` (503) hasta completar la [verificación manual del segundo factor](#verificación-manual-del-segundo-factor).
+> - **Cookies de Access en preview: completado.** Las dos aplicaciones tienen `SameSite=Lax` y *Binding Cookie* activada, y siguen permitiendo el acceso. Es independiente de la verificación pendiente del segundo factor y de la antigüedad del token crítico.
 > - **Producción:** sin configurar; las rutas de administración responden **503**.
 > - En cualquier entorno sin configuración de Access, la administración está desactivada.
 
@@ -95,7 +96,7 @@ La cookie de Access (`CF_Authorization`) tiene `SameSite=None` por defecto: el n
 
 - Si faltan las dos cabeceras se **rechaza**. Los navegadores actuales envían al menos una en estas peticiones. Un script, que no lleva la cookie de la víctima, puede añadir `Origin` sin problema.
 - Las lecturas (`GET`) no cambian: no modifican nada, y sin CORS la otra web no puede leer la respuesta.
-- No depende de la configuración de cookies de Cloudflare. Aun así, conviene endurecerla (ver más abajo).
+- No depende de la configuración de cookies de Cloudflare. Esa configuración ya está endurecida en preview (`SameSite=Lax` y *Binding Cookie*) como capa adicional.
 - El panel de administración futuro funcionará sin cambios: el navegador envía `Sec-Fetch-Site: same-origin` y `Origin` en un `fetch` del mismo origen con JSON.
 
 ### Antigüedad del token crítico: por qué no se impone todavía un límite
@@ -208,6 +209,7 @@ Según la documentación de Access, **la aplicación de la ruta más específica
   - `HttpOnly` activado (por defecto);
   - **Binding Cookie** activada.
   - Complementa, no sustituye, la protección CSRF del Worker.
+  - **Preview: hecho.** Las dos aplicaciones tienen `SameSite=Lax` y *Binding Cookie*, y se ha comprobado que siguen dando acceso. Producción: pendiente cuando se configure.
 - Copiar el *Application Audience (AUD) Tag* de cada aplicación y el dominio del equipo en `server/wrangler.jsonc` (`ACCESS_TEAM_DOMAIN`, `ACCESS_AUD_ADMIN`, `ACCESS_AUD_CRITICAL`). No son secretos.
   - El dominio va con esquema: `https://<equipo>.cloudflareaccess.com`, igual que el emisor (`iss`) de los JWT.
   - `ACCESS_AUD_CRITICAL` es opcional: sin ella, la administración general funciona y las operaciones críticas quedan desactivadas aunque `ADMIN_CRITICAL_OPS` diga `enabled`.

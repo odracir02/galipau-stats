@@ -8,7 +8,7 @@ import { adminContext, authenticate, authorize, authorizeClub } from '../src/aut
 import { HttpError } from '../src/errors';
 import { createInvite, redeemInvite } from '../src/invites';
 import type { TeamRole } from '../src/model';
-import { addAdmin, addDevice, NOW, PEPPER, twoClubs } from './seed';
+import { addAdmin, addDevice, NOW, PEPPER, twoClubs, secrets } from './seed';
 import { migratedDb, type SqliteD1 } from './sqliteD1';
 
 let db: SqliteD1;
@@ -37,7 +37,7 @@ describe('roles administrativos', () => {
     for (const role of ['coach', 'viewer']) {
       const { auth } = await addDevice(db, `d-${role}`, [{ clubId: 'A', teamId: 'a1', role }]);
       expect(await errorOf(createClub(db, auth, { name: 'Club pirata' }))).toBe('403 forbidden');
-      expect(await errorOf(createTeam(db, auth, { clubId: 'A', name: 'X', code: 'XX99', season: '2026/27' }))).toBe('404 not_found');
+      expect(await errorOf(createTeam(db, auth, { clubId: 'A', name: 'X', code: 'XX99', season: '2026/27' }, await secrets()))).toBe('404 not_found');
       expect(await errorOf(appointClubAdmin(db, auth, { clubId: 'A', email: 'yo@example.com' }))).toBe('404 not_found');
     }
     expect(rows('SELECT * FROM admin_roles')).toEqual([]);
@@ -48,9 +48,9 @@ describe('roles administrativos', () => {
     expect(await errorOf(appointClubAdmin(db, ca.auth, { clubId: 'A', email: 'otro@example.com' }))).toBe('403 forbidden');
     expect(await errorOf(appointClubAdmin(db, ca.auth, { clubId: 'B', email: ca.email }))).toBe('404 not_found');
     expect(await errorOf(createClub(db, ca.auth, { name: 'Nuevo' }))).toBe('403 forbidden');
-    expect(await errorOf(createTeam(db, ca.auth, { clubId: 'B', name: 'X', code: 'XX99', season: '2026/27' }))).toBe('404 not_found');
+    expect(await errorOf(createTeam(db, ca.auth, { clubId: 'B', name: 'X', code: 'XX99', season: '2026/27' }, await secrets()))).toBe('404 not_found');
     // En su club sí crea equipos.
-    expect(await errorOf(createTeam(db, ca.auth, { clubId: 'A', name: 'Cadete', code: 'cf 2627', season: '2026/27', gender: 'female' }))).toBe('ok');
+    expect(await errorOf(createTeam(db, ca.auth, { clubId: 'A', name: 'Cadete', code: 'cf 2627', season: '2026/27', gender: 'female' }, await secrets()))).toBe('ok');
     expect(rows("SELECT code, club_id FROM teams WHERE name = 'Cadete'")).toEqual([{ code: 'CF2627', club_id: 'A' }]);
   });
 
@@ -111,7 +111,7 @@ describe('las credenciales de dispositivo y las invitaciones nunca dan roles adm
   it('rechaza crear invitaciones con un rol administrativo, aunque se fuerce el tipo', async () => {
     const sa = await addAdmin(db, 'sa', [{ role: 'superadmin', clubId: null }]);
     for (const role of ['club_admin', 'superadmin', 'admin']) {
-      expect(await errorOf(createInvite(db, sa.auth, { teamId: 'a1', role: role as TeamRole }, PEPPER))).toBe('400 invalid_role');
+      expect(await errorOf(createInvite(db, sa.auth, { teamId: 'a1', role: role as TeamRole }, await secrets()))).toBe('400 invalid_role');
     }
     expect(rows('SELECT * FROM invites')).toEqual([]);
   });
@@ -134,8 +134,8 @@ describe('las credenciales de dispositivo y las invitaciones nunca dan roles adm
 
   it('canjear códigos de entrenador y de consulta no da acceso administrativo ni al club', async () => {
     const ca = await addAdmin(db, 'ca', [{ role: 'club_admin', clubId: 'A' }]);
-    const coach = await createInvite(db, ca.auth, { teamId: 'a1', role: 'coach' }, PEPPER);
-    const viewer = await createInvite(db, ca.auth, { teamId: 'a2', role: 'viewer' }, PEPPER);
+    const coach = await createInvite(db, ca.auth, { teamId: 'a1', role: 'coach' }, await secrets());
+    const viewer = await createInvite(db, ca.auth, { teamId: 'a2', role: 'viewer' }, await secrets());
     const r = await redeemInvite(db, { code: coach.code, clientKey: client() }, PEPPER);
     let auth = await authenticate(db, r.token, PEPPER);
     await redeemInvite(db, { code: viewer.code, clientKey: client(), auth }, PEPPER);
@@ -149,7 +149,7 @@ describe('las credenciales de dispositivo y las invitaciones nunca dan roles adm
 
   it('una sesión de administración no sirve para registrar acciones ni canjear códigos como dispositivo', async () => {
     const sa = await addAdmin(db, 'sa', [{ role: 'superadmin', clubId: null }]);
-    const inv = await createInvite(db, sa.auth, { teamId: 'a1', role: 'viewer' }, PEPPER);
+    const inv = await createInvite(db, sa.auth, { teamId: 'a1', role: 'viewer' }, await secrets());
     expect(await errorOf(redeemInvite(db, { code: inv.code, clientKey: client(), auth: sa.auth }, PEPPER))).toBe('400 device_required');
   });
 });

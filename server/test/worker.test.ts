@@ -87,3 +87,12 @@ describe('API', () => {
     expect(other.headers.get('Access-Control-Allow-Origin')).toBeNull();
   });
 });
+
+describe('módulo de entrada del Worker', () => {
+  it('solo exporta el manejador (el runtime rechaza otras exportaciones con archivos estáticos)', async () => {
+    const mod = await import('../src/index');
+    expect(Object.keys(mod)).toEqual(['default']);
+    expect(typeof mod.default.fetch).toBe('function');
+  });
+});
+

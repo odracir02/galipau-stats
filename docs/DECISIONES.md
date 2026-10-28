@@ -73,3 +73,11 @@
 | D69 | Protección CSRF propia en las escrituras administrativas: `Sec-Fetch-Site` = `same-origin`, `Origin` exacto, ambas ausentes = rechazo y JSON obligatorio | La cookie de Access usa `SameSite=None` por defecto; la protección no puede depender de esa configuración. Se comprueba antes de autenticar. |
 | D70 | No se limita aún la antigüedad del token crítico por `iat` | `iat` no es la hora de la biometría y su semántica no está documentada; un límite fijo podría bloquear sin motivo. Propuesta: medir en preview y, si `exp − iat` refleja la sesión, exigir `exp − iat ≤ 15 min`. |
 | D71 | `authorize()` excluye equipos de clubes eliminados, para todos los roles | Eliminar un club corta todos los accesos a sus equipos sin borrar datos; el canje de invitaciones lo comprueba también. |
+| D72 | Panel de administración servido por el Worker en `/admin`, mismo origen que la API | La protección CSRF y la cookie de Access siguen sin cambios; sin dominio nuevo; separado de la PWA. |
+| D73 | El Worker se ejecuta antes que los archivos del panel (`run_worker_first`) y verifica Access y el rol | El panel no depende solo de la configuración de Access; cabeceras de seguridad propias. |
+| D74 | Todas las escrituras administrativas son críticas; toda ruta `/critical` exige el token crítico | Siguen bloqueadas por `ADMIN_CRITICAL_OPS` y piden biometría reciente. |
+| D75 | Códigos guardados como HMAC (canje) y como copia AES-GCM con `INVITE_CODE_KEY` (mostrar), con datos asociados de fila | Se pueden volver a consultar sin regenerar; una copia cifrada no sirve en otra fila; una clave distinta para cada uso. |
+| D76 | Dos códigos creados con el equipo, independientes, válidos hasta el 1 de agosto siguiente al inicio de la temporada | Nunca falta un código; la temporada nueva usa equipos y códigos nuevos. |
+| D77 | El entrenador ve los dos códigos pero no los regenera; consulta solo ve el suyo | Requisito aprobado; regenerar y revocar son administrativos. |
+| D78 | Clubes `active`/`suspended` (migración aditiva 0003); la suspensión corta el acceso operativo y solo el superadministrador la gestiona | Reversible, sin borrar datos. |
+| D79 | El módulo de entrada del Worker solo exporta el manejador | Con archivos estáticos, el runtime rechaza otras exportaciones con nombre y el Worker no arrancaría. |

@@ -30,6 +30,7 @@ Thumbs.db
 *.sqlite3
 *.local.sql
 .wrangler/
+server/admin-dist/
 
 # Artefactos de pruebas
 test-results/

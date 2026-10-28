@@ -3,7 +3,7 @@ import { authenticate, authorize } from '../src/auth';
 import { HttpError } from '../src/errors';
 import { clientKeyFromRequest, createInvite, REDEEM_LIMIT, redeemInvite, revokeInvite, revokeTeamAccess } from '../src/invites';
 import { generateInviteCode, INVITE_CODE_LENGTH, normalizeInviteCode } from '../src/secrets';
-import { addAdmin, addDevice, PEPPER, twoClubs } from './seed';
+import { addAdmin, addDevice, PEPPER, twoClubs, secrets } from './seed';
 import { migratedDb, type SqliteD1 } from './sqliteD1';
 
 let db: SqliteD1;
@@ -45,9 +45,9 @@ describe('invitaciones', () => {
   it('solo un administrador (de club o global) crea códigos; se guardan como hash y son distintos del código del equipo', async () => {
     const admin = await addAdmin(db, 'adm', [{ role: 'club_admin', clubId: 'A' }]);
     const coach = await addDevice(db, 'coach', [{ clubId: 'A', teamId: 'a1', role: 'coach' }]);
-    expect(await errorCode(createInvite(db, coach.auth, { teamId: 'a1', role: 'viewer' }, PEPPER))).toBe('403 forbidden');
+    expect(await errorCode(createInvite(db, coach.auth, { teamId: 'a1', role: 'viewer' }, await secrets()))).toBe('403 forbidden');
 
-    const inv = await createInvite(db, admin.auth, { teamId: 'a1', role: 'viewer' }, PEPPER);
+    const inv = await createInvite(db, admin.auth, { teamId: 'a1', role: 'viewer' }, await secrets());
     expect(normalizeInviteCode(inv.code)).not.toContain('SM2627');
     const dump = JSON.stringify(db.sqlite.prepare('SELECT * FROM invites').all());
     expect(dump).not.toContain(inv.code);
@@ -56,7 +56,7 @@ describe('invitaciones', () => {
 
   it('el código de consulta da acceso de solo lectura y puede compartirse entre varios dispositivos', async () => {
     const admin = await addAdmin(db, 'adm', [{ role: 'club_admin', clubId: 'A' }]);
-    const inv = await createInvite(db, admin.auth, { teamId: 'a1', role: 'viewer' }, PEPPER);
+    const inv = await createInvite(db, admin.auth, { teamId: 'a1', role: 'viewer' }, await secrets());
     const r1 = await redeemInvite(db, { code: inv.code, clientKey: client(), deviceLabel: 'Familia 1' }, PEPPER);
     const r2 = await redeemInvite(db, { code: inv.code.toLowerCase(), clientKey: client() }, PEPPER);
     expect(r1.deviceId).not.toBe(r2.deviceId);
@@ -70,7 +70,7 @@ describe('invitaciones', () => {
 
   it('el código de entrenador da permiso de edición', async () => {
     const admin = await addAdmin(db, 'adm', [{ role: 'club_admin', clubId: 'A' }]);
-    const inv = await createInvite(db, admin.auth, { teamId: 'a1', role: 'coach' }, PEPPER);
+    const inv = await createInvite(db, admin.auth, { teamId: 'a1', role: 'coach' }, await secrets());
     const r = await redeemInvite(db, { code: inv.code, clientKey: client() }, PEPPER);
     const auth = await authenticate(db, r.token, PEPPER);
     expect(await errorCode(authorize(db, auth, 'a1', 'match.write'))).toBe('ok');
@@ -79,9 +79,9 @@ describe('invitaciones', () => {
 
   it('rotar invalida el código anterior; quien ya lo canjeó conserva el acceso', async () => {
     const admin = await addAdmin(db, 'adm', [{ role: 'club_admin', clubId: 'A' }]);
-    const old = await createInvite(db, admin.auth, { teamId: 'a1', role: 'viewer' }, PEPPER);
+    const old = await createInvite(db, admin.auth, { teamId: 'a1', role: 'viewer' }, await secrets());
     const before = await redeemInvite(db, { code: old.code, clientKey: client() }, PEPPER);
-    const fresh = await createInvite(db, admin.auth, { teamId: 'a1', role: 'viewer' }, PEPPER);
+    const fresh = await createInvite(db, admin.auth, { teamId: 'a1', role: 'viewer' }, await secrets());
     expect(fresh.code).not.toBe(old.code);
     expect(await errorCode(redeemInvite(db, { code: old.code, clientKey: client() }, PEPPER))).toBe('404 invalid_code');
     expect(await errorCode(redeemInvite(db, { code: fresh.code, clientKey: client() }, PEPPER))).toBe('ok');
@@ -92,13 +92,13 @@ describe('invitaciones', () => {
   it('caducidad, revocación y número máximo de usos', async () => {
     const admin = await addAdmin(db, 'adm', [{ role: 'club_admin', clubId: 'A' }]);
     const t0 = new Date('2026-10-27T10:00:00Z');
-    const inv = await createInvite(db, admin.auth, { teamId: 'a1', role: 'coach', ttlDays: 1, maxUses: 1 }, PEPPER, t0);
+    const inv = await createInvite(db, admin.auth, { teamId: 'a1', role: 'coach', ttlDays: 1, maxUses: 1 }, await secrets(), t0);
     const later = new Date('2026-10-29T10:00:00Z');
     expect(await errorCode(redeemInvite(db, { code: inv.code, clientKey: client() }, PEPPER, later))).toBe('404 invalid_code');
     expect(await errorCode(redeemInvite(db, { code: inv.code, clientKey: client() }, PEPPER, t0))).toBe('ok');
     expect(await errorCode(redeemInvite(db, { code: inv.code, clientKey: client() }, PEPPER, t0))).toBe('404 invalid_code');
 
-    const viewer = await createInvite(db, admin.auth, { teamId: 'a1', role: 'viewer' }, PEPPER);
+    const viewer = await createInvite(db, admin.auth, { teamId: 'a1', role: 'viewer' }, await secrets());
     await revokeInvite(db, admin.auth, 'a1', viewer.inviteId);
     expect(await errorCode(redeemInvite(db, { code: viewer.code, clientKey: client() }, PEPPER))).toBe('404 invalid_code');
   });
@@ -117,9 +117,9 @@ describe('invitaciones', () => {
   it('un dispositivo acumula equipos y nunca pierde un rol mayor al canjear otro código', async () => {
     const adminA = await addAdmin(db, 'admA', [{ role: 'club_admin', clubId: 'A' }]);
     const adminB = await addAdmin(db, 'admB', [{ role: 'club_admin', clubId: 'B' }]);
-    const coachA1 = await createInvite(db, adminA.auth, { teamId: 'a1', role: 'coach' }, PEPPER);
-    const viewerA1 = await createInvite(db, adminA.auth, { teamId: 'a1', role: 'viewer' }, PEPPER);
-    const viewerB1 = await createInvite(db, adminB.auth, { teamId: 'b1', role: 'viewer' }, PEPPER);
+    const coachA1 = await createInvite(db, adminA.auth, { teamId: 'a1', role: 'coach' }, await secrets());
+    const viewerA1 = await createInvite(db, adminA.auth, { teamId: 'a1', role: 'viewer' }, await secrets());
+    const viewerB1 = await createInvite(db, adminB.auth, { teamId: 'b1', role: 'viewer' }, await secrets());
 
     const first = await redeemInvite(db, { code: coachA1.code, clientKey: client() }, PEPPER);
     let auth = await authenticate(db, first.token, PEPPER);
@@ -145,7 +145,7 @@ describe('invitaciones', () => {
 
   it('revocar un código filtrado puede retirar también el acceso de quienes lo canjearon', async () => {
     const admin = await addAdmin(db, 'adm', [{ role: 'club_admin', clubId: 'A' }]);
-    const inv = await createInvite(db, admin.auth, { teamId: 'a1', role: 'viewer' }, PEPPER);
+    const inv = await createInvite(db, admin.auth, { teamId: 'a1', role: 'viewer' }, await secrets());
     const a = await redeemInvite(db, { code: inv.code, clientKey: client() }, PEPPER);
     const b = await redeemInvite(db, { code: inv.code, clientKey: client() }, PEPPER);
     // Un acceso concedido por otro código no se toca.

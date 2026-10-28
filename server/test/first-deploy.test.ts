@@ -6,7 +6,8 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { accessConfig, clearJwksCache } from '../src/access';
 import { buildBootstrapSql } from '../scripts/bootstrap-superadmin.mjs';
-import worker, { MIN_PEPPER_LENGTH, type Env } from '../src/index';
+import { MIN_PEPPER_LENGTH } from '../src/app';
+import worker, { type Env } from '../src/index';
 import { addDevice, PEPPER, twoClubs } from './seed';
 import { migratedDb, type SqliteD1 } from './sqliteD1';
 

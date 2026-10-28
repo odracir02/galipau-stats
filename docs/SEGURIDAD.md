@@ -35,6 +35,8 @@ La base de datos impide mezclarlos:
 | Crear y registrar partidos, corregir acciones | ✔ | ✔ | ✔ | — |
 | Editar la plantilla, transferir un partido | ✔ | ✔ | ✔ | — |
 | Datos del equipo | ✔ | ✔ | — | — |
+| Ver el código de jugador/familia | ✔ | ✔ | ✔ | ✔ |
+| Ver el código de entrenador | ✔ | ✔ | ✔ | — |
 | Crear, rotar y revocar códigos de entrenador y de consulta | ✔ | ✔ | — | — |
 | Retirar el acceso de dispositivos (p. ej. a un entrenador) | ✔ | ✔ | — | — |
 
@@ -120,12 +122,12 @@ No puede:
 | | Código de entrenador | Código de jugador/familia |
 | - | - | - |
 | Concede | `coach` en un equipo | `viewer` en un equipo (solo lectura) |
-| Caducidad por defecto | 7 días | 90 días |
+| Vigencia | Toda la temporada (hasta el 1 de agosto siguiente) | Toda la temporada (hasta el 1 de agosto siguiente) |
 | Uso | Personal; admite límite de usos | Compartible |
 
 - 12 símbolos sin caracteres confundibles (≈59 bits), mostrados como `K7QM-4XRP-TB9H`. Se aceptan en minúsculas y sin guiones.
 - Son aleatorios y no tienen relación con el código del equipo (`SM2627`), que es un identificador público.
-- Se guardan solo como hash. El código en claro se muestra una vez.
+- Se guardan como hash (para canjearlos) y como copia cifrada con AES-256-GCM y la clave `INVITE_CODE_KEY`, para volver a mostrarlos solo a quien tiene permiso. Detalle en [ADMINISTRACION.md](ADMINISTRACION.md#almacenamiento-cifrado-recuperable).
 - **Nunca conceden roles administrativos:**
   - el servidor rechaza crear invitaciones con otro rol aunque se fuerce la petición (`400 invalid_role`);
   - la base de datos rechaza invitaciones y permisos con roles administrativos.
@@ -167,6 +169,20 @@ Limitaciones y controles al desplegar:
   - Los datos no se borran.
 - CORS: cada entorno solo acepta su propia aplicación. CORS no es la protección; la protección es la credencial.
 
+## Clubes suspendidos
+
+Un club suspendido (`status = 'suspended'`) no permite el acceso operativo a sus equipos para ningún rol:
+
+- lecturas y escrituras;
+- sincronización;
+- consulta y canje de códigos.
+
+Su administrador de club deja de verlo. Solo el superadministrador lo gestiona para revisarlo o reactivarlo. Es reversible y no borra datos.
+
+## Consultas de códigos desde la PWA
+
+`GET /api/teams/:teamId/codes` se autentica con el token de dispositivo (`Authorization: Bearer`), no con cookies de Access. Por eso puede usar CORS para los orígenes de la app **sin credenciales**, sin afectar a la administración, que sigue sin CORS y con su protección CSRF. Las respuestas llevan `Cache-Control: no-store`.
+
 ## Protección CSRF de la administración
 
 Las escrituras administrativas (`POST`, `PUT`, `PATCH`, `DELETE`) solo se aceptan desde el propio origen de la API y, si llevan cuerpo, con `Content-Type: application/json`. Si faltan las cabeceras `Sec-Fetch-Site` y `Origin`, se rechaza. Detalle y tabla de respuestas: [AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#protección-csrf-de-las-escrituras-administrativas).
@@ -187,7 +203,7 @@ Son tres operaciones distintas, en este orden. **Ninguna se ejecuta en la Tarea 
 - Por dispositivo o equipo: `revokeTeamAccess`, o `revoked_at` en dispositivos y tokens.
 - Invitaciones de prueba: `revokeInvite` con `revokeAccess`.
 - Administradores de prueba: `revokeClubAdmin`, desactivar la identidad (`disabled_at`), quitar su correo de las políticas de Access y revocar su sesión en el panel de Cloudflare.
-- **Todo de una vez en un entorno:** cambiar su `TOKEN_PEPPER` (`wrangler secret put`). Invalida a la vez todos los tokens de dispositivo y códigos de ese entorno, porque sus hashes dejan de coincidir. Solo afecta al entorno elegido. Las sesiones de administración se revocan en Cloudflare Access (aplicación → «Revoke existing tokens»).
+- **Todo de una vez en un entorno:** cambiar su `TOKEN_PEPPER` (`wrangler secret put`). Invalida a la vez todos los tokens de dispositivo y el canje de los códigos de ese entorno, porque sus hashes dejan de coincidir. Si además se cambia `INVITE_CODE_KEY`, los códigos guardados dejan de poder mostrarse y hay que regenerarlos. Solo afecta al entorno elegido. Las sesiones de administración se revocan en Cloudflare Access (aplicación → «Revoke existing tokens»).
 
 ### 2. Eliminar los registros remotos de prueba
 

@@ -6,7 +6,8 @@ Base técnica para clubes, equipos, permisos y sincronización. **La aplicación
 
 | Parte | Estado |
 | ----- | ------ |
-| Esquema D1 y migraciones (0001, 0002) | Hecho; probado en SQLite y en la D1 local de Wrangler |
+| Esquema D1 y migraciones (0001, 0002, 0003) | Hecho; probado en SQLite y en la D1 local de Wrangler. 0003 aún no aplicada en remoto |
+| Panel de administración de clubes, equipos y códigos ([ADMINISTRACION.md](ADMINISTRACION.md)) | Hecho y probado en local; **sin desplegar**; escrituras desactivadas |
 | Autorización (4 roles), invitaciones, sincronización de acciones | Lógica del servidor hecha y probada |
 | Autenticación administrativa (Cloudflare Access + roles en D1) y rutas `/api/admin/*` | Hecha y probada. **En uso en preview**; sin configurar en producción. Operaciones críticas desactivadas en el Worker (`ADMIN_CRITICAL_OPS = "disabled"`) hasta completar la verificación manual del segundo factor |
 | Rutas de canje de códigos, alta de equipos, gestión de códigos, transferencia de partidos | **Pendiente** |
@@ -29,7 +30,9 @@ server/                     Subproyecto independiente (no forma parte del build 
   migrations/
     0001_initial.sql        Esquema inicial
   src/
-    index.ts                Punto de entrada del Worker y rutas
+    index.ts                Punto de entrada del Worker (solo exporta el manejador)
+    app.ts                  Rutas de la API y entrega del panel
+    codecrypt.ts            Cifrado recuperable de los códigos de invitación
     auth.ts                 Autenticación del dispositivo y autorización por equipo
     permissions.ts          Matriz de permisos por rol
     access.ts               Verificación del JWT de Cloudflare Access

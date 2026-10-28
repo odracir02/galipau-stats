@@ -4,11 +4,20 @@ import { makeMatch, SQUAD } from '../../src/test/fixtures';
 import { adminContext, authenticate } from '../src/auth';
 import { insertSql, matchToRows, playerToRow, teamToRow } from '../src/mapping';
 import type { AdminRole, AuthContext } from '../src/model';
+import { codeKey } from '../src/codecrypt';
+import type { InviteSecrets } from '../src/invites';
 import { generateToken, hashSecret } from '../src/secrets';
 import type { SqliteD1 } from './sqliteD1';
 
 export const PEPPER = 'clave-de-pruebas-solo-para-tests-0123456789';
 export const NOW = '2026-10-27T10:00:00.000Z';
+/** Clave de cifrado de códigos solo para pruebas (32 bytes en base64url). */
+export const CODE_KEY = Buffer.alloc(32, 7).toString('base64url');
+
+/** Claves de códigos para las pruebas. */
+export async function secrets(): Promise<InviteSecrets> {
+  return { pepper: PEPPER, codeKey: await codeKey(CODE_KEY) };
+}
 
 function insert(db: SqliteD1, table: string, row: object): void {
   const { sql, values } = insertSql(table, row);

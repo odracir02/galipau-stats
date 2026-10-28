@@ -1,74 +1,200 @@
 // Invitaciones: código de entrenador (edición) y de jugador/familia (consulta).
-// Solo la lógica del servidor; las pantallas y rutas llegarán en la Tarea 005C.
+// Cada equipo tiene como máximo uno vigente de cada tipo, independientes entre sí.
 //
 // Un código no identifica a una persona: quien lo canjea obtiene un permiso
 // para su dispositivo, nada más. El código de consulta se puede compartir.
+//
+// Cada código se guarda dos veces: su HMAC (code_hash, para canjearlo) y una
+// copia cifrada (code_enc, para volver a mostrarlo a quien tiene permiso).
 import type { Id } from '../../src/domain/types';
 import { newId } from '../../src/domain/ids';
-import { authorize } from './auth';
-import type { Db } from './db';
-import { HttpError } from './errors';
-import { TEAM_ROLES, type AuthContext, type TeamRole } from './model';
+import { authorize, authorizeClub } from './auth';
+import { decryptCode, encryptCode } from './codecrypt';
+import type { Db, Statement } from './db';
+import { HttpError, notFound } from './errors';
+import { TEAM_ROLES, type AuthContext, type Role, type TeamRole } from './model';
+import { roleAllows } from './permissions';
 import { generateInviteCode, generateToken, hashSecret, normalizeInviteCode } from './secrets';
-
-/** Caducidad por defecto de una invitación. */
-export const INVITE_TTL_DAYS = { coach: 7, viewer: 90 } as const;
 
 /** Intentos de canje permitidos por cliente y ventana. */
 export const REDEEM_LIMIT = { attempts: 10, windowSeconds: 15 * 60 } as const;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Claves del servidor que necesitan los códigos. */
+export interface InviteSecrets {
+  /** HMAC de códigos y tokens (TOKEN_PEPPER). */
+  pepper: string;
+  /** Cifrado recuperable de códigos (INVITE_CODE_KEY). */
+  codeKey: CryptoKey;
+}
+
+/**
+ * Fin de validez de los códigos de una temporada «AAAA/AA»: la temporada va de
+ * julio a junio y se da julio de margen, así que caducan el 1 de agosto del
+ * año siguiente. La temporada nueva tiene equipos nuevos con códigos nuevos.
+ */
+export function seasonExpiry(season: string): string {
+  const m = /^(\d{4})\/(\d{2})$/.exec(season.trim());
+  const start = m ? Number(m[1]) : NaN;
+  if (!m || (start + 1) % 100 !== Number(m[2])) {
+    throw new HttpError(400, 'invalid_season', 'Temporada no válida (formato AAAA/AA, p. ej. 2026/27).');
+  }
+  return `${start + 1}-08-01T00:00:00.000Z`;
+}
+
 export interface CreatedInvite {
   inviteId: Id;
-  /** Código en claro: se muestra una sola vez y no se guarda. */
+  /** Código en claro, para mostrarlo en el momento. Se puede volver a consultar. */
   code: string;
   expiresAt: string;
 }
 
+/** Sentencias para guardar un código nuevo (revocando el anterior del mismo tipo). */
+export async function inviteStatements(
+  db: Db,
+  args: { clubId: Id; teamId: Id; role: TeamRole; expiresAt: string; maxUses?: number | null; createdByDeviceId: Id | null },
+  secrets: InviteSecrets,
+  now: Date,
+): Promise<{ statements: Statement[]; invite: CreatedInvite }> {
+  const code = generateInviteCode();
+  const inviteId = newId();
+  const nowIso = now.toISOString();
+  const statements = [
+    db
+      .prepare('UPDATE invites SET revoked_at = ? WHERE team_id = ? AND role = ? AND revoked_at IS NULL')
+      .bind(nowIso, args.teamId, args.role),
+    db
+      .prepare(
+        `INSERT INTO invites (id, club_id, team_id, role, code_hash, code_enc, created_by_device_id, created_at, expires_at, max_uses)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        inviteId,
+        args.clubId,
+        args.teamId,
+        args.role,
+        await hashSecret(normalizeInviteCode(code), secrets.pepper),
+        await encryptCode(secrets.codeKey, code, { inviteId, teamId: args.teamId, role: args.role }),
+        args.createdByDeviceId,
+        nowIso,
+        args.expiresAt,
+        args.maxUses ?? null,
+      ),
+  ];
+  return { statements, invite: { inviteId, code, expiresAt: args.expiresAt } };
+}
+
 /**
- * Crea (o rota) la invitación de un equipo. La anterior del mismo tipo queda
- * revocada en la misma transacción: los dispositivos que ya la canjearon
- * conservan su permiso, pero el código antiguo deja de valer.
+ * Crea o regenera el código de un tipo. El anterior del mismo tipo queda
+ * revocado en la misma transacción; el otro tipo no se toca. Los dispositivos
+ * que ya canjearon el anterior conservan su permiso. Vale hasta el final de la
+ * temporada del equipo, salvo `ttlDays`.
  */
 export async function createInvite(
   db: Db,
   auth: AuthContext,
   args: { teamId: Id; role: TeamRole; ttlDays?: number; maxUses?: number | null },
-  pepper: string,
+  secrets: InviteSecrets,
   now = new Date(),
 ): Promise<CreatedInvite> {
   // Un código solo puede dar acceso de entrenador o de consulta, nunca
   // administrativo (también lo impide la base de datos).
   if (!TEAM_ROLES.includes(args.role)) throw new HttpError(400, 'invalid_role', 'Rol no válido para una invitación.');
   const team = await authorize(db, auth, args.teamId, 'invites.manage');
-  const code = generateInviteCode();
-  const inviteId = newId();
-  const nowIso = now.toISOString();
-  const expiresAt = new Date(now.getTime() + (args.ttlDays ?? INVITE_TTL_DAYS[args.role]) * DAY_MS).toISOString();
-  await db.batch([
-    db
-      .prepare('UPDATE invites SET revoked_at = ? WHERE team_id = ? AND role = ? AND revoked_at IS NULL')
-      .bind(nowIso, args.teamId, args.role),
-    db
-      .prepare(
-        `INSERT INTO invites (id, club_id, team_id, role, code_hash, created_by_device_id, created_at, expires_at, max_uses)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        inviteId,
-        team.clubId,
-        args.teamId,
-        args.role,
-        await hashSecret(normalizeInviteCode(code), pepper),
-        auth.deviceId,
-        nowIso,
-        expiresAt,
-        args.maxUses ?? null,
-      ),
-  ]);
-  return { inviteId, code, expiresAt };
+  const row = await db.prepare('SELECT season FROM teams WHERE id = ?').bind(team.id).first<{ season: string }>();
+  const expiresAt = args.ttlDays ? new Date(now.getTime() + args.ttlDays * DAY_MS).toISOString() : seasonExpiry(row!.season);
+  const { statements, invite } = await inviteStatements(
+    db,
+    { clubId: team.clubId, teamId: team.id, role: args.role, expiresAt, maxUses: args.maxUses, createdByDeviceId: auth.deviceId },
+    secrets,
+    now,
+  );
+  await db.batch(statements);
+  return invite;
 }
+
+/** Revoca el código vigente de un tipo (sin crear otro). El otro tipo no se toca. */
+export async function revokeTeamCode(
+  db: Db,
+  auth: AuthContext,
+  teamId: Id,
+  role: TeamRole,
+  options: { revokeAccess?: boolean } = {},
+  now = new Date(),
+): Promise<{ revokedGrants: number }> {
+  if (!TEAM_ROLES.includes(role)) throw new HttpError(400, 'invalid_role', 'Rol no válido para una invitación.');
+  await authorize(db, auth, teamId, 'invites.manage');
+  const current = await db
+    .prepare('SELECT id FROM invites WHERE team_id = ? AND role = ? AND revoked_at IS NULL')
+    .bind(teamId, role)
+    .first<{ id: string }>();
+  if (!current) throw notFound();
+  return revokeInvite(db, auth, teamId, current.id, options, now);
+}
+
+export interface TeamCodeView {
+  /** Código en claro, o null si es anterior al cifrado y hay que regenerarlo. */
+  code: string | null;
+  expiresAt: string;
+}
+
+export interface TeamCodes {
+  teamId: Id;
+  /** Identificador del equipo (p. ej. SMA2627). No da acceso. */
+  teamCode: string;
+  season: string;
+  /** Rol con el que se consulta. */
+  role: Role;
+  /** Código de consulta vigente (null si no hay). */
+  viewer: TeamCodeView | null;
+  /** Solo si el rol puede verlo: código de entrenador vigente (null si no hay). */
+  coach?: TeamCodeView | null;
+}
+
+/**
+ * Códigos vigentes de un equipo que puede ver quien pregunta:
+ *   - superadministrador y administrador del club: los dos;
+ *   - entrenador del equipo: los dos (pero no puede regenerarlos);
+ *   - consulta: solo el de consulta. El de entrenador ni se menciona.
+ * Dispositivos: por authorize() (club activo). Administración: por el club
+ * (el superadministrador también ve los de un club suspendido).
+ */
+export async function readTeamCodes(db: Db, auth: AuthContext, teamId: Id, codeKey: CryptoKey, now = new Date()): Promise<TeamCodes> {
+  let role: Role;
+  let team: { id: string; code: string; season: string };
+  if (auth.admin) {
+    const row = await db
+      .prepare('SELECT t.id, t.club_id AS clubId, t.code, t.season FROM teams t WHERE t.id = ? AND t.deleted_at IS NULL')
+      .bind(teamId)
+      .first<{ id: string; clubId: string; code: string; season: string }>();
+    if (!row) throw notFound();
+    role = (await authorizeClub(db, auth, row.clubId, 'club.read')).role;
+    team = row;
+  } else {
+    const authorized = await authorize(db, auth, teamId, 'team.read');
+    role = authorized.role;
+    const row = await db.prepare('SELECT id, code, season FROM teams WHERE id = ?').bind(teamId).first<{ id: string; code: string; season: string }>();
+    team = row!;
+  }
+  const seeCoach = roleAllows(role, 'codes.coach.read');
+  const { results } = await db
+    .prepare(
+      `SELECT id, role, code_enc, expires_at FROM invites
+       WHERE team_id = ? AND revoked_at IS NULL AND expires_at > ? AND (max_uses IS NULL OR use_count < max_uses)`,
+    )
+    .bind(team.id, now.toISOString())
+    .all<{ id: string; role: TeamRole; code_enc: string | null; expires_at: string }>();
+  const view = async (r: TeamRole): Promise<TeamCodeView | null> => {
+    const inv = results.find((x) => x.role === r);
+    if (!inv) return null;
+    return { code: await decryptCode(codeKey, inv.code_enc, { inviteId: inv.id, teamId: team.id, role: r }), expiresAt: inv.expires_at };
+  };
+  const out: TeamCodes = { teamId: team.id, teamCode: team.code, season: team.season, role, viewer: await view('viewer') };
+  if (seeCoach) out.coach = await view('coach');
+  return out;
+}
+
 
 /**
  * Revoca un código. Por defecto, quien ya lo canjeó conserva el acceso (útil al
@@ -174,7 +300,7 @@ export async function redeemInvite(
     .prepare(
       `SELECT i.id, i.club_id, i.team_id, i.role FROM invites i JOIN teams t ON t.id = i.team_id
        JOIN clubs c ON c.id = t.club_id
-       WHERE i.code_hash = ? AND i.revoked_at IS NULL AND i.expires_at > ? AND t.deleted_at IS NULL AND c.deleted_at IS NULL
+       WHERE i.code_hash = ? AND i.revoked_at IS NULL AND i.expires_at > ? AND t.deleted_at IS NULL AND c.deleted_at IS NULL AND c.status = 'active'
          AND (i.max_uses IS NULL OR i.use_count < i.max_uses)`,
     )
     .bind(await hashSecret(normalizeInviteCode(args.code), pepper), nowIso)

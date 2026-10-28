@@ -14,6 +14,8 @@ export type Action =
   | 'match.transfer'
   /** Datos del equipo (nombre, temporada, categoría…). */
   | 'team.manage'
+  /** Ver el código de entrenador del equipo (el de consulta lo ve cualquiera con team.read). */
+  | 'codes.coach.read'
   /** Crear, rotar y revocar códigos de entrenador y de consulta. */
   | 'invites.manage'
   /** Retirar el acceso de dispositivos al equipo. */
@@ -27,7 +29,9 @@ export type ClubAction =
   /** Crear, editar y eliminar equipos del club. */
   | 'club.teams.manage'
   /** Nombrar y retirar administradores del club. */
-  | 'club.admins.manage';
+  | 'club.admins.manage'
+  /** Suspender y reactivar el club. */
+  | 'club.status.manage';
 
 /** Operaciones de toda la plataforma. */
 export type PlatformAction =
@@ -37,14 +41,15 @@ export type PlatformAction =
   | 'platform.read';
 
 const TEAM: Record<Role, readonly Action[]> = {
-  superadmin: ['team.read', 'match.write', 'roster.write', 'match.transfer', 'team.manage', 'invites.manage', 'grants.manage'],
-  club_admin: ['team.read', 'match.write', 'roster.write', 'match.transfer', 'team.manage', 'invites.manage', 'grants.manage'],
-  coach: ['team.read', 'match.write', 'roster.write', 'match.transfer'],
+  superadmin: ['team.read', 'match.write', 'roster.write', 'match.transfer', 'codes.coach.read', 'team.manage', 'invites.manage', 'grants.manage'],
+  club_admin: ['team.read', 'match.write', 'roster.write', 'match.transfer', 'codes.coach.read', 'team.manage', 'invites.manage', 'grants.manage'],
+  // El entrenador ve los dos códigos, pero no los regenera ni los revoca.
+  coach: ['team.read', 'match.write', 'roster.write', 'match.transfer', 'codes.coach.read'],
   viewer: ['team.read'],
 };
 
 const CLUB: Record<'superadmin' | 'club_admin', readonly ClubAction[]> = {
-  superadmin: ['club.read', 'club.manage', 'club.teams.manage', 'club.admins.manage'],
+  superadmin: ['club.read', 'club.manage', 'club.teams.manage', 'club.admins.manage', 'club.status.manage'],
   // El administrador de club no nombra a otros administradores (ni de su club):
   // eso lo hace el superadministrador.
   club_admin: ['club.read', 'club.manage', 'club.teams.manage'],
@@ -60,7 +65,7 @@ export function clubRoleAllows(role: 'superadmin' | 'club_admin', action: ClubAc
 
 /** Acciones que solo leen. Cualquier otra se considera escritura. */
 export function isReadOnly(action: Action): boolean {
-  return action === 'team.read';
+  return action === 'team.read' || action === 'codes.coach.read';
 }
 
 /**
@@ -68,4 +73,8 @@ export function isReadOnly(action: Action): boolean {
  * operaciones críticas, configurada para pedir de nuevo el segundo factor
  * (ver docs/AUTENTICACION_ADMIN.md).
  */
-export const CRITICAL_ACTIONS: readonly (ClubAction | PlatformAction)[] = ['club.admins.manage', 'platform.clubs.manage'];
+export const CRITICAL_ACTIONS: readonly (ClubAction | PlatformAction)[] = [
+  'club.admins.manage',
+  'club.status.manage',
+  'platform.clubs.manage',
+];

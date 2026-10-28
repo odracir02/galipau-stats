@@ -10,7 +10,9 @@ import { assertValidTeamCode, normalizeTeamCode, ValidationError } from '../../s
 import { authorizeClub, authorizePlatform, isSuperadmin } from './auth';
 import type { Db, Statement } from './db';
 import { HttpError, notFound } from './errors';
+import { inviteStatements, seasonExpiry, type InviteSecrets } from './invites';
 import type { AuthContext, Gender } from './model';
+import { TEAM_ROLES } from './model';
 
 function audit(db: Db, auth: AuthContext, action: string, targetType: string, targetId: Id, at: string): Statement {
   return db
@@ -46,19 +48,113 @@ export function adminProfile(auth: AuthContext): AdminProfile {
 }
 
 /** Clubes visibles: todos para el superadministrador; los suyos para un administrador de club. */
-export async function listClubs(db: Db, auth: AuthContext): Promise<{ id: Id; name: string }[]> {
+export interface ClubSummary {
+  id: Id;
+  name: string;
+  shortName: string | null;
+  status: 'active' | 'suspended';
+}
+
+const CLUB_COLUMNS = 'id, name, short_name AS shortName, status';
+
+/**
+ * Clubes visibles: todos (también suspendidos) para el superadministrador; los
+ * suyos y activos para un administrador de club.
+ */
+export async function listClubs(db: Db, auth: AuthContext): Promise<ClubSummary[]> {
   if (!auth.admin) throw new HttpError(403, 'not_admin', 'Esta cuenta no tiene permisos de administración.');
   if (isSuperadmin(auth)) {
-    return (await db.prepare('SELECT id, name FROM clubs WHERE deleted_at IS NULL ORDER BY name').all<{ id: Id; name: string }>()).results;
+    return (await db.prepare(`SELECT ${CLUB_COLUMNS} FROM clubs WHERE deleted_at IS NULL ORDER BY name`).all<ClubSummary>()).results;
   }
   const ids = auth.admin.roles.filter((r) => r.role === 'club_admin' && r.clubId).map((r) => r.clubId!);
   if (ids.length === 0) return [];
   return (
     await db
-      .prepare(`SELECT id, name FROM clubs WHERE deleted_at IS NULL AND id IN (${ids.map(() => '?').join(', ')}) ORDER BY name`)
+      .prepare(`SELECT ${CLUB_COLUMNS} FROM clubs WHERE deleted_at IS NULL AND status = 'active' AND id IN (${ids.map(() => '?').join(', ')}) ORDER BY name`)
       .bind(...ids)
-      .all<{ id: Id; name: string }>()
+      .all<ClubSummary>()
   ).results;
+}
+
+export interface TeamSummary {
+  id: Id;
+  name: string;
+  code: string;
+  season: string;
+  category: string | null;
+  gender: Gender | null;
+  /** Qué códigos de invitación están vigentes (sin el código: se consulta aparte). */
+  codes: { coach: boolean; viewer: boolean };
+}
+
+/** Ficha de un club con sus equipos (de todas las temporadas, las más recientes primero). */
+export async function getClub(db: Db, auth: AuthContext, clubId: Id, now = new Date()): Promise<ClubSummary & { teams: TeamSummary[] }> {
+  await authorizeClub(db, auth, clubId, 'club.read');
+  const club = await db.prepare(`SELECT ${CLUB_COLUMNS} FROM clubs WHERE id = ?`).bind(clubId).first<ClubSummary>();
+  const { results: teams } = await db
+    .prepare(
+      `SELECT id, name, code, season, category, gender FROM teams WHERE club_id = ? AND deleted_at IS NULL
+       ORDER BY season DESC, name`,
+    )
+    .bind(clubId)
+    .all<Omit<TeamSummary, 'codes'>>();
+  const { results: active } = await db
+    .prepare(
+      `SELECT team_id, role FROM invites WHERE club_id = ? AND revoked_at IS NULL AND expires_at > ?
+         AND (max_uses IS NULL OR use_count < max_uses)`,
+    )
+    .bind(clubId, now.toISOString())
+    .all<{ team_id: string; role: string }>();
+  return {
+    ...club!,
+    teams: teams.map((t) => ({
+      ...t,
+      codes: {
+        coach: active.some((a) => a.team_id === t.id && a.role === 'coach'),
+        viewer: active.some((a) => a.team_id === t.id && a.role === 'viewer'),
+      },
+    })),
+  };
+}
+
+const text = (value: unknown, field: string, max = 120): string => {
+  const v = typeof value === 'string' ? value.trim() : '';
+  if (!v || v.length > max) throw new HttpError(400, 'invalid', `${field} no válido.`);
+  return v;
+};
+const optionalText = (value: unknown, max = 60): string | null => {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string' || value.trim().length > max) throw new HttpError(400, 'invalid', 'Dato no válido.');
+  return value.trim() || null;
+};
+const GENDERS: readonly Gender[] = ['male', 'female', 'mixed'];
+const gender = (value: unknown): Gender | null => {
+  if (value === undefined || value === null || value === '') return null;
+  if (!GENDERS.includes(value as Gender)) throw new HttpError(400, 'invalid', 'Modalidad no válida.');
+  return value as Gender;
+};
+
+/** Edita nombre y nombre corto del club (superadministrador o su administrador). */
+export async function updateClub(db: Db, auth: AuthContext, clubId: Id, args: { name?: unknown; shortName?: unknown }, now = new Date()): Promise<void> {
+  await authorizeClub(db, auth, clubId, 'club.manage');
+  const at = now.toISOString();
+  await db.batch([
+    db
+      .prepare('UPDATE clubs SET name = ?, short_name = ?, updated_at = ?, version = version + 1 WHERE id = ?')
+      .bind(text(args.name, 'Nombre del club'), optionalText(args.shortName), at, clubId),
+    audit(db, auth, 'club.update', 'club', clubId, at),
+  ]);
+}
+
+/** Suspende o reactiva un club (solo superadministrador). Reversible; no borra nada. */
+export async function setClubStatus(db: Db, auth: AuthContext, clubId: Id, status: unknown, now = new Date()): Promise<void> {
+  if (status !== 'active' && status !== 'suspended') throw new HttpError(400, 'invalid', 'Estado no válido.');
+  await authorizeClub(db, auth, clubId, 'club.status.manage');
+  const at = now.toISOString();
+  await db.batch([
+    db.prepare('UPDATE clubs SET status = ?, updated_at = ?, version = version + 1 WHERE id = ?').bind(status, at, clubId),
+    audit(db, auth, status === 'active' ? 'club.reactivate' : 'club.suspend', 'club', clubId, at),
+  ]);
 }
 
 // --- Clubes (superadministrador, operación crítica) ---------------------------
@@ -91,32 +187,68 @@ export async function deleteClub(db: Db, auth: AuthContext, clubId: Id, now = ne
 
 // --- Equipos (superadministrador o administrador del club) --------------------
 
+/**
+ * Crea un equipo con sus dos códigos de invitación (entrenador y consulta), en
+ * una sola transacción: nunca queda un equipo sin códigos. El identificador
+ * (p. ej. SMA2627) es único en el club y no da acceso.
+ */
 export async function createTeam(
   db: Db,
   auth: AuthContext,
-  args: { clubId: Id; name: string; code: string; season: string; category?: string | null; gender?: Gender | null },
+  args: { clubId: Id; name: unknown; code: unknown; season: unknown; category?: unknown; gender?: unknown },
+  secrets: InviteSecrets,
   now = new Date(),
-): Promise<Id> {
+): Promise<{ teamId: Id; codes: Record<'coach' | 'viewer', { code: string; expiresAt: string }> }> {
   await authorizeClub(db, auth, args.clubId, 'club.teams.manage');
-  const code = normalizeTeamCode(args.code);
+  const code = normalizeTeamCode(typeof args.code === 'string' ? args.code : '');
   try {
     assertValidTeamCode(code);
   } catch (e) {
     badRequest(e);
   }
+  const season = text(args.season, 'Temporada', 7);
+  const expiresAt = seasonExpiry(season);
+  const name = text(args.name, 'Nombre del equipo');
   const taken = await db.prepare('SELECT 1 AS x FROM teams WHERE club_id = ? AND code = ?').bind(args.clubId, code).first();
   if (taken) throw new HttpError(409, 'code_taken', `El club ya tiene un equipo con el código ${code}.`);
   const id = newId();
   const at = now.toISOString();
-  await db.batch([
+  const statements: Statement[] = [
     db
       .prepare(
         'INSERT INTO teams (id, club_id, name, code, season, category, gender, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
-      .bind(id, args.clubId, args.name.trim(), code, args.season.trim(), args.category ?? null, args.gender ?? null, at, at),
-    audit(db, auth, 'team.create', 'team', id, at),
+      .bind(id, args.clubId, name, code, season, optionalText(args.category), gender(args.gender), at, at),
+  ];
+  const codes = {} as Record<'coach' | 'viewer', { code: string; expiresAt: string }>;
+  for (const role of TEAM_ROLES) {
+    const created = await inviteStatements(db, { clubId: args.clubId, teamId: id, role, expiresAt, createdByDeviceId: null }, secrets, now);
+    statements.push(...created.statements);
+    codes[role] = { code: created.invite.code, expiresAt: created.invite.expiresAt };
+  }
+  statements.push(audit(db, auth, 'team.create', 'team', id, at));
+  await db.batch(statements);
+  return { teamId: id, codes };
+}
+
+/** Edita nombre, categoría y modalidad de un equipo. El identificador y la temporada no cambian. */
+export async function updateTeam(
+  db: Db,
+  auth: AuthContext,
+  teamId: Id,
+  args: { name?: unknown; category?: unknown; gender?: unknown },
+  now = new Date(),
+): Promise<void> {
+  const team = await db.prepare('SELECT club_id AS clubId FROM teams WHERE id = ? AND deleted_at IS NULL').bind(teamId).first<{ clubId: string }>();
+  if (!team) throw notFound();
+  await authorizeClub(db, auth, team.clubId, 'club.teams.manage');
+  const at = now.toISOString();
+  await db.batch([
+    db
+      .prepare('UPDATE teams SET name = ?, category = ?, gender = ?, updated_at = ?, version = version + 1 WHERE id = ?')
+      .bind(text(args.name, 'Nombre del equipo'), optionalText(args.category), gender(args.gender), at, teamId),
+    audit(db, auth, 'team.update', 'team', teamId, at),
   ]);
-  return id;
 }
 
 // --- Administradores de club (superadministrador, operación crítica) ----------
