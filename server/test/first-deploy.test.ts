@@ -1,7 +1,7 @@
 // El Worker de preview tal como quedará justo después del primer despliegue:
-// variables reales de wrangler.jsonc (Access general configurado, sin
-// aplicación crítica, operaciones críticas desactivadas), base de datos
-// migrada y, al principio, sin TOKEN_PEPPER.
+// variables reales de wrangler.jsonc (las dos aplicaciones de Access
+// configuradas, operaciones críticas desactivadas), base de datos migrada y,
+// al principio, sin TOKEN_PEPPER.
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { accessConfig, clearJwksCache } from '../src/access';
@@ -58,20 +58,23 @@ const ADMIN_REQUESTS: [string, string, unknown?][] = [
   ['DELETE', '/api/admin/critical/clubs/A/admins/owner'],
 ];
 
-describe('primer despliegue de preview (sin Access ni secretos)', () => {
-  it('preview tiene la aplicación general de Access y ninguna operación crítica habilitada', () => {
+describe('Worker de preview (Access configurado, operaciones críticas desactivadas)', () => {
+  it('preview tiene las dos aplicaciones de Access y ninguna operación crítica habilitada', () => {
     expect(PREVIEW_VARS).toMatchObject({
       ENVIRONMENT: 'preview',
       ACCESS_TEAM_DOMAIN: 'https://shiny-star-4f59.cloudflareaccess.com',
-      ACCESS_AUD_CRITICAL: '',
       ADMIN_CRITICAL_OPS: 'disabled',
     });
     expect(PREVIEW_VARS).not.toHaveProperty('TOKEN_PEPPER');
     const config = accessConfig(PREVIEW_VARS);
-    expect(config).toMatchObject({ teamDomain: 'https://shiny-star-4f59.cloudflareaccess.com', criticalAud: '', criticalEnabled: false });
+    expect(config).toMatchObject({ teamDomain: 'https://shiny-star-4f59.cloudflareaccess.com', criticalEnabled: false });
+    // Dos AUD válidos y distintos: el verificador acepta la aplicación crítica.
     expect(config?.adminAud).toMatch(/^[0-9a-f]{64}$/);
-    // Aunque alguien pusiera ADMIN_CRITICAL_OPS = enabled, sin aplicación crítica no se habilitan.
-    expect(accessConfig({ ...PREVIEW_VARS, ADMIN_CRITICAL_OPS: 'enabled' })?.criticalEnabled).toBe(false);
+    expect(config?.criticalAud).toMatch(/^[0-9a-f]{64}$/);
+    expect(config?.criticalAud).not.toBe(config?.adminAud);
+    expect(config?.criticalAud).toBe(PREVIEW_VARS.ACCESS_AUD_CRITICAL);
+    // Con la aplicación crítica configurada, solo ADMIN_CRITICAL_OPS las mantiene desactivadas.
+    expect(accessConfig({ ...PREVIEW_VARS, ADMIN_CRITICAL_OPS: 'enabled' })?.criticalEnabled).toBe(true);
   });
 
   it('/api/health funciona sin ninguna configuración', async () => {

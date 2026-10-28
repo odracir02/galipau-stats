@@ -8,13 +8,13 @@ Base técnica para clubes, equipos, permisos y sincronización. **La aplicación
 | ----- | ------ |
 | Esquema D1 y migraciones (0001, 0002) | Hecho; probado en SQLite y en la D1 local de Wrangler |
 | Autorización (4 roles), invitaciones, sincronización de acciones | Lógica del servidor hecha y probada |
-| Autenticación administrativa (Cloudflare Access + roles en D1) y rutas `/api/admin/*` | Hecha y probada en local; **sin configurar en Cloudflare** (desactivada: 503). Operaciones críticas desactivadas hasta la verificación manual del segundo factor |
+| Autenticación administrativa (Cloudflare Access + roles en D1) y rutas `/api/admin/*` | Hecha y probada. **En uso en preview**; sin configurar en producción. Operaciones críticas desactivadas en el Worker (`ADMIN_CRITICAL_OPS = "disabled"`) hasta completar la verificación manual del segundo factor |
 | Rutas de canje de códigos, alta de equipos, gestión de códigos, transferencia de partidos | **Pendiente** |
 | Paneles de administración | **Pendiente** |
 | Cliente de sincronización en la aplicación | **Pendiente** |
-| Base de datos D1 de preview (`galipau-stats-preview`, jurisdicción UE) | **Creada**, con las migraciones 0001 y 0002 aplicadas |
-| Worker de preview (`galipau-stats-api-preview`) | Preparado para su primer despliegue (ver [Primer despliegue de preview](#primer-despliegue-de-preview)); **no desplegado** |
-| Cloudflare Access de preview | Equipo `shiny-star-4f59` y aplicación general (`/api/admin`, `/api/admin/*`, solo el superadministrador) **creados** y configurados en `wrangler.jsonc`. Aplicación crítica **pendiente**. |
+| Base de datos D1 de preview (`galipau-stats-preview`, jurisdicción UE) | **Creada**, con las migraciones 0001 y 0002 aplicadas y el primer superadministrador dado de alta y vinculado a su cuenta de Access |
+| Worker de preview (`galipau-stats-api-preview`) | **Desplegado** en `galipau-stats-api-preview.ricardosastrelopez.workers.dev`, con `TOKEN_PEPPER` configurado. La versión desplegada aún no incluye el AUD de la aplicación crítica |
+| Cloudflare Access de preview | Equipo `shiny-star-4f59` y **las dos aplicaciones creadas** y configuradas en `wrangler.jsonc`: la general (`/api/admin`, `/api/admin/*`) y la crítica (`/api/admin/critical`, `/api/admin/critical/*`, con autenticación y biometría). Ambas solo admiten al superadministrador. La funcionalidad crítica **no está habilitada** en el Worker |
 | Base de datos D1 de producción, Workers, secretos y Access | **No creados** |
 
 Relacionado: [Sincronización](SINCRONIZACION.md) · [Permisos, seguridad y privacidad](SEGURIDAD.md).

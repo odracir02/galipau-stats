@@ -44,13 +44,14 @@
       "vars": {
         "ENVIRONMENT": "preview",
         "ALLOWED_ORIGINS": "https://develop.galipau-stats.pages.dev",
-        // Cloudflare Access de preview (no son secretos). La aplicación general
-        // (/api/admin y /api/admin/*) ya existe; la crítica todavía no, y sin
-        // ella las operaciones críticas quedan desactivadas.
+        // Cloudflare Access de preview (no son secretos). Existen las dos
+        // aplicaciones: la general (/api/admin y /api/admin/*) y la crítica
+        // (/api/admin/critical y /api/admin/critical/*).
         "ACCESS_TEAM_DOMAIN": "https://shiny-star-4f59.cloudflareaccess.com",
         "ACCESS_AUD_ADMIN": "9da0c4c7f3a26ff248541f69dea8e2b8a82cfea1b7d6108f9504e7ed89a07143",
-        "ACCESS_AUD_CRITICAL": "",
-        // Desactivadas hasta verificar el segundo factor en Cloudflare (ver docs).
+        "ACCESS_AUD_CRITICAL": "ba3915580277d834ba74d5388250a559a05e7a9e89260957d4bfac4c33bcaa0f",
+        // Desactivadas hasta completar la verificación manual del segundo factor
+        // (ver docs/AUTENTICACION_ADMIN.md), aunque la aplicación crítica ya exista.
         "ADMIN_CRITICAL_OPS": "disabled"
       },
       "d1_databases": [

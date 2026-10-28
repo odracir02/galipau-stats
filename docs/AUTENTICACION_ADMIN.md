@@ -2,11 +2,11 @@
 
 Cómo se identifican el **superadministrador** y los **administradores de club**. Entrenadores y familias no se ven afectados: siguen con dispositivos e invitaciones de equipo, que nunca dan acceso administrativo.
 
-> **Estado:** implementado y probado en local. **No está operativo**:
+> **Estado:**
 >
-> - falta crear en Cloudflare las aplicaciones de Access, rellenar su configuración y desplegar el Worker;
-> - sin esa configuración, las rutas de administración responden **503** en cualquier entorno;
-> - las **operaciones críticas** están **desactivadas** (`ADMIN_CRITICAL_OPS = "disabled"`, también 503) hasta superar la [verificación manual del segundo factor](#verificación-manual-del-segundo-factor).
+> - **Preview:** las dos aplicaciones de Access (general y crítica) están creadas y configuradas, y el Worker está desplegado. El primer superadministrador está dado de alta y vinculado a su cuenta. La aplicación crítica ya pide autenticación y biometría, pero **la funcionalidad crítica no está habilitada en el Worker**: `ADMIN_CRITICAL_OPS = "disabled"` (503) hasta completar la [verificación manual del segundo factor](#verificación-manual-del-segundo-factor).
+> - **Producción:** sin configurar; las rutas de administración responden **503**.
+> - En cualquier entorno sin configuración de Access, la administración está desactivada.
 
 ## Evaluación
 
@@ -166,7 +166,7 @@ Según la documentación de Access, **la aplicación de la ruta más específica
 - Copiar el *Application Audience (AUD) Tag* de cada aplicación y el dominio del equipo en `server/wrangler.jsonc` (`ACCESS_TEAM_DOMAIN`, `ACCESS_AUD_ADMIN`, `ACCESS_AUD_CRITICAL`). No son secretos.
   - El dominio va con esquema: `https://<equipo>.cloudflareaccess.com`, igual que el emisor (`iss`) de los JWT.
   - `ACCESS_AUD_CRITICAL` es opcional: sin ella, la administración general funciona y las operaciones críticas quedan desactivadas aunque `ADMIN_CRITICAL_OPS` diga `enabled`.
-  - Preview: equipo y aplicación general ya configurados; la crítica, pendiente.
+  - Preview: equipo y las dos aplicaciones configurados. La crítica existe, pero sus operaciones siguen desactivadas en el Worker.
 - Cada entorno con sus propias aplicaciones; una prueba impide que preview y producción compartan AUD.
 
 ### 4. Despliegue
