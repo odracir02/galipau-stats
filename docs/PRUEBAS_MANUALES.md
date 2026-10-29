@@ -215,3 +215,16 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 119. Eliminar un partido de prueba ya enviado. ✔ La confirmación avisa de que dejará de aparecer en los móviles de consulta. Cancelar: no cambia nada. Confirmar: desaparece aquí y, tras enviarse, también en otro móvil al pulsar «Actualizar».
 120. Eliminar un partido que nunca se ha enviado. ✔ Confirmación de siempre, sin aviso del club y sin nada pendiente de enviar.
 
+## T. Consulta en directo (005E.2G, vista previa de `develop`, con datos de prueba)
+
+121. Móvil de consulta con un partido en curso abierto (el entrenador ha iniciado el cronómetro) (pestaña «Jugadores» y la ficha de un jugador abierta). En el móvil del entrenador, con el envío automático activado, registrar un gol de ese jugador. ✔ En unos segundos, sin tocar nada, la ficha muestra el gol; la pestaña y la ficha siguen abiertas. En «Equipo», el marcador está al día y la barra dice «En directo · actualizado a las …».
+122. Otro móvil de consulta en «Rankings». ✔ El ranking cambia solo tras el gol.
+123. Registrar parada, exclusión y deshacer una acción. ✔ Todo aparece (y la acción deshecha desaparece) en la consulta sin pulsar nada.
+124. Pausar el cronómetro o corregir el marcador en el entrenador. ✔ La consulta se actualiza igual.
+125. Modo avión en el móvil de consulta. ✔ «Sin conexión · datos de las …» y el aviso. Quitarlo. ✔ Vuelve a «En directo» y se pone al día.
+126. Cambiar a otra app un minuto y volver. ✔ «Actualizando…» un instante y después «En directo», con lo registrado mientras tanto.
+127. Retirar el código de consulta desde el panel. ✔ Los datos desaparecen del móvil de consulta y deja de consultar.
+128. Finalizar el partido en el entrenador. ✔ En la consulta aparecen el resultado y las estadísticas definitivas, desaparece «En directo» y queda la hora de los datos. Ya no se consulta periódicamente.
+129. Entrar en un equipo sin partidos en curso. ✔ Sin «En directo»; una sola consulta al entrar. Si el entrenador empieza un partido, se ve al pulsar «Actualizar» o al volver a entrar.
+130. Corregir una acción del partido ya finalizado en el entrenador. ✔ Se envía sola (con el envío automático activado); en la consulta, se ve con «Actualizar».
+131. (Opcional, larga) Dejar una pantalla de consulta abierta 2 h con un partido en curso. ✔ «Actualización automática pausada» y «Reanudar directo»; volver a la app no la reanuda; al pulsarlo, vuelve «En directo».

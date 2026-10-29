@@ -1,6 +1,7 @@
 import { createApi } from '../remote/api';
 import { AutoSync } from '../remote/autosync';
 import { ClubSync } from '../remote/clubsync';
+import { LiveFeed } from '../remote/live';
 import { RemoteSession } from '../remote/session';
 import { AccountStore } from '../remote/store';
 import { ClubViewer, ViewerStore } from '../remote/viewer';
@@ -30,6 +31,9 @@ export const clubViewer: ClubViewer | null =
 
 // Los datos descargados siguen a la sesión: sin acceso verificado, se retiran.
 if (remote && clubViewer) clubViewer.followSession(remote);
+
+/** Actualización en directo de la consulta (solo con una pantalla de consulta abierta y la app visible). */
+export const liveFeed: LiveFeed | null = clubViewer && remote ? new LiveFeed(clubViewer, () => remote.getState().teams) : null;
 
 /** Envío automático desde el dispositivo que registra; null si esta versión no usa servidor. */
 export const autoSync: AutoSync | null =

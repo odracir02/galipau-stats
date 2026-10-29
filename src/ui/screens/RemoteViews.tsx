@@ -2,10 +2,11 @@
 // consulta: sin registro, cronología editable, corrección ni finalización.
 import { Trophy } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { liveFeed } from '../../app/remote';
 import { navigate } from '../../app/router';
 import { useRemoteTeamData } from '../../app/useRemoteTeamData';
 import { formatDate, opponentLabel } from '../../domain/format';
-import { seasonItems } from '../../remote/viewer';
+import { seasonItems, type ViewProblem } from '../../remote/viewer';
 import { disqualifications } from '../../stats/discipline';
 import { computeMatchStats } from '../../stats/engine';
 import { Icon } from '../components/Icon';
@@ -14,6 +15,9 @@ import { StatsView } from '../stats/StatsView';
 import { MatchSummaryCard } from './MatchScreen';
 import { RankingsView } from './RankingsScreen';
 import { FreshnessBar } from './RemoteTeamScreen';
+
+/** El servidor ha confirmado que ya no hay acceso: los datos de consulta se han borrado. */
+const lostAccess = (problem: ViewProblem | null) => problem === 'no_access' || problem === 'revoked';
 
 export function RemoteMatchScreen({ teamId, matchId }: { teamId: string; matchId: string }) {
   const { view, team } = useRemoteTeamData(teamId);
@@ -28,7 +32,13 @@ export function RemoteMatchScreen({ teamId, matchId }: { teamId: string; matchId
       <div className="screen">
         <TopBar title="Partido" back={back} />
         <main className="content">
-          <p className="empty">{view.loading ? 'Cargando…' : 'Este partido no está entre los datos descargados.'}</p>
+          <p className="empty">
+            {lostAccess(view.problem)
+              ? 'Este dispositivo ya no tiene acceso a este equipo.'
+              : view.loading || view.live === 'checking'
+                ? 'Cargando…'
+                : 'Este partido no está entre los datos descargados.'}
+          </p>
         </main>
       </div>
     );
@@ -37,7 +47,7 @@ export function RemoteMatchScreen({ teamId, matchId }: { teamId: string; matchId
     <div className="screen">
       <TopBar title={opponentLabel(match.opponent)} subtitle={`${formatDate(match.date)} · ${team?.name ?? snapshot.team.name}`} back={back} />
       <main className="content">
-        <FreshnessBar view={view} onRefresh={null} />
+        <FreshnessBar view={view} onRefresh={null} onResume={() => liveFeed?.resume(teamId)} />
         <StatsView
           mode="match"
           context={`${opponentLabel(match.opponent)} · ${formatDate(match.date)}`}
@@ -75,11 +85,17 @@ export function RemoteRankingsScreen({ teamId }: { teamId: string }) {
         back={() => navigate({ name: 'remoteTeam', teamId })}
       />
       <main className="content">
-        <FreshnessBar view={view} onRefresh={null} />
+        <FreshnessBar view={view} onRefresh={null} onResume={() => liveFeed?.resume(teamId)} />
         {snapshot ? (
           <RankingsView items={items} seasons={seasons} season={active} onSeason={setSeason} />
         ) : (
-          <p className="empty">{view.loading ? 'Cargando…' : 'No hay datos descargados de este equipo.'}</p>
+          <p className="empty">
+            {lostAccess(view.problem)
+              ? 'Este dispositivo ya no tiene acceso a este equipo.'
+              : view.loading || view.live === 'checking'
+                ? 'Cargando…'
+                : 'No hay datos descargados de este equipo.'}
+          </p>
         )}
       </main>
     </div>

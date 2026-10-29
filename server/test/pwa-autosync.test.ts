@@ -12,6 +12,7 @@ import { createApi, type Api, type RemoteTeam } from '../../src/remote/api';
 import { AutoSync } from '../../src/remote/autosync';
 import { ClubSync } from '../../src/remote/clubsync';
 import { AccountStore } from '../../src/remote/store';
+import { UploadBusyError } from '../../src/remote/upload';
 import worker, { type Env } from '../src/index';
 import { addClub, addDevice, addTeam, CODE_KEY, PEPPER } from './seed';
 import { migratedDb, type SqliteD1 } from './sqliteD1';
@@ -272,9 +273,17 @@ describe('envío automático', () => {
     const link = await d.sync.link(team.id, REMOTE);
     await d.store.updateLink({ ...link, auto: true });
     // Primer envío manual en curso mientras el automático intenta enviar el mismo equipo.
-    const manual = d.sync.upload(team.id);
+    // Gana el bloqueo el que llegue antes: el otro espera (automático) o avisa de
+    // que ya hay un envío en curso (manual) y se puede repetir.
+    const manual = d.sync.upload(team.id).catch((e: unknown) => e);
     await d.auto.checkAll();
-    expect((await manual).status).toBe('verified');
+    const first = await manual;
+    if (first instanceof UploadBusyError) {
+      await settle(d.auto, 'synced');
+      expect((await d.sync.upload(team.id)).status).toBe('verified');
+    } else {
+      expect(first).toMatchObject({ status: 'verified' });
+    }
     await settle(d.auto, 'synced');
     expect(count('SELECT COUNT(*) AS n FROM events')).toBe(20);
     expect(count('SELECT COUNT(*) AS n FROM players')).toBe(3);
@@ -443,5 +452,48 @@ describe('eliminación de un partido sincronizado', () => {
     expect((await d.sync.preview(team.id)).skippedMatches.map((m) => m.id)).toEqual([other.id]);
     expect(await d.sync.pending(team.id)).toEqual({ players: 0, matches: 0, events: 0, matchDeletions: 0 });
     expect(net.writes).toBe(0);
+  });
+});
+
+describe('finalizar el partido no detiene el envío del registrador', () => {
+  it('envía la finalización y los últimos cambios, y después las correcciones', async () => {
+    const d = await deviceSetup(coachToken, 'iphone');
+    await firstManualUpload(d);
+    match = await svc.toggleClock(local, match);
+    await svc.recordEvent(local, match, { kind: 'shot', shotType: 'six_m', result: 'goal' }, ids[0]!, { period: 2, matchTimeMs: 3_590_000 });
+    match = await svc.finishMatch(local, match);
+    await settle(d.auto, 'synced');
+    expect(db.sqlite.prepare('SELECT status FROM matches').get()).toEqual({ status: 'finished' });
+    expect(count('SELECT COUNT(*) AS n FROM events')).toBe(21);
+
+    // Corrección después del partido: se envía igual.
+    const last = (await local.listEvents(match.id)).find((e) => e.matchTimeMs === 3_590_000)!;
+    await svc.updateEvent(local, match, last, { playerId: ids[1]! });
+    await settle(d.auto, 'synced');
+    expect(count(`SELECT COUNT(*) AS n FROM events WHERE id = '${last.id}' AND player_id = '${ids[1]}'`)).toBe(1);
+    expect(await d.sync.pending(team.id)).toEqual({ players: 0, matches: 0, events: 0, matchDeletions: 0 });
+  });
+
+  it('sin conexión al finalizar: queda pendiente y se envía al recuperarla', async () => {
+    const d = await deviceSetup(coachToken, 'iphone');
+    await firstManualUpload(d);
+    net.down = true;
+    match = await svc.finishMatch(local, match);
+    await waitFor(() => d.auto.state(team.id).status === 'offline');
+    expect(db.sqlite.prepare('SELECT status FROM matches').get()).toEqual({ status: 'ready' });
+    net.down = false;
+    await d.auto.checkAll();
+    await settle(d.auto, 'synced');
+    expect(db.sqlite.prepare('SELECT status FROM matches').get()).toEqual({ status: 'finished' });
+  });
+
+  it('partido finalizado y sin cambios: ninguna petición', async () => {
+    const d = await deviceSetup(coachToken, 'iphone');
+    match = await svc.finishMatch(local, match);
+    await firstManualUpload(d);
+    await d.auto.checkAll();
+    await settle(d.auto, 'synced');
+    await new Promise((r) => setTimeout(r, 300));
+    expect(net).toMatchObject({ writes: 0, reads: 0 });
   });
 });

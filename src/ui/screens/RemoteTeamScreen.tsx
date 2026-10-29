@@ -3,10 +3,10 @@
 // SOLO LECTURA para cualquier rol (también entrenador): aquí no se registra,
 // corrige, finaliza ni elimina nada. Los datos descargados son independientes
 // de los equipos guardados en el dispositivo.
-import { ChevronRight, CloudOff, RefreshCw, Trophy } from 'lucide-react';
+import { ChevronRight, CloudOff, Radio, RefreshCw, Trophy } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { errorMessage } from '../../app/errors';
-import { clubViewer, remote } from '../../app/remote';
+import { clubViewer, liveFeed, remote } from '../../app/remote';
 import { navigate } from '../../app/router';
 import { showToast } from '../../app/toast';
 import { useRemoteTeamData } from '../../app/useRemoteTeamData';
@@ -24,25 +24,65 @@ import { KV } from '../stats/StatTables';
 
 type Tab = 'matches' | 'players' | 'season';
 
-/** Estado de los datos descargados: fecha, aviso sin conexión y «Actualizar». */
-export function FreshnessBar({ view, onRefresh }: { view: TeamView; onRefresh: (() => void) | null }) {
-  const at = view.cached ? formatChecked(view.cached.fetchedAt) : null;
+/** Hora de los datos: con segundos si son de hoy (actualización en directo). */
+function dataTime(iso: string, now = new Date()): string {
+  const d = new Date(iso);
+  return d.toDateString() === now.toDateString()
+    ? d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : formatChecked(iso);
+}
+
+/**
+ * Estado de los datos descargados: «En directo» solo si la última consulta ha
+ * confirmado con el servidor que están al día; si no, la hora de los últimos
+ * datos recibidos. Con «Actualizar» y avisos sin conexión.
+ */
+export function FreshnessBar({
+  view,
+  onRefresh,
+  onResume,
+}: {
+  view: TeamView;
+  onRefresh: (() => void) | null;
+  /** «Reanudar directo» tras la pausa por tiempo. */
+  onResume?: (() => void) | null;
+}) {
+  const iso = view.checkedAt ?? view.cached?.fetchedAt ?? null;
+  const at = iso ? dataTime(iso) : null;
+  const live = view.live ?? null;
+  let text: string;
+  if (view.loading) text = 'Actualizando…';
+  else if (!at) text = live === 'checking' || live === 'retrying' ? 'Descargando…' : 'Sin datos descargados';
+  else if (live === 'live') text = `En directo · actualizado a las ${at}`;
+  else if (live === 'checking' || live === 'retrying') text = `Actualizando… · datos de las ${at}`;
+  else if (live === 'offline') text = `Sin conexión · datos de las ${at}`;
+  else if (live === 'stale') text = `Datos desactualizados · última actualización a las ${at}`;
+  else if (live === 'paused') text = `Actualización automática pausada · datos de las ${at}`;
+  else text = `Datos del club · actualizados ${at}`;
+  const warn = view.problem === 'offline' || (view.problem === 'server' && live !== 'retrying' && live !== 'checking');
   return (
     <div className="fresh-bar" role="status">
-      <span className="fresh-text">
-        {view.loading ? 'Actualizando…' : at ? `Datos del club · actualizados ${at}` : 'Sin datos descargados'}
+      <span className={`fresh-text${live ? ` live-${live}` : ''}`}>
+        {live && <span className="live-dot" aria-hidden="true" />}
+        {text}
       </span>
+      {live === 'paused' && onResume && (
+        <button type="button" className="btn btn-sm" onClick={onResume}>
+          <Icon as={Radio} size={16} />
+          Reanudar directo
+        </button>
+      )}
       {onRefresh && (
         <button type="button" className="btn btn-sm" onClick={onRefresh} disabled={view.loading}>
           <Icon as={RefreshCw} size={16} />
           Actualizar
         </button>
       )}
-      {(view.problem === 'offline' || view.problem === 'server') && (
+      {warn && (
         <p className="notice fresh-warning">
           <Icon as={CloudOff} size={18} />
           {view.problem === 'offline' ? 'Sin conexión.' : 'El servidor no responde.'}{' '}
-          {at ? `Se muestran los datos del ${at}: pueden estar desactualizados.` : 'Todavía no hay datos descargados de este equipo.'}
+          {at ? `Se muestran los datos de las ${at}: pueden estar desactualizados.` : 'Todavía no hay datos descargados de este equipo.'}
         </p>
       )}
     </div>
@@ -68,7 +108,7 @@ export function RemoteTeamScreen({ teamId }: { teamId: string }) {
     );
   }
   if (!team) return <div className="screen" />;
-  const refresh = clubViewer && team.status === 'active' ? () => void clubViewer!.refresh(team) : null;
+  const refresh = clubViewer && liveFeed && team.status === 'active' ? () => void liveFeed!.refreshNow(team.teamId) : null;
 
   return (
     <div className="screen">
@@ -89,7 +129,7 @@ export function RemoteTeamScreen({ teamId }: { teamId: string }) {
           <p className="notice">El club no está activo ahora mismo. Los datos del equipo no están disponibles.</p>
         )}
         {view.problem === 'no_access' && <p className="notice">Este dispositivo ya no tiene acceso a este equipo.</p>}
-        <FreshnessBar view={view} onRefresh={refresh} />
+        <FreshnessBar view={view} onRefresh={refresh} onResume={() => liveFeed?.resume(teamId)} />
         <p className="hint readonly-note">
           Solo consulta ({ROLE_LABEL[team.role]}): aquí no se registra ni se modifica nada. Los datos del club son independientes
           de los equipos de este dispositivo.

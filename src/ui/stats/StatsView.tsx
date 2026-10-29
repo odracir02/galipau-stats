@@ -39,7 +39,10 @@ type Tab = 'team' | 'players' | 'goalkeepers';
 
 export function StatsView({ team, rows, intervals, summary, pendingCount, mode, context, redCards }: Props) {
   const [tab, setTab] = useState<Tab>('team');
-  const [open, setOpen] = useState<StatRow | null>(null);
+  // Se guarda el jugador, no su fila: si llegan datos nuevos, la ficha abierta los muestra.
+  const [openId, setOpenId] = useState<Id | null>(null);
+  const open = openId === null ? null : (rows.find((r) => r.playerId === openId) ?? null);
+  const setOpen = (r: StatRow | null) => setOpenId(r?.playerId ?? null);
   const fieldRows = rows.filter((r) => r.position === 'field');
   const gkRows = rows.filter((r) => r.position === 'goalkeeper');
 

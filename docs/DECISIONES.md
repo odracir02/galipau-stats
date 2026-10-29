@@ -114,3 +114,10 @@
 | D110 | Sin envío en segundo plano con la app cerrada | Las PWA de iPhone no lo permiten de forma fiable; al abrir se comprueba lo pendiente. |
 | D111 | El envío automático está desactivado por defecto y se activa expresamente por equipo y dispositivo | Actualizar la app no puede empezar a enviar datos sin que el entrenador lo decida; si hay algo pendiente, se muestra antes de enviarlo. |
 | D112 | Eliminar un partido ya enviado pide una confirmación específica | El borrado llega a los móviles de consulta; cancelar no borra nada y, si el envío falla, queda pendiente sin darse por hecho. |
+| D113 | La consulta en directo pide solo los cambios cada 5 s (`/changes`), no el equipo completo | Sin cambios, la respuesta ocupa unos 55 bytes y lee unas pocas filas indexadas, frente a ~77 KB y cientos de filas de la descarga completa. No requiere cambios en el servidor. |
+| D114 | Se descarga el equipo completo cuando cambia un partido o un jugador | `/changes` solo trae el contenido de las acciones; así se evita duplicar en el cliente la lógica de partidos y plantilla, y esos cambios son poco frecuentes. |
+| D115 | Sin consultas con la app oculta o sin pantalla de consulta abierta | Ahorra batería, datos y peticiones; al volver se consulta en el momento. |
+| D116 | «En directo» solo tras una confirmación correcta del servidor | Nunca se presentan como al día datos que no se han podido comprobar. |
+| D117 | La consulta periódica solo existe con un partido en curso o en el descanso | Fuera de los partidos no hay nada que seguir; un partido nuevo se descubre al entrar o con «Actualizar», sin consultas permanentes. |
+| D118 | Tras terminar el último partido en curso, 3 consultas de cierre antes de parar | El registrador envía el partido antes que sus acciones; así llegan también las últimas. |
+| D119 | Seguimiento continuo de 2 h como máximo, con reanudación manual | Un partido olvidado en curso no genera peticiones toda la noche; el límite no se reinicia con cada gol ni al volver a la app. |

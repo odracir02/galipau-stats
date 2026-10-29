@@ -691,6 +691,39 @@ svg {
   flex-basis: 100%;
 }
 
+/* Actualización en directo de la consulta. */
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--s-2);
+  border-radius: 50%;
+  background: var(--c-text-2);
+  vertical-align: middle;
+}
+
+.fresh-text.live-live {
+  color: var(--c-success);
+}
+
+.live-live .live-dot {
+  background: var(--c-success);
+}
+
+.fresh-text.live-offline,
+.fresh-text.live-stale {
+  color: var(--c-secondary-text);
+}
+
+.live-paused .live-dot {
+  background: var(--c-text-2);
+}
+
+.live-offline .live-dot,
+.live-stale .live-dot {
+  background: var(--c-secondary);
+}
+
 .readonly-note {
   margin: 0;
 }

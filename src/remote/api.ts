@@ -60,6 +60,17 @@ export interface TeamSnapshot {
   events: { version: number; event: MatchEvent }[];
 }
 
+/** Cambios de un equipo posteriores a `since`, tal como los devuelve GET /api/teams/:id/changes. */
+export interface ChangesPage {
+  /** Último cambio incluido (igual a `since` si no hay ninguno). */
+  nextSeq: number;
+  hasMore: boolean;
+  /** Estado actual de las acciones cambiadas (también las borradas). */
+  events: { version: number; event: MatchEvent }[];
+  /** Otros registros cambiados (partidos, jugadores…), solo identificados. */
+  others: { entity: string; entityId: string; version: number }[];
+}
+
 export type RemoteErrorKind =
   /** Sin conexión o el servidor no responde. */
   | 'offline'
@@ -143,6 +154,7 @@ export interface Api {
   syncMatch(token: string, op: SyncOp<Match>): Promise<OpResult>;
   syncEvent(token: string, op: SyncOp<MatchEvent>): Promise<OpResult>;
   snapshot(token: string, teamId: string): Promise<TeamSnapshot>;
+  changes(token: string, teamId: string, since: number): Promise<ChangesPage>;
 }
 
 export function createApi({ baseUrl, fetch: doFetch = globalThis.fetch.bind(globalThis), timeoutMs = 10_000 }: ApiOptions): Api {
@@ -197,6 +209,8 @@ export function createApi({ baseUrl, fetch: doFetch = globalThis.fetch.bind(glob
     syncMatch: (token, { record, ...op }) => call<OpResult>('POST', '/api/sync/matches', token, { ...op, match: record }),
     syncEvent: (token, { record, ...op }) => call<OpResult>('POST', '/api/sync/events', token, { ...op, event: record }),
     snapshot: (token, teamId) => call<TeamSnapshot>('GET', `/api/teams/${encodeURIComponent(teamId)}/snapshot`, token),
+    changes: (token, teamId, since) =>
+      call<ChangesPage>('GET', `/api/teams/${encodeURIComponent(teamId)}/changes?since=${since}`, token),
   };
 }
 
