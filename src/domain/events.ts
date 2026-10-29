@@ -1,4 +1,13 @@
+import { isTeamKind } from './catalog';
 import type { EventPayload, Id, MatchEvent, Period } from './types';
+
+/**
+ * Acción viva sin jugador que espera atribución. Las acciones de equipo (golpe
+ * franco) no tienen jugador por definición y no cuentan como pendientes.
+ */
+export function isPending(e: MatchEvent): boolean {
+  return e.deletedAt === null && e.playerId === null && !isTeamKind(e.kind);
+}
 
 /** Orden cronológico de partido; a igualdad de tiempo, orden de registro. */
 export function compareEvents(a: MatchEvent, b: MatchEvent): number {

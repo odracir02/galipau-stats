@@ -22,6 +22,7 @@ import {
   undoLast,
   updateEvent,
 } from './matchService';
+import { loadSeasonItems } from './statsService';
 import { createTeam, savePlayer, updateTeam } from './teamService';
 
 let dbCounter = 0;
@@ -538,16 +539,64 @@ describe('eliminación de partidos', () => {
   });
 });
 
-describe('golpes francos: categoría histórica', () => {
+describe('golpes francos: acción de equipo', () => {
   const t = { period: 1 as const, matchTimeMs: 60_000 };
+  const ft = { kind: 'free_throw' } as const;
 
-  it('no se pueden registrar golpes francos nuevos', async () => {
+  it('se registran sin jugador, cuentan en el equipo y no son «pendientes»', async () => {
     const match = await newMatch();
-    await expect(recordEvent(repo, match, { kind: 'free_throw' }, id('p7'), t)).rejects.toThrow(ValidationError);
-    expect(await repo.listEvents(match.id)).toHaveLength(0);
+    await recordEvent(repo, match, ft, null, t);
+    await recordEvent(repo, match, ft, null, { period: 1, matchTimeMs: 90_000 });
+    const s = computeMatchStats(match, await repo.listEvents(match.id));
+    expect(s.team.freeThrows).toBe(2);
+    expect(s.pendingCount).toBe(0);
+    // No cambian marcador, goles, lanzamientos ni ninguna cifra de jugador.
+    expect(s.score).toMatchObject({ own: 0, opponent: 0 });
+    expect(s.team.shots.attempts + s.team.gk.received + s.team.turnovers.total).toBe(0);
+    for (const c of s.players.values()) expect(c.freeThrows).toBe(0);
   });
 
-  it('un golpe franco antiguo se sigue leyendo, contando internamente y corrigiendo', async () => {
+  it('no se pueden asignar a un jugador', async () => {
+    const match = await newMatch();
+    await expect(recordEvent(repo, match, ft, id('p7'), t)).rejects.toThrow(ValidationError);
+    const e = await recordEvent(repo, match, ft, null, t);
+    await expect(updateEvent(repo, match, e, { playerId: id('p7') })).rejects.toThrow(ValidationError);
+    // Corregir otra acción a golpe franco obliga a dejarla sin jugador.
+    const y = await recordEvent(repo, match, { kind: 'yellow' }, id('p7'), t);
+    await expect(updateEvent(repo, match, y, { payload: ft })).rejects.toThrow(ValidationError);
+    const fixed = await updateEvent(repo, match, y, { payload: ft, playerId: null });
+    expect(fixed).toMatchObject({ kind: 'free_throw', playerId: null });
+  });
+
+  it('deshacer y eliminar: las acciones anuladas no cuentan', async () => {
+    const match = await newMatch();
+    const a = await recordEvent(repo, match, ft, null, t);
+    await recordEvent(repo, match, ft, null, { period: 1, matchTimeMs: 70_000 });
+    await undoLast(repo, await repo.listEvents(match.id));
+    await deleteEvent(repo, a);
+    const events = await repo.listEvents(match.id);
+    expect(events).toHaveLength(2); // siguen guardadas, marcadas como borradas
+    expect(computeMatchStats(match, events).team.freeThrows).toBe(0);
+  });
+
+  it('repetir el registro con el mismo identificador no lo duplica', async () => {
+    const match = await newMatch();
+    await Promise.all([recordEvent(repo, match, ft, null, t, 'golpe-1'), recordEvent(repo, match, ft, null, t, 'golpe-1')]);
+    expect(await repo.listEvents(match.id)).toHaveLength(1);
+  });
+
+  it('se acumulan en la temporada', async () => {
+    const m1 = await newMatch();
+    const m2 = await newMatch({ date: '2026-11-01' });
+    await recordEvent(repo, m1, ft, null, t);
+    await recordEvent(repo, m2, ft, null, t);
+    await recordEvent(repo, m2, ft, null, { period: 2, matchTimeMs: 40 * 60_000 });
+    const season = computeSeasonStats(await loadSeasonItems(repo, team.id));
+    expect(season.team.freeThrows).toBe(3);
+    expect(season.pendingCount).toBe(0);
+  });
+
+  it('un golpe franco antiguo, asignado a un jugador, se conserva y se puede corregir', async () => {
     const match = await newMatch();
     // Evento guardado por una versión anterior de la aplicación.
     const legacy = {
@@ -564,19 +613,16 @@ describe('golpes francos: categoría histórica', () => {
     await repo.saveEvent(legacy);
     const fresh = new IndexedDbRepository(dbName);
     const events = await fresh.listEvents(match.id);
-    expect(events).toHaveLength(1);
-    expect(computeMatchStats(match, events).players.get(id('p7'))!.freeThrows).toBe(1);
+    expect(events).toEqual([legacy]);
+    const s = computeMatchStats(match, events);
+    expect(s.team.freeThrows).toBe(1);
+    expect(s.players.get(id('p7'))!.freeThrows).toBe(1);
 
-    // Se puede corregir manteniendo su categoría o pasarlo a otra acción.
-    const moved = await updateEvent(repo, match, legacy, { playerId: id('p14') });
-    expect(moved.kind).toBe('free_throw');
+    // Corregir su minuto conserva su jugador; no puede pasar a otro jugador.
+    const moved = await updateEvent(repo, match, legacy, { matchTimeMs: 65_000 });
+    expect(moved).toMatchObject({ kind: 'free_throw', playerId: id('p7') });
+    await expect(updateEvent(repo, match, moved, { playerId: id('p14') })).rejects.toThrow(ValidationError);
     const changed = await updateEvent(repo, match, moved, { payload: { kind: 'penalty_committed' } });
     expect(changed.kind).toBe('penalty_committed');
-  });
-
-  it('ninguna otra acción puede convertirse en golpe franco', async () => {
-    const match = await newMatch();
-    const e = await recordEvent(repo, match, { kind: 'yellow' }, id('p7'), t);
-    await expect(updateEvent(repo, match, e, { payload: { kind: 'free_throw' } })).rejects.toThrow(ValidationError);
   });
 });

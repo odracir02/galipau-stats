@@ -21,6 +21,7 @@ import { playerLabel } from '../match/labels';
 import { LastActionBar } from '../match/LastActionBar';
 import { ClockAdjustSheet, MatchMenuSheet, ScoreSheet } from '../match/MatchSheets';
 import { RecordPanel } from '../match/RecordPanel';
+import { ReductionSheet } from '../match/ReductionSheet';
 import { Timeline } from '../match/Timeline';
 import { StatsView } from '../stats/StatsView';
 
@@ -63,6 +64,7 @@ type Overlay =
   | { name: 'delete' }
   | { name: 'edit'; event: MatchEvent }
   | { name: 'add'; timing: EventTiming }
+  | { name: 'reduction'; eventId: Id; playerId: Id | null }
   | null;
 
 const upsert = (list: readonly MatchEvent[], e: MatchEvent) =>
@@ -112,7 +114,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
       const e = await svc.recordEvent(repo, matchRef.current, payload, playerId, timing);
       setEvents((prev) => upsert(prev, e));
       const card = e.playerId === null ? undefined : disqualifications(upsert(events, e)).get(e.playerId);
-      const label = `${describePayload(e)} · ${playerLabel(squad, e.playerId)}`;
+      const label = `${describePayload(e)} · ${playerLabel(squad, e.playerId, e.kind)}`;
       if (card?.triggerEventId === e.id && card.type === 'accumulated') {
         showToast(`${label} · 3.ª exclusión: roja por acumulación`, 'info');
       } else {
@@ -128,7 +130,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
       const undone = await svc.undoLast(repo, events);
       if (!undone) return;
       setEvents((prev) => upsert(prev, undone));
-      showToast(`Deshecho: ${describePayload(undone)} · ${playerLabel(squad, undone.playerId)}`, 'info');
+      showToast(`Deshecho: ${describePayload(undone)} · ${playerLabel(squad, undone.playerId, undone.kind)}`, 'info');
     });
 
   const saveEdit = (event: MatchEvent, payload: EventPayload, playerId: Id | null, timing: EventTiming) =>
@@ -179,6 +181,9 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
         match={match}
         teamName={publicTeamName(team)}
         score={stats.score}
+        events={events}
+        squad={squad}
+        onReduction={(r) => setOverlay({ name: 'reduction', eventId: r.eventId, playerId: r.playerId })}
         onToggle={toggleClock}
         onMenu={() => setOverlay({ name: 'menu' })}
         onScore={() => setOverlay({ name: 'score' })}
@@ -372,6 +377,23 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
           onSave={(payload, playerId, timing) => saveEdit(overlay.event, payload, playerId, timing)}
           checkDisqualified={disqualifiedWarning(overlay.event)}
           onDelete={() => remove(overlay.event)}
+          onClose={() => setOverlay(null)}
+        />
+      )}
+      {overlay?.name === 'reduction' && (
+        <ReductionSheet
+          match={match}
+          events={events}
+          squad={squad}
+          eventId={overlay.eventId}
+          playerId={overlay.playerId}
+          onToggle={(event, value) =>
+            void attempt(async () => {
+              const e = await svc.setAddsToPrevious(repo, event, value);
+              setEvents((prev) => upsert(prev, e));
+              showToast(value ? 'Sumada a la inferioridad anterior' : 'Inferioridad separada', 'info');
+            })
+          }
           onClose={() => setOverlay(null)}
         />
       )}

@@ -3,6 +3,7 @@
 // a calcular. Ver docs/FORMULAS.md.
 import { FIELD_SHOT_TYPES, GK_SHOT_TYPES } from '../domain/catalog';
 import { MINUTE_MS, periodEndMs, periodStartMs } from '../clock/clock';
+import { isPending } from '../domain/events';
 import { redCards, type RedCard } from './discipline';
 import type {
   FieldShotType,
@@ -338,7 +339,7 @@ export function computeMatchStats(
   let pendingCount = 0;
   for (const e of live) {
     if (e.playerId === null) {
-      pendingCount++;
+      if (isPending(e)) pendingCount++;
       continue;
     }
     let c = players.get(e.playerId);

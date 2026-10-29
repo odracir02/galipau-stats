@@ -69,8 +69,9 @@ Un único juego, `lucide-react`, con trazo 2 y tamaño 20 px por defecto (compon
    - Primera fila: marcador pulsable para corregirlo, con nuestro equipo y el rival.
    - Segunda fila: cronómetro a la izquierda y botón grande de pausa/reanudación a la derecha.
    - La cuenta atrás tiene su espacio reservado: al aparecer no desplaza nada.
+   - Tercera fila, solo si hay inferioridades en curso: tarjetas compactas, dos por fila, con dorsal (naranja en exclusión, rojo en roja), nombre, etiqueta corta («Roja», «4'», «Roja 4'») y tiempo restante. Sin inferioridades no existe ni deja hueco. Tocar una tarjeta abre la opción secundaria de sanción adicional (4 min).
 2. **Barra de última acción** con «Deshacer».
-3. **Cuadrícula compacta** de cinco accesos: Lanzamiento, Portería, Pérdida, Recuperación y Defensa y sanciones.
+3. **Cuadrícula compacta** de seis accesos: Lanzamiento, Portería, Pérdida y Recuperación (tarjetas altas) y, en una fila baja, Defensa (sanciones y penalti) y Golpe (golpe franco en contra, un solo toque y sin jugador).
 4. **Navegación inferior fija** con iconos (Registro, Cronología, Estadísticas), respetando el área segura del dispositivo.
 
 Los avisos de confirmación no interceptan pulsaciones y se ocultan mientras hay una hoja abierta.

@@ -118,6 +118,17 @@ describe('copia de seguridad', () => {
     db.close();
   });
 
+  it('incluye golpes francos (sin jugador) y el fin real de la 1.ª parte del cronómetro', async () => {
+    const { teams } = await seed();
+    const [m] = await repo.listMatches(teams[0]!.id);
+    const golpe = await recordEvent(repo, m!, { kind: 'free_throw' }, null, t);
+    await repo.saveMatch({ ...m!, clock: { ...m!.clock, firstHalfEndMs: 30 * 60_000 + 20_000 } });
+    const parsed = JSON.parse(serializeBackup(await backupOf())) as Backup;
+    expect(parsed.events.find((e) => e.id === golpe.id)).toMatchObject({ kind: 'free_throw', playerId: null });
+    expect(parsed.matches.find((x) => x.id === m!.id)!.clock.firstHalfEndMs).toBe(30 * 60_000 + 20_000);
+    expect(validateBackup(parsed)).toEqual([]);
+  });
+
   it('con la base vacía genera una copia válida y vacía', async () => {
     const b = await backupOf();
     expect(b.counts).toEqual({ teams: 0, players: 0, matches: 0, events: 0 });

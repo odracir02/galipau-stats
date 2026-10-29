@@ -238,7 +238,7 @@ export function BallBlock({ counters: c }: { counters: Counters }) {
 }
 
 /** Disciplina y defensa. `card` añade el momento de la descalificación (vista de partido). */
-export function DisciplineBlock({ counters: c, card }: { counters: Counters; card?: RedCard }) {
+export function DisciplineBlock({ counters: c, card, team }: { counters: Counters; card?: RedCard; team?: boolean }) {
   return (
     <dl className="kv">
       <KV k="Amarillas" v={c.yellows} />
@@ -252,6 +252,8 @@ export function DisciplineBlock({ counters: c, card }: { counters: Counters; car
       )}
       <KV k="Sanciones (total)" v={sanctions(c)} strong />
       <KV k="Penaltis cometidos" v={c.penaltiesCommitted} />
+      {/* Acción de equipo: solo en el total, no en las fichas de jugador. */}
+      {team && <KV k="Golpes francos en contra" v={c.freeThrows} />}
     </dl>
   );
 }

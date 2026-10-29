@@ -114,12 +114,23 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 
 ## L. Golpes francos
 
-68. Defensa y sanciones. ✔ No aparece «Golpe franco»; «Penalti cometido» sí.
-69. «Añadir acción olvidada». ✔ No ofrece «Golpe franco».
-70. Con datos antiguos que tengan golpes francos:
-    - ✔ Siguen en la cronología.
-    - ✔ Al editarlos conservan su categoría.
-    - ✔ No aparecen en las estadísticas.
+68. Registro → «Golpe». ✔ Un solo toque, sin elegir jugador; «Última: Golpe franco · Equipo» y aviso. Un doble toque rápido guarda una sola acción. No aparece en «Sin asignar».
+69. Deshacer y, desde la cronología, eliminar un golpe. ✔ Deja de contar.
+70. Estadísticas → Equipo → «Disciplina y defensa». ✔ «Golpes francos en contra» del partido; en Temporada, la suma. El marcador y el resto de cifras no cambian; las fichas de jugador no muestran golpes.
+70b. Con datos antiguos que tengan golpes francos asignados a un jugador. ✔ Siguen en la cronología con su jugador, cuentan en el total del equipo y se pueden corregir o eliminar.
+
+## L2. Exclusiones activas
+
+70c. Con el partido en juego, Defensa → Exclusión 2 min → jugador. ✔ Bajo el cronómetro aparece una tarjeta con dorsal, nombre y 02:00 que baja con el reloj.
+70d. Pausar. ✔ La cuenta atrás se detiene. Cerrar la app y volver a abrirla. ✔ Mismo tiempo restante.
+70e. Dos exclusiones a la vez (y otra al mismo jugador). ✔ Una tarjeta por exclusión; primero la que antes acaba.
+70f. Exclusión a 29:30 y descanso a los 30:20. ✔ En el descanso quedan 1:10; al iniciar la 2.ª parte siguen bajando desde 1:10.
+70g. Deshacer o corregir el minuto de la exclusión. ✔ La tarjeta desaparece o cambia su tiempo. Al llegar a 00:00 desaparece; la exclusión sigue en la cronología y en las estadísticas.
+70h. Partido preparado (registro sin reloj) o finalizado. ✔ No aparece ninguna tarjeta.
+70i. Roja directa. ✔ Tarjeta de 2:00 con dorsal en rojo y etiqueta «Roja»; los mismos toques que antes, sin preguntas.
+70j. 3.ª exclusión de un jugador. ✔ Una sola tarjeta de 2:00 con «Roja» (no aparece una segunda por la roja por acumulación). Registrar después una roja al mismo jugador no añade otra tarjeta.
+70k. Exclusión y, antes de reanudar, roja al mismo jugador. ✔ Dos tarjetas. Tocar la de la exclusión → marcar la roja como «sanción adicional antes de reanudar». ✔ Queda una sola tarjeta «Roja 4'» de 04:00. Desmarcar. ✔ Vuelven las dos de 2:00. Las estadísticas (exclusiones y rojas) no cambian en ningún caso.
+70l. Con una inferioridad de 4 min, pausar, ir al descanso, cerrar y reabrir la app. ✔ Conserva el tiempo y la etiqueta.
 
 ## M. Eliminar partidos
 

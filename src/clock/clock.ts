@@ -55,9 +55,18 @@ export function periodEndMs(period: Period, halfMinutes: number): number {
   return period * halfMinutes * MINUTE_MS;
 }
 
-/** Segunda parte: arranca parada en el inicio nominal, a la espera del pitido. */
-export function startSecondHalf(halfMinutes: number): ClockState {
-  return { period: 2, running: false, baseMs: periodStartMs(2, halfMinutes), anchorWallMs: null };
+/**
+ * Segunda parte: arranca parada en el inicio nominal, a la espera del pitido.
+ * Conserva el tiempo en que terminó realmente la 1.ª parte.
+ */
+export function startSecondHalf(halfMinutes: number, firstHalfEndMs?: number): ClockState {
+  return {
+    period: 2,
+    running: false,
+    baseMs: periodStartMs(2, halfMinutes),
+    anchorWallMs: null,
+    ...(firstHalfEndMs !== undefined && { firstHalfEndMs: Math.max(0, Math.round(firstHalfEndMs)) }),
+  };
 }
 
 /**

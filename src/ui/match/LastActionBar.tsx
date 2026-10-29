@@ -22,7 +22,7 @@ export function LastActionBar({ last, squad, pendingCount, onUndo, onPending }: 
           <>
             <span className="last-label">Última · {formatClock(last.matchTimeMs)}</span>
             <span>
-              <strong>{describePayload(last)}</strong> · {playerLabel(squad, last.playerId)}
+              <strong>{describePayload(last)}</strong> · {playerLabel(squad, last.playerId, last.kind)}
             </span>
           </>
         ) : (

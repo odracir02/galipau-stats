@@ -16,7 +16,26 @@ Se aplican a cualquier autor de un lanzamiento, también a un portero que marca 
 | Pérdidas (total)   | pérdida general + pasos + dobles + pase fallado |
 | Sanciones          | amarillas + exclusiones + rojas               |
 
-Los **golpes francos** ya no se registran ni se muestran. Los eventos antiguos se siguen contando internamente (`freeThrows`) para no perder datos, pero no forman parte de ninguna cifra visible. Los **penaltis cometidos** sí se muestran.
+**Golpes francos en contra** (`freeThrows`) = número de acciones `free_throw` vivas del partido, o su suma en la temporada. Solo se muestran en el total del equipo («Disciplina y defensa»), nunca en fichas de jugador. No cambian marcador, goles, lanzamientos, pérdidas ni sanciones, y no cuentan como acciones pendientes de atribuir. Los **penaltis cometidos** también se muestran.
+
+## Inferioridades del equipo
+
+La **sanción individual** (evento `exclusion` o `red`, que cuenta en las estadísticas) es distinta del **periodo de inferioridad del equipo**, que se muestra bajo el cronómetro (`src/stats/exclusions.ts`). No se guarda ningún contador: se deriva de los eventos y del cronómetro.
+
+| Sanción | Inferioridad |
+| ------- | ------------ |
+| Exclusión (también la 3.ª) | 2 min |
+| 3.ª exclusión | La misma de 2 min, identificada como «Roja»: la roja por acumulación no abre otra |
+| Roja directa | 2 min, identificada como «Roja» |
+| Roja a un jugador ya descalificado | Ninguna propia (no suma otra roja) |
+| Sanción marcada como **adicional antes de reanudar** (`addsToPrevious`) | No abre otra: suma 2 min a la inferioridad anterior del mismo jugador (4 min). Si la adicional es roja, la inferioridad se identifica como «Roja» |
+
+- La marca de sanción adicional la pone el registrador, como opción secundaria, tocando la tarjeta de la inferioridad. Nunca se pregunta al registrar ni se deduce sola: dos exclusiones seguidas del mismo jugador, sin marcar, son dos inferioridades de 2 min en paralelo. Las sanciones sin jugador no se pueden sumar.
+- Cumplido = tiempo del reloj − minuto de la sanción que abre la inferioridad, si son de la misma parte. Si es de la 1.ª parte y el reloj ya está en la 2.ª: (fin real de la 1.ª parte − minuto) + (reloj − inicio de la 2.ª). El fin real es `clock.firstHalfEndMs`; en partidos anteriores a este dato, el final nominal (30:00).
+- Activa si 0 ≤ cumplido < duración. Al llegar a cero solo desaparece la tarjeta; las sanciones siguen en la cronología y en las estadísticas.
+- Se cuenta desde el minuto registrado de la sanción, que coincide con la reanudación si el reloj se detiene en la interrupción (lo habitual). Si el reloj sigue en marcha durante la interrupción, la cuenta empieza unos segundos antes.
+- Solo con el partido en juego o en el descanso (congelada); en un partido preparado o finalizado no hay cuenta atrás.
+- Deshacer, eliminar o corregir una sanción actualiza la inferioridad al instante. Corregir el minuto conserva la marca; asignarla a otro jugador la quita.
 
 ## Tarjetas rojas y descalificación
 

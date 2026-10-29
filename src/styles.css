@@ -1093,6 +1093,83 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
   background: var(--c-on-header);
 }
 
+/* Exclusiones activas bajo el cronómetro: tarjetas compactas, solo si hay alguna. */
+.mh-excl {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mh-excl li {
+  min-width: 0;
+}
+
+.mh-excl-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 32px;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 2px 8px 2px 3px;
+  border-radius: var(--r-sm);
+  background: var(--c-header-2);
+  font-size: var(--fs-sm);
+}
+
+.mh-excl-num {
+  flex: none;
+  min-width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: var(--c-secondary);
+  color: var(--c-header);
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.mh-excl-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-on-header);
+}
+
+.mh-excl-item.is-red .mh-excl-num {
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+}
+
+.mh-excl-tag {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.mh-excl-time {
+  flex: none;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  color: var(--c-secondary);
+}
+
 .mh-countdown {
   padding: 1px 7px;
   border-radius: var(--r-pill);
@@ -1285,6 +1362,18 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
   align-items: center;
   justify-content: flex-start;
   gap: var(--s-3);
+}
+
+.act-compact {
+  min-height: 64px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--s-2);
+}
+
+.act:disabled {
+  opacity: 0.6;
 }
 
 .act-icon {

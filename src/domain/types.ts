@@ -65,6 +65,12 @@ export interface ClockState {
   baseMs: number;
   /** Date.now() en el momento en que se puso en marcha; null si está parado. */
   anchorWallMs: number | null;
+  /**
+   * Tiempo de partido en que terminó realmente la 1.ª parte (puede pasar del
+   * final nominal). Se fija al empezar la 2.ª parte y sirve para descontar las
+   * exclusiones que atraviesan el descanso. Ausente en partidos anteriores.
+   */
+  firstHalfEndMs?: number;
 }
 
 export type MatchStatus = 'ready' | 'in_progress' | 'halftime' | 'finished';
@@ -121,6 +127,12 @@ interface EventBase {
   updatedAt: IsoDateTime;
   /** Borrado lógico: un evento borrado no cuenta en ninguna estadística. */
   deletedAt: IsoDateTime | null;
+  /**
+   * Solo exclusiones y rojas: sanción adicional antes de reanudar el juego. No
+   * abre otra inferioridad del equipo, sino que suma 2 minutos a la anterior del
+   * mismo jugador. Lo marca el registrador; no cambia ninguna estadística.
+   */
+  addsToPrevious?: true;
 }
 
 export interface ShotEvent extends EventBase {

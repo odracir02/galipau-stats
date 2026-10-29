@@ -2,6 +2,7 @@
 import {
   ArrowDownRight,
   ArrowUpRight,
+  Hand,
   RectangleVertical,
   Shield,
   Target,
@@ -18,6 +19,7 @@ export const ACTION_ICON = {
   turnover: ArrowDownRight,
   recovery: ArrowUpRight,
   defense: RectangleVertical,
+  freeThrow: Hand,
 } as const;
 
 export function iconForKind(kind: EventKind): LucideIcon {
@@ -30,6 +32,8 @@ export function iconForKind(kind: EventKind): LucideIcon {
       return ACTION_ICON.turnover;
     case 'recovery':
       return ACTION_ICON.recovery;
+    case 'free_throw':
+      return ACTION_ICON.freeThrow;
     default:
       return ACTION_ICON.defense;
   }

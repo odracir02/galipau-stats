@@ -11,6 +11,7 @@ import {
   GK_SHOT_TYPE_SHORT,
   GK_SHOT_TYPES,
   isLegacyKind,
+  isTeamKind,
   KIND_LABEL,
   SIMPLE_KINDS,
   TURNOVER_LABEL,
@@ -114,7 +115,12 @@ export function EventEditorSheet({
   const kindOptions = event && isLegacyKind(event.kind) ? [...KINDS, event.kind] : KINDS;
 
   const allowed = eligiblePositions(kind);
-  const candidates = squad.filter((s) => allowed.includes(s.position)).sort((a, b) => a.number - b.number);
+  const team = isTeamKind(kind);
+  // Acción de equipo: sin jugador. Solo un golpe franco antiguo conserva el que ya tenía.
+  const legacyOwner = team && event?.kind === kind ? event.playerId : null;
+  const candidates = squad
+    .filter((s) => (team ? s.playerId === legacyOwner : allowed.includes(s.position)))
+    .sort((a, b) => a.number - b.number);
   // Si el tipo de acción ya no admite al jugador elegido, queda sin asignar (nunca se reasigna a otro).
   const effectivePlayer = candidates.some((c) => c.playerId === playerId) ? playerId : null;
 
@@ -248,7 +254,7 @@ export function EventEditorSheet({
             value={effectivePlayer ?? ''}
             onChange={(e) => setPlayerId(e.target.value === '' ? null : e.target.value)}
           >
-            <option value="">Sin asignar (pendiente)</option>
+            <option value="">{team ? 'Equipo (sin jugador)' : 'Sin asignar (pendiente)'}</option>
             {candidates.map((c) => (
               <option key={c.playerId} value={c.playerId}>
                 {c.number} · {c.name}

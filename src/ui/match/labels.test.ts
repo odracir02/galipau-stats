@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { statusBadge } from './labels';
+import { reductionTag, statusBadge } from './labels';
 
 describe('etiqueta de estado en la lista de partidos', () => {
   it('finalizado: Victoria, Derrota o Empate según nuestro marcador', () => {
@@ -12,5 +12,15 @@ describe('etiqueta de estado en la lista de partidos', () => {
     expect(statusBadge('ready', { own: 3, opponent: 0 })).toEqual({ label: 'Preparado', tone: 'ready' });
     expect(statusBadge('in_progress', { own: 3, opponent: 0 })).toEqual({ label: 'En curso', tone: 'in_progress' });
     expect(statusBadge('halftime', { own: 0, opponent: 3 })).toEqual({ label: 'Descanso', tone: 'halftime' });
+  });
+});
+
+describe('etiqueta de las inferioridades', () => {
+  it('exclusión normal sin etiqueta; roja y duración especial, en corto', () => {
+    expect(reductionTag({ kind: 'exclusion', durationMs: 120_000 })).toBeNull();
+    expect(reductionTag({ kind: 'red', durationMs: 120_000 })).toBe('Roja');
+    expect(reductionTag({ kind: 'accumulated', durationMs: 120_000 })).toBe('Roja');
+    expect(reductionTag({ kind: 'exclusion', durationMs: 240_000 })).toBe("4'");
+    expect(reductionTag({ kind: 'red', durationMs: 240_000 })).toBe("Roja 4'");
   });
 });

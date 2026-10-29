@@ -1,7 +1,7 @@
 import { ChevronRight, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { describePayload } from '../../domain/catalog';
-import { compareEvents } from '../../domain/events';
+import { compareEvents, isPending } from '../../domain/events';
 import { formatClock } from '../../domain/format';
 import type { MatchEvent, SquadEntry } from '../../domain/types';
 import type { RedCard } from '../../stats/discipline';
@@ -27,7 +27,7 @@ export function Timeline({ events, squad, cards, initialFilter, onEdit, onAdd }:
     () => events.filter((e) => e.deletedAt === null).sort(compareEvents).reverse(),
     [events],
   );
-  const pending = live.filter((e) => e.playerId === null);
+  const pending = live.filter(isPending);
   const shown = filter === 'pending' ? pending : live;
   const triggers = new Map(cards.map((c) => [c.triggerEventId, c.type]));
   /** Nota de disciplina: qué exclusión provoca la roja y qué roja no suma por estar ya descalificado. */
@@ -68,7 +68,7 @@ export function Timeline({ events, squad, cards, initialFilter, onEdit, onAdd }:
                 </span>
                 <span className="tl-main">
                   <strong>{describePayload(e)}</strong>
-                  <span className={e.playerId === null ? 'tl-pending' : 'muted'}>{playerLabel(squad, e.playerId)}</span>
+                  <span className={isPending(e) ? 'tl-pending' : 'muted'}>{playerLabel(squad, e.playerId, e.kind)}</span>
                   {disciplineNote(e) && <span className="tl-discipline">{disciplineNote(e)}</span>}
                 </span>
                 <Icon as={ChevronRight} className="chevron" />

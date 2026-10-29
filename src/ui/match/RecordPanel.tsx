@@ -2,7 +2,7 @@
 // el jugador. Al completar una acción se vuelve siempre al inicio y nunca queda
 // un jugador seleccionado.
 import { ChevronLeft } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import {
   DEFENSE_KINDS,
   describePayload,
@@ -51,14 +51,31 @@ const CARD_MARK: Partial<Record<SimpleEventKind, string>> = {
 export function RecordPanel({ squad, unavailable, getTiming, onRecord }: Props) {
   const [step, setStep] = useState<Step>({ name: 'home' });
   const [saving, setSaving] = useState(false);
+  // Bloqueo síncrono: dos toques casi simultáneos no deben guardar dos acciones.
+  const busy = useRef(false);
   const home = () => setStep({ name: 'home' });
+
+  /** Acción de equipo de un solo toque (golpe franco): sin jugador ni pasos extra. */
+  async function quick(payload: EventPayload) {
+    if (busy.current) return;
+    busy.current = true;
+    setSaving(true);
+    try {
+      await onRecord(payload, null, getTiming());
+    } finally {
+      busy.current = false;
+      setSaving(false);
+    }
+  }
 
   const choose = (payload: EventPayload, timing: EventTiming) => setStep({ name: 'player', timing, payload });
 
   async function pickPlayer(playerId: Id | null) {
-    if (step.name !== 'player' || saving) return;
+    if (step.name !== 'player' || busy.current) return;
+    busy.current = true;
     setSaving(true);
     const ok = await onRecord(step.payload, playerId, step.timing);
+    busy.current = false;
     setSaving(false);
     // Si falla el guardado, mantenemos la selección para poder reintentar.
     if (ok) home();
@@ -93,11 +110,19 @@ export function RecordPanel({ squad, unavailable, getTiming, onRecord }: Props) 
             onClick={() => choose({ kind: 'recovery' }, getTiming())}
           />
           <ActionButton
-            wide
+            compact
             icon={ACTION_ICON.defense}
-            title="Defensa y sanciones"
-            sub="Amarilla · 2 min · Roja · Penalti cometido"
+            title="Defensa"
+            sub="Sanciones · Penalti"
             onClick={() => setStep({ name: 'defense', timing: getTiming() })}
+          />
+          <ActionButton
+            compact
+            icon={ACTION_ICON.freeThrow}
+            title="Golpe"
+            sub="En contra · 1 toque"
+            disabled={saving}
+            onClick={() => void quick({ kind: 'free_throw' })}
           />
         </div>
       );
@@ -242,10 +267,18 @@ function ActionButton(props: {
   title: string;
   sub: string;
   wide?: boolean;
+  /** Fila baja (icono y texto en línea), como el antiguo acceso ancho. */
+  compact?: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
-    <button type="button" className={`act ${props.wide ? 'act-wide' : ''}`} onClick={props.onClick}>
+    <button
+      type="button"
+      className={`act ${props.wide ? 'act-wide' : ''} ${props.compact ? 'act-compact' : ''}`}
+      disabled={props.disabled}
+      onClick={props.onClick}
+    >
       <span className="act-icon">
         <Icon as={props.icon} />
       </span>

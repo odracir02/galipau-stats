@@ -158,7 +158,7 @@ function TeamStats({
       </Section>
 
       <Section title="Disciplina y defensa">
-        <DisciplineBlock counters={team} />
+        <DisciplineBlock counters={team} team />
       </Section>
 
       {intervals && (

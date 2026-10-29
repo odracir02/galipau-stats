@@ -11,12 +11,12 @@ Definición exacta en [`src/domain/types.ts`](../src/domain/types.ts).
 **Match**: `id`, `teamId`, `opponent`, `date`, `venue` (`home` | `away`), `season`, `status` (`ready` → `in_progress` ⇄ `halftime` → `finished`), `halfMinutes` (30), `squad`, `clock`, `scoreAdjustment`, `finishedAt`, `deletedAt`.
 
 - `squad` es una **copia** (`playerId`, `name`, `number`, `position`) de cada convocado en el momento de crear el partido. Si después cambia el nombre, el dorsal o la posición del jugador, el partido histórico no cambia.
-- `clock` = `{ period, running, baseMs, anchorWallMs }`. Tiempo = `baseMs + (Date.now() − anchorWallMs)` si está en marcha; `baseMs` si está parado.
+- `clock` = `{ period, running, baseMs, anchorWallMs, firstHalfEndMs? }`. Tiempo = `baseMs + (Date.now() − anchorWallMs)` si está en marcha; `baseMs` si está parado. `firstHalfEndMs` (opcional) es el tiempo en que terminó realmente la 1.ª parte; se fija al pulsar «Iniciar 2.ª parte» y sirve para descontar exclusiones que atraviesan el descanso. Los partidos anteriores no lo tienen y no se rellena a posteriori.
 - `scoreAdjustment` = `{ own, opponent }`: corrección manual del marcador, separada de los eventos.
 
 ## Eventos (fuente de verdad)
 
-Campos comunes: `id`, `matchId`, `playerId` (null = **pendiente de atribución**), `period`, `matchTimeMs` (tiempo de partido al registrar), `createdAt`, `updatedAt`, `deletedAt`.
+Campos comunes: `id`, `matchId`, `playerId` (null = **pendiente de atribución**, salvo en las acciones de equipo), `period`, `matchTimeMs` (tiempo de partido al registrar), `createdAt`, `updatedAt`, `deletedAt`.
 
 | `kind`              | Campos extra                                                 | Quién              |
 | ------------------- | ------------------------------------------------------------ | ------------------ |
@@ -27,7 +27,9 @@ Campos comunes: `id`, `matchId`, `playerId` (null = **pendiente de atribución**
 | `yellow`            | —                                                            | Cualquier convocado |
 | `exclusion`         | — (2 minutos)                                                | Cualquier convocado |
 | `red`               | — (roja **directa**; la roja por acumulación no es un evento, se deriva de la 3.ª exclusión) | Cualquier convocado |
-| `free_throw`        | — (golpe franco cometido). **Categoría histórica**: ya no se registra; los eventos antiguos se conservan, se pueden corregir o eliminar y siguen siendo válidos | Cualquier convocado |
+
+Exclusiones y rojas admiten además `addsToPrevious: true` (opcional): sanción adicional antes de reanudar el juego. No cambia ninguna estadística; solo hace que su inferioridad se sume a la anterior del mismo jugador (4 min). Ver «Inferioridades del equipo» en [FORMULAS.md](FORMULAS.md).
+| `free_throw`        | — (golpe franco sancionado contra nuestro equipo). **Acción de equipo**: se registra con un toque y siempre sin jugador; no es «pendiente». Los eventos antiguos, de cuando se asignaba a un jugador, se conservan tal cual y pueden mantener su jugador | Nadie (equipo) |
 | `penalty_committed` | — (penalti cometido en defensa)                              | Cualquier convocado |
 
 Los tres «penaltis» son conceptos distintos y no se mezclan: `shot` + `penalty` (lanzado en ataque), `penalty_committed` (cometido en defensa) y `gk_shot` + `penalty` (recibido por nuestro portero).

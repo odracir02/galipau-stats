@@ -3,7 +3,7 @@
 // se persiste antes de devolverse.
 import * as clock from '../clock/clock';
 import type { Repository } from '../data/repository';
-import { isLegacyKind } from '../domain/catalog';
+import { isLegacyKind, isTeamKind } from '../domain/catalog';
 import { buildEvent, lastRecorded, type EventTiming } from '../domain/events';
 import { monotonicIsoNow, newId } from '../domain/ids';
 import type {
@@ -121,7 +121,8 @@ function withChanges(match: Match, changes: Partial<Match>): Match {
 export async function toggleClock(repo: Repository, match: Match, now = Date.now()): Promise<Match> {
   if (match.status === 'finished') throw new ValidationError('El partido está finalizado.');
   if (match.status === 'halftime') {
-    const second = clock.start(clock.startSecondHalf(match.halfMinutes), now);
+    const firstHalfEnd = clock.elapsedMs(match.clock, now);
+    const second = clock.start(clock.startSecondHalf(match.halfMinutes, firstHalfEnd), now);
     return persist(repo, withChanges(match, { status: 'in_progress', clock: second }));
   }
   return persist(
@@ -208,6 +209,8 @@ export async function recordEvent(
   const existing = await repo.getEvent(id);
   if (existing) return existing;
   if (isLegacyKind(payload.kind)) throw new ValidationError('Esta acción ya no se registra.');
+  if (isTeamKind(payload.kind) && playerId !== null)
+    throw new ValidationError('El golpe franco es del equipo: no se asigna a ningún jugador.');
   const event = buildEvent({ id, matchId: match.id, payload, playerId, timing, nowIso: isoNow() });
   assertValidEvent(match, event);
   await repo.saveEvent(event);
@@ -245,9 +248,17 @@ export async function updateEvent(
     },
     nowIso: isoNow(),
   });
+  // Las acciones de equipo no se asignan a jugadores. Solo un golpe franco antiguo,
+  // de cuando sí se asignaban, puede conservar su jugador.
+  if (isTeamKind(base.kind) && base.playerId !== null && !(event.kind === base.kind && event.playerId === base.playerId))
+    throw new ValidationError('El golpe franco es del equipo: no se asigna a ningún jugador.');
   // Solo se conservan los campos del nuevo contenido (al cambiar de tipo de acción
   // no deben sobrevivir subtipos o resultados del anterior).
   const updated = stripForeignFields({ ...base, createdAt: event.createdAt, deletedAt: event.deletedAt });
+  // La marca de sanción adicional sigue mientras siga siendo una sanción del mismo jugador.
+  delete updated.addsToPrevious;
+  if (event.addsToPrevious && isSanction(updated.kind) && updated.playerId === event.playerId)
+    updated.addsToPrevious = true;
   assertValidEvent(match, updated);
   await repo.saveEvent(updated);
   return updated;
@@ -261,6 +272,24 @@ function stripForeignFields(e: MatchEvent): MatchEvent {
   }
   if (e.kind !== 'turnover') delete copy.turnoverType;
   return copy as unknown as MatchEvent;
+}
+
+const isSanction = (kind: MatchEvent['kind']) => kind === 'exclusion' || kind === 'red';
+
+/**
+ * Marca (o desmarca) una exclusión o roja como sanción adicional antes de
+ * reanudar: su inferioridad se suma a la anterior del mismo jugador (4 minutos)
+ * en lugar de contarse aparte. No cambia ninguna estadística.
+ */
+export async function setAddsToPrevious(repo: Repository, event: MatchEvent, value: boolean): Promise<MatchEvent> {
+  if (!isSanction(event.kind) || event.playerId === null)
+    throw new ValidationError('Solo una exclusión o roja de un jugador puede sumarse a una inferioridad anterior.');
+  if (Boolean(event.addsToPrevious) === value) return event;
+  const updated: MatchEvent = { ...event, updatedAt: isoNow() };
+  if (value) updated.addsToPrevious = true;
+  else delete updated.addsToPrevious;
+  await repo.saveEvent(updated);
+  return updated;
 }
 
 /** Borrado lógico: el evento deja de contar pero queda constancia de él. */

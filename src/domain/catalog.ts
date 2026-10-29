@@ -25,15 +25,27 @@ export const TURNOVER_TYPES: readonly TurnoverType[] = ['general', 'steps', 'dou
 /** Acciones del grupo «Defensa y sanciones» que se registran. */
 export const DEFENSE_KINDS: readonly SimpleEventKind[] = ['yellow', 'exclusion', 'red', 'penalty_committed'];
 
+/**
+ * Acciones de equipo: se registran con un toque y sin jugador. El golpe franco
+ * sancionado contra nuestro equipo es la única. Sin jugador no son «pendientes
+ * de atribuir»: no hay nadie a quien atribuirlas.
+ */
+export const TEAM_KINDS: readonly SimpleEventKind[] = ['free_throw'];
+
+export function isTeamKind(kind: EventKind): boolean {
+  return (TEAM_KINDS as readonly EventKind[]).includes(kind);
+}
+
 /** Acciones simples que se pueden registrar hoy. */
-export const SIMPLE_KINDS: readonly SimpleEventKind[] = ['recovery', ...DEFENSE_KINDS];
+export const SIMPLE_KINDS: readonly SimpleEventKind[] = ['recovery', ...DEFENSE_KINDS, ...TEAM_KINDS];
 
 /**
- * Categorías históricas: ya no se registran (el golpe franco se retiró porque se
- * producen demasiados), pero los eventos antiguos siguen siendo válidos, se pueden
- * leer, corregir o eliminar, y nunca se borran automáticamente.
+ * Categorías históricas: ya no se registran, pero los eventos antiguos siguen
+ * siendo válidos, se pueden leer, corregir o eliminar, y nunca se borran solos.
+ * Hoy no hay ninguna: el golpe franco, retirado antes, vuelve como acción de
+ * equipo (sus eventos antiguos, asignados a un jugador, se conservan tal cual).
  */
-export const LEGACY_KINDS: readonly SimpleEventKind[] = ['free_throw'];
+export const LEGACY_KINDS: readonly SimpleEventKind[] = [];
 
 export function isLegacyKind(kind: EventKind): boolean {
   return (LEGACY_KINDS as readonly EventKind[]).includes(kind);

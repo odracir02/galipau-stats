@@ -1,6 +1,6 @@
 import {
-  DEFENSE_KINDS,
   LEGACY_KINDS,
+  SIMPLE_KINDS,
   eligiblePositions,
   FIELD_SHOT_RESULTS,
   FIELD_SHOT_TYPES,
@@ -33,7 +33,7 @@ export function assertValidPayload(p: EventPayload): void {
       if (!includes(TURNOVER_TYPES, p.turnoverType)) throw new ValidationError('Tipo de pérdida no válido.');
       return;
     default:
-      if (p.kind !== 'recovery' && !includes(DEFENSE_KINDS, p.kind) && !includes(LEGACY_KINDS, p.kind))
+      if (!includes(SIMPLE_KINDS, p.kind) && !includes(LEGACY_KINDS, p.kind))
         throw new ValidationError('Acción no válida.');
   }
 }
