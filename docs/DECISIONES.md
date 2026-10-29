@@ -94,3 +94,7 @@
 | D90 | La roja directa abre 2 min de inferioridad | Regla habitual: el jugador queda descalificado y el equipo juega 2 min con uno menos. Se identifica como «Roja» en la tarjeta. |
 | D91 | 4 min solo cuando el registrador marca una sanción como adicional antes de reanudar (`addsToPrevious`) | No se deduce de los tiempos ni se encadenan todas las sanciones del mismo jugador. Se marca tocando la tarjeta de la inferioridad: el registro normal sigue con los mismos toques. |
 | D92 | La marca de sanción adicional no cambia estadísticas y se pierde si la sanción pasa a otro jugador | Solo tiene sentido sobre la inferioridad anterior de ese mismo jugador. |
+| D93 | La sesión del dispositivo vive en una base IndexedDB propia (`galipaustats-cuenta`) | Añadirla no exige migrar ni abrir la base de equipos y partidos, que sigue en la versión 1; borrarla nunca afecta a los datos locales. |
+| D94 | La URL del servidor se fija al compilar (`VITE_API_URL` o rama `develop` de Pages) | Ningún componente lleva direcciones; producción sigue funcionando solo en local hasta que se decida otra cosa. |
+| D95 | El canje no se reintenta solo; la comprobación de sesión sí | Un canje repetido sin respuesta podría crear un segundo dispositivo; la comprobación es de solo lectura. |
+| D96 | Cerrar sesión y salir de un equipo exigen conexión | La revocación tiene que ocurrir en el servidor; olvidar el token solo en el móvil daría una falsa sensación de cierre. |

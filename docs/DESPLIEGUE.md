@@ -26,6 +26,19 @@ Notas:
   - Cabeceras de seguridad básicas.
 - **Coste:** el plan gratuito de Pages cubre este uso.
 
+### Servidor de la API
+
+La dirección del servidor se fija al compilar, en [`vite.config.ts`](../vite.config.ts), nunca en los componentes:
+
+| Compilación | Servidor |
+| ----------- | -------- |
+| Cloudflare Pages, rama `develop` (`CF_PAGES=1`, `CF_PAGES_BRANCH=develop`) | Worker de Preview |
+| Cloudflare Pages, `main` (producción) o cualquier otra rama | Ninguno, **aunque haya una variable `VITE_API_URL` definida en Pages**: en Pages solo decide la rama |
+| Fuera de Pages (desarrollo y pruebas locales) con `VITE_API_URL` | La indicada |
+| Fuera de Pages sin `VITE_API_URL` | Ninguno: la app funciona solo en local y no muestra «Equipos del club» |
+
+El Worker solo admite peticiones de la PWA desde `https://develop.galipau-stats.pages.dev` (CORS). Las vistas previas por commit (`<hash>.galipau-stats.pages.dev`) no pueden usar el servidor.
+
 ### Flujo de trabajo
 
 1. Los cambios se suben a `develop` y Cloudflare publica una vista previa en `develop.galipau-stats.pages.dev`.

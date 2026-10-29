@@ -1,5 +1,6 @@
 import { ChevronRight, DatabaseBackup, Plus } from 'lucide-react';
 import { useState } from 'react';
+import { remote } from '../../app/remote';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
 import { useLoad } from '../../app/useLoad';
@@ -8,6 +9,7 @@ import { Brand } from '../components/Logo';
 import { TopBar } from '../components/TopBar';
 import { BackupSheet } from './BackupSheet';
 import { OngoingMatchBanner } from './OngoingMatchBanner';
+import { RemoteTeamsSection } from './RemoteTeamsSection';
 import { TeamFormSheet } from './TeamFormSheet';
 
 export function TeamsScreen() {
@@ -28,6 +30,11 @@ export function TeamsScreen() {
       />
       <main className="content">
         <OngoingMatchBanner />
+        {remote && (
+          <h2 className="section-title" id="local-title">
+            En este dispositivo
+          </h2>
+        )}
         {teams.error && <p className="form-error">{teams.error}</p>}
         {teams.data?.length === 0 && (
           <div className="empty-card">
@@ -54,6 +61,7 @@ export function TeamsScreen() {
           <Icon as={Plus} />
           Nuevo equipo
         </button>
+        <RemoteTeamsSection />
       </main>
       {backup && <BackupSheet onClose={() => setBackup(false)} />}
       {creating && (

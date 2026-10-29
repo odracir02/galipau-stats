@@ -415,6 +415,19 @@ svg {
   background: var(--c-surface-2);
 }
 
+/* Permiso en un equipo del club (lo concede el servidor). */
+.status-coach {
+  border-color: transparent;
+  background: var(--c-header);
+  color: var(--c-on-header);
+}
+
+.status-viewer {
+  border-color: transparent;
+  background: var(--c-surface-2);
+  color: var(--c-text);
+}
+
 /* Partidos finalizados: resultado para nuestro equipo. */
 .status-win {
   border-color: transparent;
@@ -502,6 +515,50 @@ svg {
   background: var(--c-secondary-soft);
   color: var(--c-secondary-text);
   font-size: var(--fs-sm);
+}
+
+/* Equipos del club (servidor), separados de los del dispositivo. */
+.remote-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--c-border);
+}
+
+.remote-section .list-item .status {
+  flex: none;
+}
+
+.remote-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.remote-offline {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+
+.notice .btn {
+  flex: none;
+}
+
+.join-ok {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin: 0;
+  color: var(--c-success);
+}
+
+.join-ok > span {
+  display: flex;
+  flex-direction: column;
+  color: var(--c-text);
 }
 
 .section-title {

@@ -171,3 +171,15 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 87. Editar un gol a otro jugador y borrar otro desde la cronología. Volver a Rankings. ✔ Las cifras cambian.
 88. Eliminar uno de los partidos. ✔ Sus acciones dejan de contar.
 89. Probar a 320 px y en el iPhone. ✔ El selector se desliza en horizontal sin mover la página; los nombres largos se recortan sin desbordar.
+
+## P. Acceso con código (005E.2C, solo en la vista previa de `develop`)
+
+90. Inicio. ✔ Dos secciones: «En este dispositivo» (equipos locales, sin cambios) y «Equipos del club».
+91. «Unirse con código» con un código de prueba incorrecto. ✔ «Código no válido o caducado.» Con menos de 12 caracteres el botón no se activa.
+92. Código de entrenador (mayúsculas o minúsculas, con o sin guiones). ✔ «Acceso concedido»: equipo, club y permiso «Entrenador», sin haber elegido el rol. Los equipos y partidos locales siguen igual.
+93. «Ver el equipo». ✔ Club, equipo, código, temporada, «Tu permiso» y «Todavía no hay partidos sincronizados».
+94. Cerrar la app y volver a abrirla. ✔ El equipo del club sigue en la lista.
+95. Modo avión y abrir la app. ✔ Se ve la lista con «Sin conexión: se muestra la última comprobación (hora)». Los equipos locales funcionan igual.
+96. «Salir de este equipo». ✔ Desaparece de la lista. «Sesión de este dispositivo → Cerrar sesión». ✔ La sección queda vacía; los datos locales no cambian.
+97. Con la sesión retirada desde el servidor, abrir la app. ✔ Aviso «La sesión de este dispositivo ya no es válida» y lista vacía.
+

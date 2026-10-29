@@ -74,6 +74,15 @@ Mismo esquema que las acciones: `{ opId, teamId, baseVersion, player | match }`.
 - **Datos que se conservan tal cual:** acciones a 00:00 (partidos registrados sin reloj), golpes francos sin jugador, `clock.firstHalfEndMs` (dentro de `clock_json`, del que solo se guardan los campos conocidos del cronómetro) y la marca `addsToPrevious` (columna `adds_to_previous`, migración 0004; solo en exclusiones y rojas de un jugador, si no **422**).
 - **Descarga completa:** `GET /api/teams/:id/snapshot` (`team.read`) devuelve en una sola transacción el equipo, el club, los jugadores, los partidos con convocatoria y las acciones, con sus versiones, más `seq` para continuar con `changes`. Incluye partidos y acciones borrados (con `deletedAt`) para que el dispositivo los retire. De quién registra cada partido solo indica `recordedHere` para el propio dispositivo.
 
+## Sesión del dispositivo en la PWA (005E.2C)
+
+- Código: `src/remote/` (`api.ts` cliente HTTP; `store.ts` almacén; `session.ts` lógica) y la instancia en `src/app/remote.ts`.
+- **Almacén propio:** IndexedDB `galipaustats-cuenta` (versión 1, almacén `account` con `device` y `teams`). La base de equipos y partidos (`galipaustats`, versión 1) no cambia y ningún código de esta parte la abre.
+- **Token:** se guarda solo en ese almacén y solo viaja en `Authorization`. No aparece en URLs, en el estado de la interfaz, en `localStorage`, en mensajes de error ni en registros. Las peticiones van sin cookies (`credentials: 'omit'`).
+- **Canje:** el código se normaliza como en el servidor y se comprueba su longitud antes de enviarlo. No se reintenta solo (un canje repetido sin respuesta podría crear otro dispositivo). Si la credencial guardada ya no vale, se olvida y se canjea como dispositivo nuevo, una sola vez.
+- **Comprobación** (`GET /api/session`): al abrir la app y al recuperar la conexión, con dos reintentos ante fallos de red o del servidor. Sin conexión se muestran los últimos equipos conocidos y su hora. Con **401** la credencial se olvida y se avisa («sesión no válida»); los datos locales no se tocan.
+- Esta fase **no** sube ni descarga jugadores, partidos ni acciones, y no vincula equipos locales con equipos del club.
+
 ## Primera subida de datos existentes
 
 No se fuerza. Cuando el usuario vincule un equipo local a un club (005C), la app subirá equipo, plantilla, partidos y acciones con sus identificadores actuales, como operaciones normales. Repetirla no duplica nada.

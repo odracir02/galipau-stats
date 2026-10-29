@@ -128,9 +128,14 @@ Todas las rutas `/api/admin/critical/*`:
 - exigen, además, el token de la aplicación crítica de Access (401 si no);
 - requieren la protección CSRF y los permisos de cada operación.
 
-## Pantallas futuras en la PWA (diseño, sin implementar)
+## Acceso con código en la PWA (005E.2C)
 
-Requieren antes que la PWA guarde su token de dispositivo (Tarea 005E: almacén nuevo en IndexedDB, solo aditivo, sin tocar los datos actuales).
+- Inicio → sección **«Equipos del club»**, separada de «En este dispositivo» → **«Unirse con código»**. El rol lo decide el servidor según el código; no se elige.
+- Tras el canje se muestran el club, el equipo y el permiso (Entrenador o Consulta). La ficha del equipo enseña sus datos básicos; los partidos llegarán con la sincronización.
+- **Salir de este equipo** (en la ficha) y **Sesión de este dispositivo → Cerrar sesión** (revoca en el servidor el dispositivo y todos sus permisos). Ambos necesitan conexión.
+- La credencial del dispositivo se guarda en una base IndexedDB propia, `galipaustats-cuenta`, separada de `galipaustats` (equipos y partidos), que no se toca.
+
+## Pantallas futuras en la PWA (diseño, sin implementar)
 
 - **Ajustes → Equipo → «Códigos del equipo»**, con los datos de `GET /api/teams/:teamId/codes`:
   - **Entrenador:** dos tarjetas («Código de entrenador» y «Código de jugador/familia»), cada una con el código oculto, *Mostrar*, *Copiar* y su fecha de validez. Un aviso recuerda que el código de entrenador permite registrar partidos. Sin botones para regenerar ni revocar: eso se hace en el panel.
