@@ -73,6 +73,39 @@ export function playerContent(p: Player): Record<string, unknown> {
   return { id, teamId, name, number, position, active, createdAt, updatedAt };
 }
 
+// --- Pendientes ------------------------------------------------------------------
+
+export interface PendingChanges {
+  players: number;
+  matches: number;
+  events: number;
+  /** Partidos ya enviados que se han eliminado en el dispositivo. */
+  matchDeletions: number;
+}
+
+/**
+ * Cuenta lo que un envío mandaría (registros nuevos o cambiados respecto a lo
+ * confirmado por el servidor), sin enviar nada ni tocar ningún dato. Lo que no
+ * ha cambiado, como los partidos históricos ya enviados, no cuenta.
+ */
+export async function pendingChanges(plan: UploadPlan, store: AccountStore): Promise<PendingChanges> {
+  const remoteTeamId = plan.link.remoteTeamId;
+  const known = new Map((await store.listMeta(remoteTeamId)).map((m) => [m.key, m.hash]));
+  const changed = async (entity: SyncEntity, id: string, content: unknown) =>
+    known.get(metaKey(entity, id)) !== (await sha256(stableJson(content)));
+  const out: PendingChanges = { players: 0, matches: 0, events: 0, matchDeletions: 0 };
+  for (const p of plan.players) if (await changed('player', p.id, playerContent(toRemotePlayer(p, remoteTeamId)))) out.players++;
+  for (const m of plan.matches) {
+    if (!(await changed('match', m.id, matchContent(toRemoteMatch(m, remoteTeamId))))) continue;
+    if (m.deletedAt !== null) out.matchDeletions++;
+    else out.matches++;
+  }
+  for (const e of plan.events) if (await changed('event', e.id, eventContent(e))) out.events++;
+  return out;
+}
+
+export const pendingTotal = (p: PendingChanges) => p.players + p.matches + p.events + p.matchDeletions;
+
 // --- Bloqueo -------------------------------------------------------------------
 
 const running = new Set<string>();
@@ -115,7 +148,8 @@ export interface UploadProgress {
 export type StopReason = 'offline' | 'unauthorized' | 'forbidden' | 'conflict' | 'recorded_elsewhere' | 'rejected';
 
 export interface UploadOutcome {
-  status: 'verified' | 'differences' | 'stopped';
+  /** «sent»: enviado sin comprobación completa (envío automático). */
+  status: 'verified' | 'differences' | 'stopped' | 'sent';
   sent: { players: number; matches: number; events: number };
   /** Ya estaban en el servidor con el mismo contenido. */
   unchanged: number;
@@ -133,6 +167,11 @@ export interface UploadDeps {
   sleep?: (ms: number) => Promise<void>;
   now?: () => Date;
   onProgress?: (p: UploadProgress) => void;
+  /**
+   * Comprobar el resultado descargando el equipo (por defecto, sí). El envío
+   * automático no lo hace en cada ráfaga: solo envía lo que ha cambiado.
+   */
+  verify?: boolean;
 }
 
 class StopUpload extends Error {
@@ -222,6 +261,7 @@ export async function runUpload(plan: UploadPlan, deps: UploadDeps): Promise<Upl
       return { status: 'stopped', sent, unchanged, stop: { reason: e.reason, message: e.message, record: e.record }, differences: [] };
     }
 
+    if (deps.verify === false) return { status: 'sent', sent, unchanged, differences: [] };
     deps.onProgress?.({ phase: 'verify', done: 0, total: 1 });
     let snapshot: TeamSnapshot;
     try {
@@ -282,6 +322,8 @@ export function compareWithServer(plan: UploadPlan, snapshot: TeamSnapshot, vers
     }
     if (stableJson(matchContent(r.match)) !== stableJson(matchContent(toRemoteMatch(m, remoteTeamId)))) out.push(`${label}: datos del partido distintos en el servidor.`);
     version('match', m.id, r.version, label);
+    // Partido eliminado: basta con que el servidor también lo tenga eliminado.
+    if (m.deletedAt !== null) continue;
     const local = plan.events.filter((e) => e.matchId === m.id);
     const remote = rEvents.get(m.id) ?? [];
     const rById = new Map(remote.map((e) => [e.event.id, e]));
@@ -310,7 +352,9 @@ export function compareWithServer(plan: UploadPlan, snapshot: TeamSnapshot, vers
   }
 
   // Estadísticas acumuladas de la temporada.
-  const localItems = plan.matches.map((m) => ({ match: toRemoteMatch(m, remoteTeamId), events: plan.events.filter((e) => e.matchId === m.id) }));
+  const localItems = plan.matches
+    .filter((m) => m.deletedAt === null)
+    .map((m) => ({ match: toRemoteMatch(m, remoteTeamId), events: plan.events.filter((e) => e.matchId === m.id) }));
   const remoteItems = snapshot.matches
     .filter((m) => m.match.deletedAt === null)
     .map(({ match }) => ({ match, events: (rEvents.get(match.id) ?? []).map((e) => e.event) }));

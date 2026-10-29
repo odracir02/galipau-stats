@@ -17,7 +17,11 @@ export interface UploadPlan {
   players: Player[];
   matches: Match[];
   events: MatchEvent[];
-  /** Partidos eliminados en el dispositivo: no se envían (el servidor no admite sus acciones). */
+  /**
+   * Partidos eliminados en el dispositivo que nunca se enviaron: no se envían
+   * (el servidor no admite sus acciones). Los que ya estaban en el servidor
+   * sí se envían, solo con su marca de borrado, para que el club deje de verlos.
+   */
   skippedMatches: Match[];
   summary: PlanSummary;
   /** Incumplimientos de las reglas del servidor. Con alguno, no se ofrece enviar. */
@@ -36,6 +40,8 @@ export interface PlanSummary {
   freeThrows: number;
   additionalSanctions: number;
   scoreCorrections: number;
+  /** Partidos ya enviados que se han eliminado en el dispositivo: se envía su borrado. */
+  matchDeletions: number;
   skippedMatches: number;
   skippedEvents: number;
 }
@@ -117,12 +123,21 @@ function eventProblems(e: MatchEvent, match: Match): string[] {
  * Prepara el envío de un equipo local vinculado. No modifica nada: trabaja
  * sobre una lectura completa de la base local.
  */
-export function buildPlan(local: LocalSnapshot, localTeam: Team, link: TeamLink): UploadPlan {
+export function buildPlan(
+  local: LocalSnapshot,
+  localTeam: Team,
+  link: TeamLink,
+  /** Partidos que el servidor ya tiene (confirmados en envíos anteriores). */
+  sentMatchIds: ReadonlySet<string> = new Set(),
+): UploadPlan {
   const players = local.players.filter((p) => p.teamId === localTeam.id).sort((a, b) => a.number - b.number || a.id.localeCompare(b.id));
   const teamMatches = local.matches.filter((m) => m.teamId === localTeam.id);
-  const matches = teamMatches.filter((m) => m.deletedAt === null).sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
-  const skippedMatches = teamMatches.filter((m) => m.deletedAt !== null);
-  const included = new Map(matches.map((m) => [m.id, m]));
+  const live = teamMatches.filter((m) => m.deletedAt === null);
+  const deletions = teamMatches.filter((m) => m.deletedAt !== null && sentMatchIds.has(m.id));
+  const matches = [...live, ...deletions].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+  const skippedMatches = teamMatches.filter((m) => m.deletedAt !== null && !sentMatchIds.has(m.id));
+  // Las acciones solo de los partidos vigentes: las de un partido eliminado ya no se envían.
+  const included = new Map(live.map((m) => [m.id, m]));
   const skippedIds = new Set(skippedMatches.map((m) => m.id));
   const events = local.events
     .filter((e) => included.has(e.matchId))
@@ -145,7 +160,8 @@ export function buildPlan(local: LocalSnapshot, localTeam: Team, link: TeamLink)
   }
   const playerIds = new Set(players.map((p) => p.id));
   for (const m of matches) problems.push(...matchProblems(m, playerIds));
-  for (const e of events) problems.push(...eventProblems(e, included.get(e.matchId)!));
+  const allMatches = new Map(matches.map((m) => [m.id, m]));
+  for (const e of events) problems.push(...eventProblems(e, allMatches.get(e.matchId)!));
 
   return {
     localTeam,
@@ -158,14 +174,15 @@ export function buildPlan(local: LocalSnapshot, localTeam: Team, link: TeamLink)
     summary: {
       players: players.length,
       inactivePlayers: players.filter((p) => !p.active).length,
-      matches: matches.length,
-      squadEntries: matches.reduce((n, m) => n + m.squad.length, 0),
+      matches: live.length,
+      squadEntries: live.reduce((n, m) => n + m.squad.length, 0),
       events: events.length,
       deletedEvents: events.filter((e) => e.deletedAt !== null).length,
       pendingEvents: events.filter(isPending).length,
       freeThrows: events.filter((e) => e.deletedAt === null && e.kind === 'free_throw').length,
       additionalSanctions: events.filter((e) => e.deletedAt === null && e.addsToPrevious === true).length,
-      scoreCorrections: matches.filter((m) => m.scoreAdjustment.own !== 0 || m.scoreAdjustment.opponent !== 0).length,
+      scoreCorrections: live.filter((m) => m.scoreAdjustment.own !== 0 || m.scoreAdjustment.opponent !== 0).length,
+      matchDeletions: deletions.length,
       skippedMatches: skippedMatches.length,
       skippedEvents: local.events.filter((e) => skippedIds.has(e.matchId)).length,
     },

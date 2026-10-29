@@ -183,6 +183,7 @@ describe('previsualización', () => {
       freeThrows: 1,
       additionalSanctions: 1,
       scoreCorrections: 1,
+      matchDeletions: 0,
       skippedMatches: 1,
       skippedEvents: 1,
     });

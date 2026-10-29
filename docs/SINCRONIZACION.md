@@ -99,6 +99,22 @@ Código: `src/remote/plan.ts` (qué se envía y validación previa), `upload.ts`
 - **Comprobación:** al terminar se descarga el equipo completo y se compara con lo enviado: jugadores, partidos (con convocatoria y cronómetro), acciones por partido (también las borradas), resultados, estadísticas acumuladas y versiones. Solo si todo coincide se muestra «Sincronización completada»; si no, se listan las diferencias. El historial (`uploads`) guarda el resultado sin tokens ni datos personales.
 - **No se descarga nada** sobre la base del dispositivo que registra. Los envíos siguen siendo manuales: la estructura (`syncMeta`) ya permite envíos incrementales futuros.
 
+## Envío automático (005E.2F)
+
+Código: `src/remote/autosync.ts`, `src/app/observableRepository.ts` y el indicador `src/ui/match/SyncIndicator.tsx`.
+
+- **Cuándo:** solo en equipos vinculados en los que se ha activado expresamente «Envío automático de los cambios» en la tarjeta «Servidor del club», con sesión y permiso de entrenador vigente, y sin un aviso pendiente. El envío manual sigue disponible siempre.
+- **Desactivado por defecto**, también en los equipos vinculados antes de esta versión. La preferencia es de cada equipo en cada dispositivo (campo `auto` del vínculo en `galipaustats-cuenta`) y se recuerda al cerrar y reabrir. Al activarlo, la app cuenta lo pendiente sin hacer ninguna petición: si hay algo, muestra el resumen (jugadores, partidos, acciones y partidos eliminados) y pide confirmar con «Activar y enviar»; si no hay nada, se activa sin más. Una vez activado no vuelve a preguntar.
+- **Desactivar** detiene los envíos automáticos nuevos; un envío ya en curso termina, y lo pendiente se conserva para «Enviar al servidor» o para cuando se vuelva a activar.
+- **Qué lo dispara:** el repositorio de la app avisa DESPUÉS de guardar cualquier jugador, partido o acción (registrar, corregir, deshacer, borrar, cronómetro, convocatoria, corrección de marcador). El registro no espera por el envío.
+- **Agrupación:** se envía cuando pasan 3 s sin cambios, y como mucho 15 s después del primero pendiente. Cada tanda envía solo lo que ha cambiado (huellas en `syncMeta`): lo ya enviado, como los partidos históricos, no se repite y comprobar pendientes no hace ninguna petición. No descarga el equipo en cada tanda; la comprobación completa sigue en el envío manual.
+- **Cronómetro:** se guarda como estado con referencia de reloj, no como contador; solo hay envío cuando cambia ese estado (iniciar, pausar, ajustar, descanso, 2.ª parte), nunca por el paso del tiempo.
+- **Partidos eliminados** que ya estaban en el servidor: antes de borrar, la confirmación avisa de que el partido dejará de aparecer en los móviles de consulta cuando actualicen, y de si se enviará solo o con «Enviar al servidor». Cancelar no borra nada. Al confirmar, el partido se elimina de forma lógica en el dispositivo y se envía su marca de borrado (sin tocar sus acciones, ni aquí ni en el servidor). Si el envío falla, el borrado queda pendiente y no se da por hecho en el club. Los partidos nunca enviados se eliminan como siempre y no se envía nada.
+- **Sin conexión:** los cambios siguen en el dispositivo; se reintenta con esperas crecientes (15 s → 5 min), al recuperar la conexión y al volver a la app. Con la app cerrada no se envía nada: al volver a abrirla se mira si quedaba algo pendiente.
+- **Conflictos, rechazos o falta de permiso:** se detiene el envío automático de ese equipo («Requiere atención») y se guarda el motivo; no se reanuda solo, ni tras reabrir. Un envío manual que termine con «Sincronización completada» lo reanuda. Nunca se sobrescribe nada.
+- **Exclusión mutua:** el envío automático y el manual comparten el mismo bloqueo; si coinciden, el automático espera y vuelve a intentarlo.
+- **Estado:** un icono en la cabecera del partido (sin botón) y una línea en el menú del partido y en la ficha del equipo: «Sincronizado», «Pendiente», «Sin conexión» o «Requiere atención».
+
 ## Consulta desde otros móviles (005E.2E)
 
 Código: `src/remote/viewer.ts` y las pantallas `RemoteTeamScreen` y `RemoteViews` (partido y rankings).

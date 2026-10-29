@@ -695,6 +695,54 @@ svg {
   margin: 0;
 }
 
+/* Estado del envío automático: discreto, sin botones. */
+.sync-dot {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--c-on-header-2);
+}
+
+.sync-dot.sync-synced {
+  color: var(--c-on-header-2);
+}
+
+.sync-dot.sync-pending,
+.sync-dot.sync-sending,
+.sync-dot.sync-offline {
+  color: var(--c-secondary);
+}
+
+.sync-dot.sync-attention {
+  color: var(--c-accent);
+}
+
+.sync-line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
+}
+
+.sync-line.sync-synced {
+  color: var(--c-success);
+}
+
+.sync-line.sync-offline,
+.sync-line.sync-pending,
+.sync-line.sync-sending {
+  color: var(--c-secondary-text);
+}
+
+.sync-line.sync-attention {
+  color: var(--c-danger);
+}
+
 .section-title {
   display: flex;
   align-items: baseline;

@@ -203,3 +203,15 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 110. Con el código de entrenador en otro móvil. ✔ La misma consulta, sin ningún control de escritura.
 111. «Salir de este equipo» o retirada del acceso. ✔ Desaparecen sus datos descargados. Los equipos del dispositivo no cambian.
 
+## S. Envío automático (005E.2F, vista previa de `develop`, con datos de prueba)
+
+112. Actualizar la app con un equipo ya vinculado. ✔ «Envío automático de los cambios» aparece desactivado y no se envía nada solo. Activarlo: si hay cambios sin enviar, aparece el resumen y solo se envían con «Activar y enviar» (cancelar lo deja desactivado); si no hay, se activa directamente y muestra «Sincronizado». Cerrar y reabrir la app. ✔ Sigue activado.
+113. Abrir un partido en curso y registrar varias acciones seguidas. ✔ El registro va igual de rápido; el icono de la cabecera pasa a «Pendiente» y, unos segundos después, a «Sincronizado». En otro móvil, «Actualizar» muestra las acciones nuevas.
+114. Modo avión y registrar. ✔ Icono «Sin conexión»; el menú lo explica. Quitar el modo avión. ✔ Se envía solo y vuelve a «Sincronizado».
+115. Cerrar la app con cambios pendientes y volver a abrirla con conexión. ✔ Se envían al abrir.
+116. Dejar el reloj en marcha varios minutos. ✔ No hay envíos por el paso del tiempo; solo al pausar o reanudar.
+117. Desactivar el envío automático. ✔ Nada se envía hasta usar «Enviar al servidor» o volver a activarlo.
+118. Si aparece «Requiere atención»: leer el motivo y usar «Enviar al servidor». ✔ Si termina con «Sincronización completada», el envío automático se reanuda.
+119. Eliminar un partido de prueba ya enviado. ✔ La confirmación avisa de que dejará de aparecer en los móviles de consulta. Cancelar: no cambia nada. Confirmar: desaparece aquí y, tras enviarse, también en otro móvil al pulsar «Actualizar».
+120. Eliminar un partido que nunca se ha enviado. ✔ Confirmación de siempre, sin aviso del club y sin nada pendiente de enviar.
+

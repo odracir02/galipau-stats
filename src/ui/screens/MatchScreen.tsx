@@ -1,6 +1,7 @@
 import { ChartColumn, List, SquarePen } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { errorMessage } from '../../app/errors';
+import { clubSync } from '../../app/remote';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
 import { showToast } from '../../app/toast';
@@ -61,7 +62,8 @@ type Overlay =
   | { name: 'score' }
   | { name: 'halftime' }
   | { name: 'finish' }
-  | { name: 'delete' }
+  /** `synced`: el partido ya está en el servidor del club; `auto`: su equipo envía automáticamente. */
+  | { name: 'delete'; synced: boolean; auto: boolean }
   | { name: 'edit'; event: MatchEvent }
   | { name: 'add'; timing: EventTiming }
   | { name: 'reduction'; eventId: Id; playerId: Id | null }
@@ -278,7 +280,14 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
             })
           }
           onExit={() => navigate({ name: 'team', teamId: match.teamId })}
-          onDelete={() => setOverlay({ name: 'delete' })}
+          onDelete={() =>
+            void (async () => {
+              // ¿Está ya en el servidor del club? Entonces el aviso es específico.
+              const synced = (await clubSync?.isMatchSynced(match.id).catch(() => false)) ?? false;
+              const link = synced ? await clubSync?.getLink(match.teamId).catch(() => null) : null;
+              setOverlay({ name: 'delete', synced, auto: link?.auto === true });
+            })()
+          }
         />
       )}
       {overlay?.name === 'clock' && (
@@ -353,6 +362,16 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
                 El partido desaparecerá del historial y dejará de contar en las estadísticas del partido, de los
                 jugadores y de la temporada. La plantilla y los demás partidos no cambian.
               </p>
+              {overlay.synced && (
+                <p className="notice">
+                  Este partido ya está en el servidor del club. Al eliminarlo, dejará de aparecer en los móviles de consulta
+                  cuando actualicen.{' '}
+                  {overlay.auto
+                    ? 'El borrado se enviará con el envío automático.'
+                    : 'El borrado se enviará la próxima vez que uses «Enviar al servidor».'}{' '}
+                  Sus acciones no se borran: se conservan marcadas con el partido.
+                </p>
+              )}
             </>
           }
           confirmLabel="Eliminar partido"
@@ -360,9 +379,11 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
           onCancel={() => setOverlay(null)}
           onConfirm={() =>
             void attempt(async () => {
+              const synced = overlay.synced;
               await svc.deleteMatch(repo, matchRef.current);
               setOverlay(null);
-              showToast('Partido eliminado', 'info');
+              // Solo se informa del borrado local: el del club se ve en el estado de sincronización.
+              showToast(synced ? 'Partido eliminado en este dispositivo · pendiente de enviar al club' : 'Partido eliminado', 'info');
               navigate({ name: 'team', teamId: matchRef.current.teamId }, { replace: true });
             })
           }

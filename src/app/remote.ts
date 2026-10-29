@@ -1,4 +1,5 @@
 import { createApi } from '../remote/api';
+import { AutoSync } from '../remote/autosync';
 import { ClubSync } from '../remote/clubsync';
 import { RemoteSession } from '../remote/session';
 import { AccountStore } from '../remote/store';
@@ -29,3 +30,22 @@ export const clubViewer: ClubViewer | null =
 
 // Los datos descargados siguen a la sesión: sin acceso verificado, se retiran.
 if (remote && clubViewer) clubViewer.followSession(remote);
+
+/** Envío automático desde el dispositivo que registra; null si esta versión no usa servidor. */
+export const autoSync: AutoSync | null =
+  clubSync && accountStore && api && remote ? new AutoSync(clubSync, accountStore, api, () => remote.getState().teams) : null;
+
+if (autoSync && remote) {
+  // Cada cambio guardado en un equipo local (jugadores, partidos, acciones) programa su envío.
+  repo.onChange((c) => {
+    if (c.entity !== 'team') autoSync.changed(c.teamId);
+  });
+  // Al abrir la app, volver a ella o recuperar la conexión, se mira si quedaba algo pendiente.
+  const check = () => void remote.whenReady().then(() => autoSync.checkAll());
+  check();
+  window.addEventListener('online', check);
+  window.addEventListener('pageshow', check);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') check();
+  });
+}

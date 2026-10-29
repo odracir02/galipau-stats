@@ -6,6 +6,7 @@ import type { Match, MatchEvent, SquadEntry } from '../../domain/types';
 import type { Score } from '../../stats/engine';
 import { activeReductions, type ActiveReduction } from '../../stats/exclusions';
 import { reductionTag } from './labels';
+import { SyncIndicator } from './SyncIndicator';
 import { Icon } from '../components/Icon';
 
 interface Props {
@@ -61,6 +62,7 @@ export function ClockHeader({ match, teamName, score, events, squad, onToggle, o
           </span>
           <span className="mh-team mh-team-opp">{match.opponent}</span>
         </button>
+        <SyncIndicator teamId={match.teamId} variant="icon" />
         <button type="button" className="icon-btn" onClick={onMenu} aria-label="Menú del partido">
           <Icon as={EllipsisVertical} />
         </button>

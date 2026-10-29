@@ -35,6 +35,16 @@ export interface TeamLink {
   remoteSeason: string;
   clubName: string;
   linkedAt: string;
+  /**
+   * Envío automático: solo con `true`, que se guarda cuando el usuario lo activa
+   * expresamente en este dispositivo. Sin el campo (vínculos anteriores), desactivado.
+   */
+  auto?: boolean;
+  /**
+   * El envío automático se detuvo por un conflicto o un rechazo: no se reanuda
+   * solo. Un envío manual completo y comprobado lo vuelve a activar.
+   */
+  autoBlocked?: string | null;
 }
 
 export type SyncEntity = 'player' | 'match' | 'event';
@@ -59,7 +69,7 @@ export interface UploadRecord {
   remoteTeamId: string;
   startedAt: string;
   finishedAt: string | null;
-  status: 'running' | 'verified' | 'differences' | 'interrupted' | 'stopped';
+  status: 'running' | 'verified' | 'sent' | 'differences' | 'interrupted' | 'stopped';
   sent: { players: number; matches: number; events: number };
   skipped: number;
   message: string | null;
@@ -157,6 +167,14 @@ export class AccountStore {
     } catch (e) {
       throw new LinkTakenError(e);
     }
+  }
+
+  /** Actualiza las opciones de un vínculo existente (envío automático). Nunca cambia los equipos. */
+  async updateLink(link: TeamLink): Promise<void> {
+    const db = await this.dbPromise;
+    const current = await db.get('links', link.localTeamId);
+    if (!current || current.remoteTeamId !== link.remoteTeamId) throw new LinkTakenError(null);
+    await db.put('links', link);
   }
 
   /** Quita un vínculo. Solo se ofrece si todavía no se ha enviado nada con él. */

@@ -134,6 +134,7 @@ export function UploadSheet({ team, onClose }: { team: Team; onClose: () => void
               <KV k="· golpes francos" v={s!.freeThrows} />
               <KV k="· sanciones adicionales (4 min)" v={s!.additionalSanctions} />
               <KV k="Partidos con corrección de marcador" v={s!.scoreCorrections} />
+              {s!.matchDeletions > 0 && <KV k="Partidos eliminados aquí (se retiran del club)" v={s!.matchDeletions} />}
             </dl>
             {plan.skippedMatches.length > 0 && (
               <p className="hint">

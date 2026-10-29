@@ -5,7 +5,7 @@ import type { Repository } from '../data/repository';
 import { RemoteError, type Api, type RemoteTeam } from './api';
 import { buildPlan, type UploadPlan } from './plan';
 import type { AccountStore, TeamLink, UploadRecord } from './store';
-import { runUpload, type UploadDeps, type UploadOutcome, type UploadProgress } from './upload';
+import { pendingChanges, runUpload, type PendingChanges, type UploadDeps, type UploadOutcome, type UploadProgress } from './upload';
 
 export class ClubSync {
   constructor(
@@ -75,7 +75,18 @@ export class ClubSync {
     if (!link) throw new RemoteError('not_found', 'El equipo no está vinculado con ningún equipo del club.');
     const team = await this.repo.getTeam(localTeamId);
     if (!team) throw new RemoteError('not_found', 'El equipo local no existe.');
-    return buildPlan(await this.repo.readAll(), team, link);
+    const sentMatches = new Set((await this.store.listMeta(link.remoteTeamId)).filter((m) => m.entity === 'match').map((m) => m.entityId));
+    return buildPlan(await this.repo.readAll(), team, link, sentMatches);
+  }
+
+  /** ¿Está este partido en el servidor del club (enviado y confirmado alguna vez)? */
+  async isMatchSynced(matchId: string): Promise<boolean> {
+    return (await this.store.getMeta('match', matchId)) !== null;
+  }
+
+  /** Lo que se enviaría ahora, sin enviar nada. */
+  async pending(localTeamId: string): Promise<PendingChanges> {
+    return pendingChanges(await this.preview(localTeamId), this.store);
   }
 
   lastUpload(localTeamId: string): Promise<UploadRecord | null> {
@@ -130,6 +141,10 @@ export class ClubSync {
       skipped: outcome.unchanged,
       message: outcome.stop?.message ?? (outcome.differences.length ? `${outcome.differences.length} diferencias` : null),
     });
+    // Un envío manual completo y comprobado vuelve a activar el envío automático detenido.
+    if (outcome.status === 'verified' && plan.link.autoBlocked) {
+      await this.store.updateLink({ ...plan.link, autoBlocked: null });
+    }
     return outcome;
   }
 }

@@ -107,3 +107,10 @@
 | D103 | Lo descargado vive en `galipaustats-consulta`, separado | No puede mezclarse con los datos del registrador ni sobrescribirlos, y se puede borrar sin tocar nada más. |
 | D104 | Se reutilizan las vistas de temporada y rankings | Mismos cálculos y presentación que en local: `SeasonView` y `RankingsView` reciben los partidos, vengan del dispositivo o del club. |
 | D105 | Los datos descargados se retiran solo cuando la falta de acceso está verificada | 401/403/404 o una comprobación correcta de la sesión sin el equipo; sin conexión se conservan con aviso de que pueden estar desactualizados. |
+| D106 | Envío automático incremental, con agrupación de 3 s (máximo 15 s) | Una petición por acción, no por pulsación; las ráfagas se agrupan y el registro nunca espera. |
+| D107 | El repositorio avisa después de guardar, sin cambiar cómo se guarda | El envío automático no puede retrasar ni alterar una escritura local; si falla, el dato ya está guardado. |
+| D108 | Ante conflicto, rechazo o falta de permiso, el envío automático se detiene y queda detenido | Nunca se insiste ni se sobrescribe; un envío manual comprobado lo reanuda. |
+| D109 | El borrado de un partido ya enviado se envía como marca de borrado | Así el club deja de verlo; sus acciones se conservan en el servidor tal cual. |
+| D110 | Sin envío en segundo plano con la app cerrada | Las PWA de iPhone no lo permiten de forma fiable; al abrir se comprueba lo pendiente. |
+| D111 | El envío automático está desactivado por defecto y se activa expresamente por equipo y dispositivo | Actualizar la app no puede empezar a enviar datos sin que el entrenador lo decida; si hay algo pendiente, se muestra antes de enviarlo. |
+| D112 | Eliminar un partido ya enviado pide una confirmación específica | El borrado llega a los móviles de consulta; cancelar no borra nada y, si el envío falla, queda pendiente sin darse por hecho. |

@@ -7,6 +7,7 @@ import type { Match, ScoreAdjustment } from '../../domain/types';
 import type { Score } from '../../stats/engine';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
+import { SyncIndicator } from './SyncIndicator';
 
 /** Ajuste manual del cronómetro: botones rápidos o un tiempo exacto. */
 export function ClockAdjustSheet({
@@ -157,6 +158,7 @@ export function MatchMenuSheet(p: MenuProps) {
   );
   return (
     <Sheet title="Partido" onClose={p.onClose}>
+      <SyncIndicator teamId={p.match.teamId} variant="text" />
       <div className="menu">
         {!finished && item('Ajustar cronómetro', Timer, p.onAdjustClock)}
         {item('Corregir marcador', Scale, p.onScore)}
