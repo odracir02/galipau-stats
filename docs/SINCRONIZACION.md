@@ -61,6 +61,19 @@ En el servidor ([`applyEventOp`](../server/src/sync.ts)):
   3. El dispositivo anterior, al sincronizar, ve que ya no registra ese partido. Sus operaciones pendientes de ese partido se muestran como conflicto para decidir, no se descartan.
 - El cronómetro (`clock_json`) se sube con el partido para que el nuevo dispositivo continúe desde el mismo punto. El servidor no lo interpreta.
 
+## Jugadores, partidos y descarga completa (005E.2A)
+
+Mismo esquema que las acciones: `{ opId, teamId, baseVersion, player | match }`.
+
+- **Orden de subida:** jugadores → partidos (con su convocatoria) → acciones. Un partido cuya convocatoria incluye un jugador que no está en el servidor responde **422 `unknown_player`**.
+- **Idempotencia:** repetir la misma operación devuelve el mismo resultado; un alta repetida con otro `opId` y los mismos datos es `duplicate`. Los identificadores son los del dispositivo, así que subir dos veces no duplica nada.
+- **Conflictos:** alta repetida con otros datos, o edición sobre una versión que ya no es la actual → **409 `conflict`** con la copia del servidor (`details.server`). Nada se sobrescribe.
+- **Partido de un solo dispositivo:** quien sube el partido queda como registrador. Cualquier otro dispositivo recibe **409 `match_recorded_elsewhere`** al modificar el partido o sus acciones.
+- **Escrituras simultáneas:** la escritura, la convocatoria, el registro de cambios y el de la operación van en una transacción, y solo se confirman si el registro quedó en la versión esperada y escrito por este dispositivo (`updated_by_device_id`, migración 0004).
+- **Permisos:** la plantilla exige `roster.write` y el partido `match.write`; un dispositivo de consulta recibe **403**. El equipo declarado en el registro debe coincidir con el de la operación (422).
+- **Datos que se conservan tal cual:** acciones a 00:00 (partidos registrados sin reloj), golpes francos sin jugador, `clock.firstHalfEndMs` (dentro de `clock_json`, del que solo se guardan los campos conocidos del cronómetro) y la marca `addsToPrevious` (columna `adds_to_previous`, migración 0004; solo en exclusiones y rojas de un jugador, si no **422**).
+- **Descarga completa:** `GET /api/teams/:id/snapshot` (`team.read`) devuelve en una sola transacción el equipo, el club, los jugadores, los partidos con convocatoria y las acciones, con sus versiones, más `seq` para continuar con `changes`. Incluye partidos y acciones borrados (con `deletedAt`) para que el dispositivo los retire. De quién registra cada partido solo indica `recordedHere` para el propio dispositivo.
+
 ## Primera subida de datos existentes
 
 No se fuerza. Cuando el usuario vincule un equipo local a un club (005C), la app subirá equipo, plantilla, partidos y acciones con sus identificadores actuales, como operaciones normales. Repetirla no duplica nada.
@@ -68,8 +81,8 @@ No se fuerza. Cuando el usuario vincule un equipo local a un club (005C), la app
 ## Qué queda para 005C
 
 - Cliente: `outbox`, `syncMeta`, subida, descarga e interfaz de conflictos.
-- Servidor: operaciones de partido, convocatoria, jugadores y equipo con el mismo esquema que las acciones, transferencia de partido y rutas de invitación.
+- Servidor: datos del equipo (nombre, `publicName`) y transferencia de partido. Las operaciones de jugadores, partidos y convocatoria ya existen (005E.2A).
 - Cambios simultáneos de un partido en el propio dispositivo: hoy cada cambio (cronómetro, marcador, finalizar…) guarda el partido completo a partir de la última copia en memoria, de modo que dos cambios casi simultáneos podrían pisarse. Al añadir la cola de operaciones, los cambios del partido deben aplicarse en orden sobre la versión guardada.
 - Nombre en el marcador (`publicName` del equipo): hoy es solo local. Habrá que transportarlo o derivarlo del nombre del club, sin usarlo nunca como identificador.
 - Golpes francos (005F): viajan como eventos `free_throw` con `player_id` nulo, que D1 ya admite; el servidor los valida con las mismas reglas compartidas, que siguen aceptando los antiguos asignados a un jugador. `clock.firstHalfEndMs` viaja dentro de `clock_json`. Ninguno de los dos requiere cambios en el servidor ni en D1.
-- **Pendiente para la sincronización:** la marca `addsToPrevious` de exclusiones y rojas (inferioridad de 4 min) es solo local. La tabla `events` de D1 no tiene columna para ella y la correspondencia actual la descartaría al subir. Antes de sincronizar partidos habrá que añadir una columna (p. ej. `adds_to_previous INTEGER`) con su migración y transportarla. No afecta a las estadísticas, solo a la cuenta atrás en directo.
+- La marca `addsToPrevious` de exclusiones y rojas viaja en la columna `adds_to_previous` (migración 0004, pendiente de aplicar en D1). Hasta aplicarla no debe desplegarse el código que la usa.

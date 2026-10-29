@@ -1,8 +1,8 @@
 // Peticiones HTTP completas contra el Worker, con la base de datos de pruebas.
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ev, goal } from '../../src/test/fixtures';
+import { ev, goal, makeMatch } from '../../src/test/fixtures';
 import worker, { type Env } from '../src/index';
-import { addDevice, addMatch, PEPPER, twoClubs } from './seed';
+import { addDevice, addMatch, addTeam, NOW, PEPPER, twoClubs } from './seed';
 import { migratedDb, type SqliteD1 } from './sqliteD1';
 
 let db: SqliteD1;
@@ -77,6 +77,41 @@ describe('API', () => {
     const res = await worker.fetch(new Request('https://api.example/api/teams/a1', { headers: { Authorization: `Bearer ${token}` } }), broken);
     expect(res.status).toBe(500);
     expect(await res.text()).not.toContain('detalle interno');
+  });
+
+  it('plantilla y partidos: entrenador sube, consulta recibe 403 y descarga el equipo completo', async () => {
+    // Equipo nuevo, vacío en el servidor (como el del iPhone antes de la primera subida).
+    addTeam(db, 'up', 'A', 'SMA2627');
+    const coach = (await addDevice(db, 'c', [{ clubId: 'A', teamId: 'up', role: 'coach' }])).token;
+    const viewer = (await addDevice(db, 'v', [{ clubId: 'A', teamId: 'up', role: 'viewer' }])).token;
+    const player = { id: 'local-p7', teamId: 'up', name: 'Jugador 7', number: 7, position: 'field', active: true, createdAt: NOW, updatedAt: NOW };
+    const match = makeMatch({ id: 'local-m1', teamId: 'up', squad: [{ playerId: 'local-p7', name: 'Jugador 7', number: 7, position: 'field' }] });
+    const post = (path: string, token: string, body: object) => call(path, { method: 'POST', token, body: JSON.stringify(body) });
+
+    const denied = await post('/api/sync/players', viewer, { opId: 'v-1', teamId: 'up', baseVersion: null, player });
+    expect(denied.status).toBe(403);
+    expect((await post('/api/sync/players', coach, { opId: 'c-1', teamId: 'up', baseVersion: null, player })).status).toBe(200);
+    expect((await post('/api/sync/matches', viewer, { opId: 'v-2', teamId: 'up', baseVersion: null, match })).status).toBe(403);
+    const created = await post('/api/sync/matches', coach, { opId: 'c-2', teamId: 'up', baseVersion: null, match });
+    expect(await created.json()).toEqual({ status: 'applied', entityId: 'local-m1', version: 1 });
+
+    const snap = await call('/api/teams/up/snapshot', { token: viewer });
+    expect(snap.status).toBe(200);
+    expect(await snap.json()).toMatchObject({
+      team: { id: 'up' },
+      players: [{ version: 1, player: { id: 'local-p7' } }],
+      matches: [{ version: 1, recordedHere: false, match: { id: 'local-m1', squad: [{ playerId: 'local-p7' }] } }],
+      events: [],
+    });
+  });
+
+  it('subidas de plantilla o partido mal formadas: 400', async () => {
+    const { token } = await addDevice(db, 'c', [{ clubId: 'A', teamId: 'a1', role: 'coach' }]);
+    const post = (path: string, body: string) => call(path, { method: 'POST', token, body });
+    expect((await post('/api/sync/players', '{}')).status).toBe(400);
+    expect((await post('/api/sync/matches', '{"opId":"x","teamId":"a1","match":{"id":"m"}}')).status).toBe(400);
+    expect((await post('/api/sync/matches', '{"opId":"x","teamId":"a1","baseVersion":0,"match":{"id":"m"}}')).status).toBe(400);
+    expect((await call('/api/teams/a1/snapshot', {})).status).toBe(401);
   });
 
   it('CORS solo para el origen de la aplicación', async () => {

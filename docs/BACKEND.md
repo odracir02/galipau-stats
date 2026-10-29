@@ -106,6 +106,9 @@ Correspondencia con IndexedDB:
 | `GET /api/teams/:teamId/codes` | consulta | Códigos que el rol puede ver |
 | `GET /api/teams/:teamId` | consulta | Datos del equipo y rol del dispositivo |
 | `GET /api/teams/:teamId/changes?since=N` | consulta | Cambios posteriores al cursor N |
+| `GET /api/teams/:teamId/snapshot` | consulta | Equipo completo en una lectura coherente: jugadores, partidos con convocatoria y cronómetro, acciones (también las borradas) y el cursor `seq` para seguir con `changes`. Sin códigos, tokens ni identificadores de otros dispositivos |
+| `POST /api/sync/players` | entrenador (`roster.write`) | Subir un jugador (alta o edición) |
+| `POST /api/sync/matches` | entrenador (`match.write`) | Subir un partido con su convocatoria (alta, edición o borrado lógico). Solo el dispositivo que lo registra |
 | `POST /api/sync/events` | entrenador, administrador de club o superadministrador | Subir una acción (alta, edición o borrado) |
 
 Autenticación: `Authorization: Bearer <token del dispositivo>`. Las rutas de administración (`/api/admin/*`) usan Cloudflare Access y están en [AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#operaciones-implementadas). Roles y permisos: [SEGURIDAD.md](SEGURIDAD.md).
@@ -113,7 +116,9 @@ Autenticación: `Authorization: Bearer <token del dispositivo>`. Las rutas de ad
 De fases posteriores son:
 
 - la transferencia de partidos;
-- la subida de partidos y plantillas.
+- la subida de los datos del equipo (nombre, `publicName`).
+
+**Requisito de despliegue:** el código de jugadores, partidos y sanciones adicionales usa las columnas de la migración 0004. Antes de desplegarlo hay que aplicar 0004 en la D1 del entorno; con un Worker nuevo sobre una base sin 0004, la subida de acciones fallaría.
 
 La lógica de invitaciones ([`invites.ts`](../server/src/invites.ts)) y la de creación de equipos ([`admin.ts`](../server/src/admin.ts)) ya existen y están probadas.
 

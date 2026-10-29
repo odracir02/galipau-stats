@@ -13,6 +13,9 @@ export interface Statement {
 
 export interface Db {
   prepare(query: string): Statement;
-  /** Ejecuta varias sentencias en una sola transacción: o todas o ninguna. */
-  batch(statements: Statement[]): Promise<{ meta: { changes: number } }[]>;
+  /**
+   * Ejecuta varias sentencias en una sola transacción: o todas o ninguna. Las
+   * consultas devuelven sus filas en `results` (lectura coherente de varias tablas).
+   */
+  batch(statements: Statement[]): Promise<{ results?: unknown[]; meta: { changes: number } }[]>;
 }

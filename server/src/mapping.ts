@@ -81,6 +81,8 @@ export interface EventRow {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  /** Sanción adicional antes de reanudar (0/1; migración 0004). */
+  adds_to_previous: number;
 }
 
 // --- Equipo -------------------------------------------------------------------
@@ -225,6 +227,7 @@ export function eventToRow(e: MatchEvent, teamId: string): EventRow {
     created_at: e.createdAt,
     updated_at: e.updatedAt,
     deleted_at: e.deletedAt,
+    adds_to_previous: e.addsToPrevious === true ? 1 : 0,
   };
 }
 
@@ -238,6 +241,8 @@ export function rowToEvent(row: EventRow): MatchEvent {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at,
+    // Solo presente cuando vale: igual que en la aplicación.
+    ...(row.adds_to_previous === 1 && { addsToPrevious: true as const }),
   };
   switch (row.kind) {
     case 'shot':
@@ -262,6 +267,7 @@ export function sameEventContent(a: EventRow, b: EventRow): boolean {
     'period',
     'match_time_ms',
     'deleted_at',
+    'adds_to_previous',
   ];
   return keys.every((k) => a[k] === b[k]);
 }

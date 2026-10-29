@@ -11,6 +11,9 @@
 //   GET  /api/teams/:teamId                  consulta (cualquier rol del equipo)
 //   GET  /api/teams/:teamId/codes            códigos del equipo que el rol puede ver
 //   GET  /api/teams/:teamId/changes?since=N  consulta: cambios posteriores a N
+//   GET  /api/teams/:teamId/snapshot         consulta: equipo completo (jugadores, partidos, acciones)
+//   POST /api/sync/players                   escritura: entrenador (plantilla)
+//   POST /api/sync/matches                   escritura: entrenador (partido y convocatoria)
 //   POST /api/sync/events                    escritura: entrenador
 //
 // Administración (Cloudflare Access + roles en D1; mismo origen, sin CORS):
@@ -55,6 +58,7 @@ import { rowToTeam, type TeamRow } from './mapping';
 import { TEAM_ROLES, type TeamRole } from './model';
 import { getSession, leaveTeam, logout, teamSummary } from './session';
 import { applyEventOp, pullChanges, type EventOp } from './sync';
+import { applyMatchOp, applyPlayerOp, teamSnapshot, type MatchOp, type PlayerOp } from './teamsync';
 
 /** Archivos estáticos del panel (binding ASSETS de Workers). */
 export interface AssetsBinding {
@@ -107,6 +111,9 @@ function corsHeaders(request: Request, env: Env): Record<string, string> {
     Vary: 'Origin',
   };
 }
+
+/** Versión base de una operación: null (alta) o un entero positivo. */
+const validBase = (v: unknown) => v === null || (typeof v === 'number' && Number.isInteger(v) && v > 0);
 
 async function readJson<T>(request: Request): Promise<T> {
   try {
@@ -222,6 +229,26 @@ async function route(request: Request, env: Env): Promise<Response> {
     const since = Number(url.searchParams.get('since') ?? 0);
     if (!Number.isInteger(since) || since < 0) throw new HttpError(400, 'bad_request', 'Parámetro since no válido.');
     return json(await pullChanges(env.DB, auth, parts[2], since));
+  }
+
+  if (request.method === 'GET' && parts[1] === 'teams' && parts[2] && parts[3] === 'snapshot' && parts.length === 4) {
+    return json(await teamSnapshot(env.DB, auth, parts[2]));
+  }
+
+  if (request.method === 'POST' && parts[1] === 'sync' && parts[2] === 'players' && parts.length === 3) {
+    const op = await readJson<PlayerOp>(request);
+    if (!op || typeof op.opId !== 'string' || typeof op.teamId !== 'string' || !op.player || typeof op.player.id !== 'string' || !validBase(op.baseVersion)) {
+      throw new HttpError(400, 'bad_request', 'Operación incompleta.');
+    }
+    return json(await applyPlayerOp(env.DB, auth, op));
+  }
+
+  if (request.method === 'POST' && parts[1] === 'sync' && parts[2] === 'matches' && parts.length === 3) {
+    const op = await readJson<MatchOp>(request);
+    if (!op || typeof op.opId !== 'string' || typeof op.teamId !== 'string' || !op.match || typeof op.match.id !== 'string' || !validBase(op.baseVersion)) {
+      throw new HttpError(400, 'bad_request', 'Operación incompleta.');
+    }
+    return json(await applyMatchOp(env.DB, auth, op));
   }
 
   if (request.method === 'POST' && parts[1] === 'sync' && parts[2] === 'events' && parts.length === 3) {

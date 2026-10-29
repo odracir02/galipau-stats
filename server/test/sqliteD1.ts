@@ -67,7 +67,7 @@ export class SqliteD1 implements Db {
   }
 
   /** Como en D1: todas las sentencias en una transacción; si una falla, ninguna queda. */
-  async batch(statements: Statement[]): Promise<{ meta: { changes: number } }[]> {
+  async batch(statements: Statement[]): Promise<{ results?: unknown[]; meta: { changes: number } }[]> {
     this.sqlite.exec('BEGIN');
     try {
       const out = statements.map((s) => (s as SqliteStatement).exec());

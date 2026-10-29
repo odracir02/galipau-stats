@@ -6,7 +6,7 @@ import { migratedDb, migrationFiles, SqliteD1 } from './sqliteD1';
 
 describe('migración 0003', () => {
   it('está en orden tras 0001 y 0002 y solo añade columnas', () => {
-    expect(migrationFiles()).toEqual(['0001_initial.sql', '0002_cloudflare_access.sql', '0003_clubs_status_and_codes.sql']);
+    expect(migrationFiles().slice(0, 3)).toEqual(['0001_initial.sql', '0002_cloudflare_access.sql', '0003_clubs_status_and_codes.sql']);
     const sql = readFileSync(new URL('../migrations/0003_clubs_status_and_codes.sql', import.meta.url), 'utf8')
       .split('\n')
       .filter((l) => !l.trim().startsWith('--'))

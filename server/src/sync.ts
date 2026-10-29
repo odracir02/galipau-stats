@@ -42,7 +42,7 @@ export interface OpResult {
 }
 
 const EVENT_COLUMNS =
-  'id, match_id, team_id, player_id, kind, shot_type, result, turnover_type, period, match_time_ms, created_at, updated_at, deleted_at';
+  'id, match_id, team_id, player_id, kind, shot_type, result, turnover_type, period, match_time_ms, created_at, updated_at, deleted_at, adds_to_previous';
 
 function conflict(server: (EventRow & { version: number }) | null, reason: string): HttpError {
   return new HttpError(409, 'conflict', reason, {
@@ -88,6 +88,14 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
     if (e instanceof ValidationError) throw new HttpError(422, 'invalid_event', e.message);
     throw e;
   }
+  // La marca de sanción adicional se guarda tal cual; nunca se descarta en silencio.
+  const adds = (op.event as { addsToPrevious?: unknown }).addsToPrevious;
+  if (adds !== undefined && adds !== true && adds !== false) {
+    throw new HttpError(422, 'invalid_event', 'Marca de sanción adicional no válida.');
+  }
+  if (adds === true && ((op.event.kind !== 'exclusion' && op.event.kind !== 'red') || op.event.playerId === null)) {
+    throw new HttpError(422, 'invalid_event', 'Solo una exclusión o roja de un jugador puede sumarse a una inferioridad anterior.');
+  }
 
   // 4. Versión.
   const incoming = eventToRow(op.event, op.teamId);
@@ -115,7 +123,7 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
       db
         .prepare(
           `UPDATE events SET player_id = ?, kind = ?, shot_type = ?, result = ?, turnover_type = ?, period = ?,
-             match_time_ms = ?, updated_at = ?, deleted_at = ?, version = ?, updated_by_device_id = ?
+             match_time_ms = ?, updated_at = ?, deleted_at = ?, adds_to_previous = ?, version = ?, updated_by_device_id = ?
            WHERE id = ? AND version = ?`,
         )
         .bind(
@@ -128,6 +136,7 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
           incoming.match_time_ms,
           incoming.updated_at,
           incoming.deleted_at,
+          incoming.adds_to_previous,
           version,
           deviceId,
           op.event.id,
