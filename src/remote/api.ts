@@ -1,9 +1,11 @@
-// Cliente HTTP del servidor de GalipauStats (solo lo necesario para los códigos
-// de acceso y la sesión del dispositivo). No depende de la configuración de
+// Cliente HTTP del servidor de GalipauStats: códigos de acceso, sesión del
+// dispositivo, subida de jugadores, partidos y acciones y descarga del equipo. No depende de la configuración de
 // Vite: la URL y fetch se inyectan, así que se puede probar contra el Worker real.
 //
 // El token del dispositivo solo viaja en la cabecera Authorization: nunca en la
 // URL, en los mensajes de error ni en los registros.
+
+import type { Match, MatchEvent, Player } from '../domain/types';
 
 export type RemoteRole = 'coach' | 'viewer';
 
@@ -33,9 +35,38 @@ export interface SessionInfo {
   teams: RemoteTeam[];
 }
 
+/** Resultado de una operación de subida: aplicada o ya existente (idempotente). */
+export interface OpResult {
+  status: 'applied' | 'duplicate';
+  entityId: string;
+  version: number;
+}
+
+/** Operación de subida, con la versión del servidor sobre la que se hizo (null = alta). */
+export interface SyncOp<T> {
+  opId: string;
+  teamId: string;
+  baseVersion: number | null;
+  record: T;
+}
+
+/** Equipo completo tal como lo devuelve GET /api/teams/:id/snapshot. */
+export interface TeamSnapshot {
+  team: { id: string; name: string; code: string; season: string };
+  club: { id: string; name: string };
+  seq: number;
+  players: { version: number; player: Player }[];
+  matches: { version: number; match: Match; recordedHere: boolean }[];
+  events: { version: number; event: MatchEvent }[];
+}
+
 export type RemoteErrorKind =
   /** Sin conexión o el servidor no responde. */
   | 'offline'
+  /** Permiso insuficiente (p. ej. acceso de consulta intentando escribir). */
+  | 'forbidden'
+  /** El servidor rechaza los datos por no cumplir sus reglas. */
+  | 'invalid'
   | 'timeout'
   /** Credencial del dispositivo inexistente o revocada. */
   | 'unauthorized'
@@ -54,6 +85,8 @@ export class RemoteError extends Error {
     readonly kind: RemoteErrorKind,
     message: string,
     readonly status?: number,
+    /** Código estable del servidor (p. ej. «match_recorded_elsewhere»), sin datos sensibles. */
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -65,6 +98,8 @@ export const isTransient = (e: unknown) =>
 
 const MESSAGES: Record<RemoteErrorKind, string> = {
   offline: 'Sin conexión con el servidor. Inténtalo cuando tengas internet.',
+  forbidden: 'Este dispositivo no tiene permiso para esta operación.',
+  invalid: 'El servidor ha rechazado los datos.',
   timeout: 'El servidor tarda demasiado en responder. Inténtalo de nuevo.',
   unauthorized: 'La sesión de este dispositivo ya no es válida.',
   invalid_code: 'Código no válido o caducado.',
@@ -75,16 +110,22 @@ const MESSAGES: Record<RemoteErrorKind, string> = {
   server: 'El servidor no está disponible ahora mismo. Inténtalo más tarde.',
 };
 
-function errorFor(status: number, code: string | undefined): RemoteError {
+/** Mensajes del servidor que se pueden mostrar tal cual (no contienen datos sensibles). */
+const SERVER_MESSAGE_CODES = new Set(['conflict', 'match_recorded_elsewhere', 'number_taken', 'invalid_data', 'invalid_event', 'unknown_player', 'match_deleted']);
+
+function errorFor(status: number, code: string | undefined, serverMessage: string | undefined): RemoteError {
   let kind: RemoteErrorKind;
   if (status === 401) kind = 'unauthorized';
+  else if (status === 403) kind = 'forbidden';
+  else if (status === 422) kind = 'invalid';
   else if (status === 404 && code === 'invalid_code') kind = 'invalid_code';
   else if (status === 404) kind = 'not_found';
   else if (status === 429) kind = 'rate_limited';
   else if (status === 409) kind = 'conflict';
   else if (status >= 400 && status < 500) kind = 'bad_request';
   else kind = 'server';
-  return new RemoteError(kind, MESSAGES[kind], status);
+  const message = code && serverMessage && SERVER_MESSAGE_CODES.has(code) ? serverMessage : MESSAGES[kind];
+  return new RemoteError(kind, message, status, code);
 }
 
 export interface ApiOptions {
@@ -98,6 +139,10 @@ export interface Api {
   getSession(token: string): Promise<SessionInfo>;
   leaveTeam(token: string, teamId: string): Promise<void>;
   logout(token: string): Promise<void>;
+  syncPlayer(token: string, op: SyncOp<Player>): Promise<OpResult>;
+  syncMatch(token: string, op: SyncOp<Match>): Promise<OpResult>;
+  syncEvent(token: string, op: SyncOp<MatchEvent>): Promise<OpResult>;
+  snapshot(token: string, teamId: string): Promise<TeamSnapshot>;
 }
 
 export function createApi({ baseUrl, fetch: doFetch = globalThis.fetch.bind(globalThis), timeoutMs = 10_000 }: ApiOptions): Api {
@@ -131,7 +176,10 @@ export function createApi({ baseUrl, fetch: doFetch = globalThis.fetch.bind(glob
     } catch {
       // Respuesta sin JSON (p. ej. una página de error intermedia).
     }
-    if (!res.ok) throw errorFor(res.status, (data as { error?: string } | null)?.error);
+    if (!res.ok) {
+      const err = data as { error?: string; message?: string } | null;
+      throw errorFor(res.status, err?.error, err?.message);
+    }
     return data as T;
   }
 
@@ -145,6 +193,10 @@ export function createApi({ baseUrl, fetch: doFetch = globalThis.fetch.bind(glob
     logout: async (token) => {
       await call('POST', '/api/session/logout', token);
     },
+    syncPlayer: (token, { record, ...op }) => call<OpResult>('POST', '/api/sync/players', token, { ...op, player: record }),
+    syncMatch: (token, { record, ...op }) => call<OpResult>('POST', '/api/sync/matches', token, { ...op, match: record }),
+    syncEvent: (token, { record, ...op }) => call<OpResult>('POST', '/api/sync/events', token, { ...op, event: record }),
+    snapshot: (token, teamId) => call<TeamSnapshot>('GET', `/api/teams/${encodeURIComponent(teamId)}/snapshot`, token),
   };
 }
 

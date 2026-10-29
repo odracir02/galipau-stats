@@ -183,3 +183,13 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 96. «Salir de este equipo». ✔ Desaparece de la lista. «Sesión de este dispositivo → Cerrar sesión». ✔ La sección queda vacía; los datos locales no cambian.
 97. Con la sesión retirada desde el servidor, abrir la app. ✔ Aviso «La sesión de este dispositivo ya no es válida» y lista vacía.
 
+## Q. Vincular y enviar (005E.2D, vista previa de `develop`, con datos de prueba)
+
+98. Con el código de entrenador canjeado, abrir un equipo local. ✔ Tarjeta «Servidor del club» con «Vincular con un equipo del club». Con solo acceso de consulta no aparece.
+99. Vincular: ningún equipo viene seleccionado; elegir uno → «Continuar» → se ven los dos equipos → «Volver». ✔ No queda vinculado. Repetir y «Vincular». ✔ «Vinculado con…»; no se ha enviado nada.
+100. «Enviar al servidor». ✔ Previsualización con origen, destino y cifras; partidos eliminados indicados aparte. «Enviar al servidor» → «Primer envío» → «Enviar». ✔ «Sincronización completada».
+101. Repetir el envío. ✔ Sin confirmación de primer envío; «ya estaban al día»; nada se duplica.
+102. Modo avión y enviar. ✔ «Envío detenido» por conexión; la app sigue funcionando en local.
+103. Otro móvil de entrenador con los mismos datos: vincular y enviar. ✔ «Otro dispositivo registra ese partido»; nada se sobrescribe.
+104. Comprobar en todos los casos que los partidos del dispositivo siguen igual (resultados, acciones, copia de seguridad).
+

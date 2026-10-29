@@ -14,6 +14,7 @@ import { Segmented } from '../components/Segmented';
 import { TopBar } from '../components/TopBar';
 import { StatsView } from '../stats/StatsView';
 import { Tile } from '../stats/StatTables';
+import { ClubLinkCard } from './ClubLinkCard';
 import { OngoingMatchBanner } from './OngoingMatchBanner';
 import { PlayerFormSheet } from './PlayerFormSheet';
 import { TeamFormSheet } from './TeamFormSheet';
@@ -53,6 +54,7 @@ export function TeamScreen({ teamId }: { teamId: Id }) {
       />
       <main className="content">
         <OngoingMatchBanner teamId={t.id} />
+        <ClubLinkCard team={t} />
         <Segmented
           ariaLabel="Secciones del equipo"
           value={tab}

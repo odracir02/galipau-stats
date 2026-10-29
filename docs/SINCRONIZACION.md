@@ -83,6 +83,22 @@ Mismo esquema que las acciones: `{ opId, teamId, baseVersion, player | match }`.
 - **Comprobación** (`GET /api/session`): al abrir la app y al recuperar la conexión, con dos reintentos ante fallos de red o del servidor. Sin conexión se muestran los últimos equipos conocidos y su hora. Con **401** la credencial se olvida y se avisa («sesión no válida»); los datos locales no se tocan.
 - Esta fase **no** sube ni descarga jugadores, partidos ni acciones, y no vincula equipos locales con equipos del club.
 
+## Vinculación y envío manual (005E.2D)
+
+Código: `src/remote/plan.ts` (qué se envía y validación previa), `upload.ts` (envío y comprobación), `clubsync.ts` (vínculos y permisos) y la tarjeta «Servidor del club» de la pantalla del equipo.
+
+- **Vínculo explícito:** un equipo local se vincula con un equipo del club elegido por el usuario y confirmado en un segundo paso. Nunca automáticamente, aunque coincidan nombre o código. Solo con permiso de entrenador vigente. Un equipo local tiene como mucho un vínculo y un equipo del club, como mucho un equipo local (índice único). Se puede deshacer solo mientras no se haya enviado nada.
+- **Dónde se guarda:** en `galipaustats-cuenta` (versión 2, solo añade los almacenes `links`, `syncMeta` y `uploads`). La base `galipaustats` no cambia: los registros se envían como copias con el identificador del equipo del club; los ids de jugadores, partidos y acciones son los mismos.
+- **Previsualización:** origen y destino, jugadores (e inactivos), partidos, convocatorias, acciones (borradas, pendientes, golpes francos, sanciones adicionales) y correcciones de marcador. Se comprueban antes las mismas reglas que el servidor; si alguna falla, se muestra la lista y no se ofrece enviar. Nada se transforma.
+- **Partidos eliminados en el dispositivo:** no se envían (el servidor no admite acciones de un partido eliminado). Se indican en la previsualización y siguen guardados en el dispositivo.
+- **Envío:** solo con el botón «Enviar al servidor»; el primero pide confirmación. Orden: jugadores → partidos con convocatoria → acciones (también las borradas, con su marca).
+  - Cada operación lleva un `opId` derivado del dispositivo, el registro, la versión base y el contenido: un reintento es la misma operación. Lo confirmado se anota en `syncMeta` (versión y huella); lo que no ha cambiado no se vuelve a enviar.
+  - Fallos de red: dos reintentos por operación; si persiste, el envío se detiene («interrumpido») y el siguiente continúa donde se quedó.
+  - 401, 403, 409 (conflicto, otro dispositivo, dorsal) y 422: el envío se **detiene** con el motivo. Nunca se sobrescribe ni se fuerza nada.
+  - Un solo envío a la vez por equipo del club (bloqueo en memoria y, si el navegador lo permite, también entre pestañas).
+- **Comprobación:** al terminar se descarga el equipo completo y se compara con lo enviado: jugadores, partidos (con convocatoria y cronómetro), acciones por partido (también las borradas), resultados, estadísticas acumuladas y versiones. Solo si todo coincide se muestra «Sincronización completada»; si no, se listan las diferencias. El historial (`uploads`) guarda el resultado sin tokens ni datos personales.
+- **No se descarga nada** sobre la base del dispositivo que registra. Los envíos siguen siendo manuales: la estructura (`syncMeta`) ya permite envíos incrementales futuros.
+
 ## Primera subida de datos existentes
 
 No se fuerza. Cuando el usuario vincule un equipo local a un club (005C), la app subirá equipo, plantilla, partidos y acciones con sus identificadores actuales, como operaciones normales. Repetirla no duplica nada.

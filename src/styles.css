@@ -561,6 +561,113 @@ svg {
   color: var(--c-text);
 }
 
+/* Servidor del club en un equipo local: vínculo y envío manual. */
+.club-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.club-link {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.club-last-verified {
+  color: var(--c-success);
+}
+
+.club-last-differences,
+.club-last-interrupted,
+.club-last-stopped {
+  color: var(--c-secondary-text);
+}
+
+.link-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.link-option {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+}
+
+.link-option.on {
+  border-color: var(--c-header);
+  box-shadow: inset 0 0 0 1px var(--c-header);
+}
+
+.link-option input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
+.team-box {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.link-pair {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  padding: var(--s-3);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+}
+
+.link-arrow {
+  align-self: center;
+  color: var(--c-text-3);
+}
+
+.problem-list {
+  margin: var(--s-1) 0;
+  padding-left: 1.1em;
+  font-size: var(--fs-sm);
+}
+
+.upload-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  padding: var(--s-4);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+}
+
+.upload-result {
+  display: flex;
+  gap: var(--s-3);
+  align-items: flex-start;
+}
+
+.upload-result.ok {
+  color: var(--c-success);
+}
+
+.upload-result.ok div {
+  color: var(--c-text);
+}
+
+.upload-result p {
+  margin: var(--s-1) 0 0;
+}
+
 .section-title {
   display: flex;
   align-items: baseline;

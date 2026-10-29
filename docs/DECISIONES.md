@@ -98,3 +98,8 @@
 | D94 | La URL del servidor se fija al compilar (`VITE_API_URL` o rama `develop` de Pages) | Ningún componente lleva direcciones; producción sigue funcionando solo en local hasta que se decida otra cosa. |
 | D95 | El canje no se reintenta solo; la comprobación de sesión sí | Un canje repetido sin respuesta podría crear un segundo dispositivo; la comprobación es de solo lectura. |
 | D96 | Cerrar sesión y salir de un equipo exigen conexión | La revocación tiene que ocurrir en el servidor; olvidar el token solo en el móvil daría una falsa sensación de cierre. |
+| D97 | Vínculo explícito y único entre equipo local y equipo del club, guardado aparte | Los ids locales no cambian; la correspondencia vive en `galipaustats-cuenta`. Coincidir en nombre o código nunca vincula. |
+| D98 | Envío manual, con previsualización y confirmación del primero | El usuario decide cuándo salen datos del dispositivo; nada se envía al vincular, al abrir la app ni al registrar. |
+| D99 | El envío se detiene ante cualquier conflicto o rechazo | Nunca se sobrescribe ni se transforma un dato; el motivo se muestra y lo ya enviado queda anotado para continuar. |
+| D100 | Los partidos eliminados en el dispositivo no se envían | El servidor no admite acciones de partidos eliminados; enviarlos exigiría pasos artificiales. Se indican y se conservan en el dispositivo. |
+| D101 | «Sincronización completada» solo tras comparar con el servidor | Se descarga el equipo y se comparan registros, versiones, resultados y estadísticas; cualquier diferencia se muestra. |

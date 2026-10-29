@@ -31,6 +31,11 @@ function fakeApi() {
     getSession: vi.fn<Api['getSession']>(async (): Promise<SessionInfo> => ({ deviceId: 'dev-1', teams: [team('t1')] })),
     leaveTeam: vi.fn<Api['leaveTeam']>(async () => undefined),
     logout: vi.fn<Api['logout']>(async () => undefined),
+    // La sesión nunca sube ni descarga datos.
+    syncPlayer: vi.fn<Api['syncPlayer']>(),
+    syncMatch: vi.fn<Api['syncMatch']>(),
+    syncEvent: vi.fn<Api['syncEvent']>(),
+    snapshot: vi.fn<Api['snapshot']>(),
   };
 }
 const failing = (e: RemoteError) => async () => Promise.reject(e);
