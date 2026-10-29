@@ -411,7 +411,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
   );
 }
 
-function MatchSummaryCard({
+export function MatchSummaryCard({
   match,
   teamName,
   stats,

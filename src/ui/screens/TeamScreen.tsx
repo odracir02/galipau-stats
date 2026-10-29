@@ -1,5 +1,5 @@
 import { ChevronRight, Pencil, Plus, Trophy } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
 import { showToast } from '../../app/toast';
@@ -7,13 +7,12 @@ import { useLoad } from '../../app/useLoad';
 import { formatDate, opponentLabel } from '../../domain/format';
 import type { Id, Player, Team } from '../../domain/types';
 import { loadSeasonItems } from '../../services/statsService';
-import { computeMatchStats, computeSeasonStats, perMatch } from '../../stats/engine';
+import { computeMatchStats } from '../../stats/engine';
 import { Icon } from '../components/Icon';
 import { statusBadge } from '../match/labels';
 import { Segmented } from '../components/Segmented';
 import { TopBar } from '../components/TopBar';
-import { StatsView } from '../stats/StatsView';
-import { Tile } from '../stats/StatTables';
+import { SeasonView } from '../stats/SeasonView';
 import { ClubLinkCard } from './ClubLinkCard';
 import { OngoingMatchBanner } from './OngoingMatchBanner';
 import { PlayerFormSheet } from './PlayerFormSheet';
@@ -201,88 +200,12 @@ function Roster({ team }: { team: Team }) {
 
 function SeasonPanel({ team }: { team: Team }) {
   const data = useLoad(() => loadSeasonItems(repo, team.id), [team.id]);
-
-  const seasons = useMemo(() => {
-    const set = new Set((data.data ?? []).map((i) => i.match.season));
-    set.add(team.season);
-    return [...set].sort().reverse();
-  }, [data.data, team.season]);
-  const [season, setSeason] = useState(team.season);
-  const [onlyFinished, setOnlyFinished] = useState(false);
-
-  const items = useMemo(
-    () =>
-      (data.data ?? []).filter((i) => i.match.season === season && (!onlyFinished || i.match.status === 'finished')),
-    [data.data, season, onlyFinished],
-  );
-  const stats = useMemo(() => computeSeasonStats(items), [items]);
-  const rows = [...stats.players.values()]
-    .map((p) => ({ ...p.latest, matches: p.matches, counters: p.counters }))
-    .sort((a, b) => a.number - b.number);
-  const avg = (v: number | null) => (v === null ? '—' : v.toLocaleString('es-ES', { maximumFractionDigits: 1 }));
-
   if (data.error) return <p className="form-error">{data.error}</p>;
   return (
-    <>
-      <div className="filters">
-        <label>
-          Temporada
-          <select value={season} onChange={(e) => setSeason(e.target.value)}>
-            {seasons.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="check">
-          <input type="checkbox" checked={onlyFinished} onChange={(e) => setOnlyFinished(e.target.checked)} />
-          Solo finalizados
-        </label>
-      </div>
-      <button type="button" className="list-item rank-link" onClick={() => navigate({ name: 'rankings', teamId: team.id })}>
-        <span className="rank-link-icon">
-          <Icon as={Trophy} />
-        </span>
-        <span className="list-main">
-          <strong>Rankings</strong>
-          <span className="muted">Pistolero, francotirador, el muro…</span>
-        </span>
-        <Icon as={ChevronRight} className="chevron" />
-      </button>
-      {stats.matches === 0 ? (
-        <p className="empty">No hay partidos registrados en esta temporada.</p>
-      ) : (
-        <StatsView
-          mode="season"
-          context={`Temporada ${season}`}
-          team={stats.team}
-          rows={rows}
-          intervals={stats.intervals}
-          pendingCount={stats.pendingCount}
-          summary={
-            <>
-              <div className="tiles tiles-3">
-                <Tile label="Partidos" value={stats.matches} />
-                <Tile
-                  label="A favor"
-                  value={stats.goalsFor}
-                  sub={`${avg(perMatch(stats.goalsFor, stats.matches))}/p`}
-                />
-                <Tile
-                  label="En contra"
-                  value={stats.goalsAgainst}
-                  sub={`${avg(perMatch(stats.goalsAgainst, stats.matches))}/p`}
-                />
-              </div>
-              <p className="hint">
-                Goles a favor y en contra incluyen las correcciones manuales del marcador; el resto de cifras, solo las
-                acciones registradas.
-              </p>
-            </>
-          }
-        />
-      )}
-    </>
+    <SeasonView
+      items={data.data ?? []}
+      defaultSeason={team.season}
+      onRankings={() => navigate({ name: 'rankings', teamId: team.id })}
+    />
   );
 }

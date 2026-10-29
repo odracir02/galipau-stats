@@ -668,6 +668,33 @@ svg {
   margin: var(--s-1) 0 0;
 }
 
+/* Consulta de equipos del club: fecha de los datos y «Actualizar». */
+.fresh-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.fresh-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
+}
+
+.fresh-bar .btn {
+  flex: none;
+}
+
+.fresh-warning {
+  flex-basis: 100%;
+}
+
+.readonly-note {
+  margin: 0;
+}
+
 .section-title {
   display: flex;
   align-items: baseline;

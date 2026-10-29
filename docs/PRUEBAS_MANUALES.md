@@ -193,3 +193,13 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 103. Otro móvil de entrenador con los mismos datos: vincular y enviar. ✔ «Otro dispositivo registra ese partido»; nada se sobrescribe.
 104. Comprobar en todos los casos que los partidos del dispositivo siguen igual (resultados, acciones, copia de seguridad).
 
+## R. Consulta desde otros móviles (005E.2E, vista previa de `develop`)
+
+105. En otro móvil, canjear el código de consulta y abrir el equipo en «Equipos del club». ✔ «Datos del club · actualizados (hora)», «Actualizar» y la nota «Solo consulta».
+106. Partidos. ✔ Los partidos con su resultado oficial (correcciones incluidas) y Victoria/Derrota/Empate. Al abrir uno, estadísticas de equipo, jugadores y porteros, sin registro, cronómetro ni menú.
+107. Jugadores, Temporada y el trofeo (Rankings). ✔ Plantilla completa, acumulado de temporada y los siete rankings, con las mismas cifras que el móvil que registra.
+108. Modo avión y abrir la app. ✔ Se ven los datos descargados con el aviso «Sin conexión… pueden estar desactualizados».
+109. Tras un nuevo envío del registrador, «Actualizar». ✔ Aparecen los datos nuevos.
+110. Con el código de entrenador en otro móvil. ✔ La misma consulta, sin ningún control de escritura.
+111. «Salir de este equipo» o retirada del acceso. ✔ Desaparecen sus datos descargados. Los equipos del dispositivo no cambian.
+

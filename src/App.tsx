@@ -4,6 +4,7 @@ import { Toasts } from './ui/components/Toasts';
 import { MatchScreen } from './ui/screens/MatchScreen';
 import { NewMatchScreen } from './ui/screens/NewMatchScreen';
 import { RankingsScreen } from './ui/screens/RankingsScreen';
+import { RemoteMatchScreen, RemoteRankingsScreen } from './ui/screens/RemoteViews';
 import { RemoteTeamScreen } from './ui/screens/RemoteTeamScreen';
 import { TeamScreen } from './ui/screens/TeamScreen';
 import { TeamsScreen } from './ui/screens/TeamsScreen';
@@ -49,6 +50,12 @@ export function App() {
       break;
     case 'remoteTeam':
       screen = <RemoteTeamScreen key={route.teamId} teamId={route.teamId} />;
+      break;
+    case 'remoteMatch':
+      screen = <RemoteMatchScreen key={route.matchId} teamId={route.teamId} matchId={route.matchId} />;
+      break;
+    case 'remoteRankings':
+      screen = <RemoteRankingsScreen key={route.teamId} teamId={route.teamId} />;
       break;
   }
   return (

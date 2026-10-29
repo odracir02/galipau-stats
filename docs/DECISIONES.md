@@ -103,3 +103,7 @@
 | D99 | El envío se detiene ante cualquier conflicto o rechazo | Nunca se sobrescribe ni se transforma un dato; el motivo se muestra y lo ya enviado queda anotado para continuar. |
 | D100 | Los partidos eliminados en el dispositivo no se envían | El servidor no admite acciones de partidos eliminados; enviarlos exigiría pasos artificiales. Se indican y se conservan en el dispositivo. |
 | D101 | «Sincronización completada» solo tras comparar con el servidor | Se descarga el equipo y se comparan registros, versiones, resultados y estadísticas; cualquier diferencia se muestra. |
+| D102 | La consulta de equipos del club es solo lectura para cualquier rol | Un único dispositivo registra cada partido; los demás, también los de entrenador, solo consultan. Evita conflictos y escrituras accidentales. |
+| D103 | Lo descargado vive en `galipaustats-consulta`, separado | No puede mezclarse con los datos del registrador ni sobrescribirlos, y se puede borrar sin tocar nada más. |
+| D104 | Se reutilizan las vistas de temporada y rankings | Mismos cálculos y presentación que en local: `SeasonView` y `RankingsView` reciben los partidos, vengan del dispositivo o del club. |
+| D105 | Los datos descargados se retiran solo cuando la falta de acceso está verificada | 401/403/404 o una comprobación correcta de la sesión sin el equipo; sin conexión se conservan con aviso de que pueden estar desactualizados. |

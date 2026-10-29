@@ -99,6 +99,17 @@ Código: `src/remote/plan.ts` (qué se envía y validación previa), `upload.ts`
 - **Comprobación:** al terminar se descarga el equipo completo y se compara con lo enviado: jugadores, partidos (con convocatoria y cronómetro), acciones por partido (también las borradas), resultados, estadísticas acumuladas y versiones. Solo si todo coincide se muestra «Sincronización completada»; si no, se listan las diferencias. El historial (`uploads`) guarda el resultado sin tokens ni datos personales.
 - **No se descarga nada** sobre la base del dispositivo que registra. Los envíos siguen siendo manuales: la estructura (`syncMeta`) ya permite envíos incrementales futuros.
 
+## Consulta desde otros móviles (005E.2E)
+
+Código: `src/remote/viewer.ts` y las pantallas `RemoteTeamScreen` y `RemoteViews` (partido y rankings).
+
+- **Solo lectura para cualquier rol**, también entrenador: la consulta únicamente hace `GET /api/teams/:id/snapshot`. No hay registro, cronología editable, corrección, finalización ni eliminación. La escritura sigue siendo del dispositivo registrador con su flujo de envío.
+- **Base propia:** lo descargado se guarda en IndexedDB `galipaustats-consulta` (almacén `teams`, un registro por equipo con el equipo completo y la fecha de descarga). No se mezcla con `galipaustats` ni con `galipaustats-cuenta`, y la copia de seguridad JSON no lo incluye.
+- **Mismas pantallas y cálculos** que los equipos del dispositivo: lista de partidos con resultado oficial (con correcciones), estadísticas del partido (equipo, jugadores, porteros), temporada y los siete rankings. `SeasonView` y `RankingsView` son compartidos; solo cambia de dónde salen los datos.
+- **Actualización:** al abrir el equipo se descarga de nuevo si hay sesión con acceso; después, con «Actualizar». Se muestra la fecha de la última descarga.
+- **Sin conexión o con el servidor caído:** se siguen mostrando los últimos datos descargados con su fecha y el aviso de que pueden estar desactualizados.
+- **Acceso retirado:** si el servidor responde 403 o 404 al descargar, o si una comprobación correcta de la sesión ya no incluye el equipo, se borran sus datos descargados. Con 401, o sin sesión (cerrada o revocada), se borran todos y se comprueba la sesión. Sin conexión no se borra nada: la retirada aún no se ha podido verificar.
+
 ## Primera subida de datos existentes
 
 No se fuerza. Cuando el usuario vincule un equipo local a un club (005C), la app subirá equipo, plantilla, partidos y acciones con sus identificadores actuales, como operaciones normales. Repetirla no duplica nada.

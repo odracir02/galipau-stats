@@ -19,7 +19,7 @@ import { useLoad } from '../../app/useLoad';
 import { formatPct } from '../../domain/format';
 import type { Id } from '../../domain/types';
 import { loadSeasonItems } from '../../services/statsService';
-import { computeSeasonStats } from '../../stats/engine';
+import { computeSeasonStats, type MatchWithEvents } from '../../stats/engine';
 import {
   podiumOf,
   rankPlayers,
@@ -71,15 +71,6 @@ export function RankingsScreen({ teamId }: { teamId: Id }) {
     return [...set].sort().reverse();
   }, [items, team]);
 
-  const [rankingId, setRankingId] = useState<RankingId>('top_scorer');
-  const def = rankingById(rankingId);
-
-  const stats = useMemo(
-    () => computeSeasonStats((items ?? []).filter((i) => i.match.season === activeSeason)),
-    [items, activeSeason],
-  );
-  const ranked = useMemo(() => rankPlayers(def, seasonCandidates(stats)), [def, stats]);
-
   const back = () => navigate({ name: 'team', teamId });
 
   if (data.error) return <p className="form-error">{data.error}</p>;
@@ -99,45 +90,73 @@ export function RankingsScreen({ teamId }: { teamId: Id }) {
       />
       {data.data && (
         <main className="content">
-          {seasons.length > 1 && (
-            <div className="filters">
-              <label>
-                Temporada
-                <select value={activeSeason} onChange={(e) => setSeason(e.target.value)}>
-                  {seasons.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          )}
-
-          <RankingPicker value={rankingId} onChange={setRankingId} />
-
-          <section className="rank-intro">
-            <h2>
-              <Icon as={RANKING_ICON[def.id]} size={18} />
-              {def.title}
-            </h2>
-            <p>{def.description}</p>
-            {def.minimum && <p className="rank-min">{def.minimum}</p>}
-          </section>
-
-          {stats.matches === 0 ? (
-            <RankEmpty title="Todavía no hay partidos" text={`No hay partidos jugados en la temporada ${activeSeason}.`} />
-          ) : ranked.length === 0 ? (
-            <RankEmpty
-              title="Sin clasificación todavía"
-              text={def.minimum ? `Ningún jugador alcanza el mínimo. ${def.minimum}` : 'Nadie suma todavía en esta estadística.'}
-            />
-          ) : (
-            <RankingTable def={def} ranked={ranked} matches={stats.matches} season={activeSeason} />
-          )}
+          <RankingsView items={items ?? []} seasons={seasons} season={activeSeason} onSeason={setSeason} />
         </main>
       )}
     </div>
+  );
+}
+
+/**
+ * Clasificaciones de una temporada a partir de sus partidos (los del
+ * dispositivo o los descargados del club). Solo presenta: no lee ni escribe datos.
+ */
+export function RankingsView({
+  items,
+  seasons,
+  season: activeSeason,
+  onSeason: setSeason,
+}: {
+  items: readonly MatchWithEvents[];
+  seasons: readonly string[];
+  season: string;
+  onSeason: (season: string) => void;
+}) {
+  const [rankingId, setRankingId] = useState<RankingId>('top_scorer');
+  const def = rankingById(rankingId);
+
+  const stats = useMemo(() => computeSeasonStats(items.filter((i) => i.match.season === activeSeason)), [items, activeSeason]);
+  const ranked = useMemo(() => rankPlayers(def, seasonCandidates(stats)), [def, stats]);
+
+  return (
+    <>
+      {seasons.length > 1 && (
+        <div className="filters">
+          <label>
+            Temporada
+            <select value={activeSeason} onChange={(e) => setSeason(e.target.value)}>
+              {seasons.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+
+      <RankingPicker value={rankingId} onChange={setRankingId} />
+
+      <section className="rank-intro">
+        <h2>
+          <Icon as={RANKING_ICON[def.id]} size={18} />
+          {def.title}
+        </h2>
+        <p>{def.description}</p>
+        {def.minimum && <p className="rank-min">{def.minimum}</p>}
+      </section>
+
+      {stats.matches === 0 ? (
+        <RankEmpty title="Todavía no hay partidos" text={`No hay partidos jugados en la temporada ${activeSeason}.`} />
+      ) : ranked.length === 0 ? (
+        <RankEmpty
+          title="Sin clasificación todavía"
+          text={def.minimum ? `Ningún jugador alcanza el mínimo. ${def.minimum}` : 'Nadie suma todavía en esta estadística.'}
+        />
+      ) : (
+        <RankingTable def={def} ranked={ranked} matches={stats.matches} season={activeSeason} />
+      )}
+    </>
   );
 }
 
