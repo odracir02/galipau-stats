@@ -193,13 +193,12 @@ describe('importar un equipo del club', () => {
     const { localTeamId } = await d.importer.importTeam(REMOTE);
     expect(await pendingOf(d, localTeamId)).toBe(0);
     expect(d.net.writes).toBe(0);
-    // El envío automático está desactivado y, al activarlo, no hay nada que enviar.
+    // El envío automático empieza activo (no hay nada pendiente) y no envía nada.
     const auto = new AutoSync(d.sync, d.store, d.net.api, () => d.teams, { quietMs: 10, maxWaitMs: 50 });
     await auto.checkAll();
-    await new Promise((r) => setTimeout(r, 60));
-    expect(auto.state(localTeamId).status).toBe('off');
-    await auto.setEnabled(localTeamId, true);
     await new Promise((r) => setTimeout(r, 100));
+    expect((await d.store.getLink(localTeamId))?.auto).toBe(true);
+    expect(auto.state(localTeamId).status).not.toBe('attention');
     await auto.dispose();
     // Un envío manual tampoco manda nada.
     expect((await d.sync.upload(localTeamId)).status).toBe('verified');

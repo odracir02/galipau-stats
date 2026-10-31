@@ -1,18 +1,20 @@
 // Tarjeta «Servidor del club» en un equipo local: vincularlo con un equipo del
-// club y enviar sus datos a mano. Solo aparece si este dispositivo tiene permiso
-// de entrenador en algún equipo del club o si el equipo ya está vinculado.
-import { CloudUpload, Link2 } from 'lucide-react';
+// club y ver el estado de la sincronización, que es automática. Cuando algo
+// requiere atención ofrece la acción que corresponde; el envío y la recepción
+// manuales quedan en «Opciones avanzadas». Solo aparece si este dispositivo
+// tiene permiso de entrenador en algún equipo del club o si ya está vinculado.
+import { CloudUpload, Link2, RotateCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { errorMessage } from '../../app/errors';
 import { autoSync, clubSync, remote, teamImporter } from '../../app/remote';
 import { showToast } from '../../app/toast';
 import { useLoad } from '../../app/useLoad';
 import { useRemote } from '../../app/useRemote';
+import { useAutoSync } from '../../app/useAutoSync';
 import { useRemoteRevision } from '../../app/useTeamSync';
 import type { Team } from '../../domain/types';
 import { formatChecked } from '../../remote/session';
 import type { TeamLink, UploadRecord } from '../../remote/store';
-import { pendingTotal, type PendingChanges } from '../../remote/upload';
 import { Icon } from '../components/Icon';
 import { SyncIndicator } from '../match/SyncIndicator';
 import { ConfirmSheet } from '../components/Sheet';
@@ -32,9 +34,7 @@ const STATUS_TEXT: Record<UploadRecord['status'], string> = {
 export function ClubLinkCard({ team, onDataChanged }: { team: Team; onDataChanged?: () => void }) {
   const session = useRemote(remote);
   const [sheet, setSheet] = useState<'link' | 'upload' | 'unlink' | null>(null);
-  /** Cambios sin enviar al activar el envío automático: se confirman antes del primer envío. */
-  const [confirmAuto, setConfirmAuto] = useState<PendingChanges | null>(null);
-  const [autoError, setAutoError] = useState<string | null>(null);
+  const auto = useAutoSync(autoSync, team.id);
   // Se vuelve a leer cuando llegan cambios del club (conflictos, permiso, cursor…).
   const revision = useRemoteRevision(team.id);
   const [copies, setCopies] = useState(0);
@@ -74,64 +74,16 @@ export function ClubLinkCard({ team, onDataChanged }: { team: Team; onDataChange
               Vinculado con <strong>{link.remoteTeamName}</strong> · {link.clubName} · {link.remoteSeason}
             </span>
           </p>
-          {last && (
-            <p className={`hint club-last club-last-${last.status}`}>
-              {STATUS_TEXT[last.status]} · {formatChecked(last.finishedAt ?? last.startedAt)}
-            </p>
-          )}
           {!canSend && (
             <p className="hint">Ahora mismo este dispositivo no tiene permiso de entrenador en ese equipo: no se puede enviar.</p>
           )}
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={link.auto === true}
-              disabled={!canSend && link.auto !== true}
-              onChange={(e) => {
-                setAutoError(null);
-                if (!e.target.checked) {
-                  void autoSync?.setEnabled(team.id, false).then(load);
-                  return;
-                }
-                // Activar: si hay cambios sin enviar, se muestran y se confirman antes del primer envío.
-                void (async () => {
-                  try {
-                    const plan = await clubSync!.preview(team.id);
-                    if (plan.problems.length > 0) {
-                      setAutoError(`No se puede activar: hay datos que el servidor no aceptaría (${plan.problems[0]}). Revisa «Enviar al servidor».`);
-                      return;
-                    }
-                    const pending = await clubSync!.pending(team.id);
-                    if (pendingTotal(pending) > 0) setConfirmAuto(pending);
-                    else await autoSync?.setEnabled(team.id, true);
-                  } catch (err) {
-                    setAutoError(errorMessage(err));
-                  }
-                  load();
-                })();
-              }}
-            />
-            Envío automático de los cambios
-          </label>
-          {link.auto !== true && (
-            <p className="hint">Desactivado: los cambios solo se envían con «Enviar al servidor».</p>
+          <SyncIndicator teamId={team.id} variant="text" />
+          {canSend && !link.accessLost && auto.status === 'attention' && auto.action && (
+            <button type="button" className="btn btn-primary btn-block" onClick={() => setSheet('upload')}>
+              <Icon as={auto.action === 'review' ? CloudUpload : RotateCw} />
+              {auto.action === 'review' ? 'Revisar y enviar' : 'Reintentar'}
+            </button>
           )}
-          {autoError && (
-            <p className="form-error" role="alert">
-              {autoError}
-            </p>
-          )}
-          {link.auto === true && <SyncIndicator teamId={team.id} variant="text" />}
-          {link.autoBlocked && !link.conflicts?.length && !link.accessLost && (
-            <p className="hint">
-              El envío automático se ha detenido para no sobrescribir nada. Revisa el aviso y usa «Enviar al servidor»: si
-              termina con «Sincronización completada», se reanuda solo.
-            </p>
-          )}
-          <button type="button" className="btn btn-primary btn-block" disabled={!canSend || link.accessLost === true} onClick={() => setSheet('upload')}>
-            <Icon as={CloudUpload} />
-            Enviar al servidor
-          </button>
           <ClubChangesBlock
             team={team}
             link={link}
@@ -139,6 +91,19 @@ export function ClubLinkCard({ team, onDataChanged }: { team: Team; onDataChange
               load();
               onDataChanged?.();
             }}
+            advanced={
+              <>
+                {last && (
+                  <p className={`hint club-last club-last-${last.status}`}>
+                    {STATUS_TEXT[last.status]} · {formatChecked(last.finishedAt ?? last.startedAt)}
+                  </p>
+                )}
+                <button type="button" className="btn btn-block" disabled={!canSend || link.accessLost === true} onClick={() => setSheet('upload')}>
+                  <Icon as={CloudUpload} />
+                  Enviar al servidor
+                </button>
+              </>
+            }
           />
           {!sent && (
             <button type="button" className="btn btn-ghost btn-block" onClick={() => setSheet('unlink')}>
@@ -155,6 +120,8 @@ export function ClubLinkCard({ team, onDataChanged }: { team: Team; onDataChange
             setSheet(null);
             showToast('Equipo vinculado. No se ha enviado nada.');
             load();
+            // Sin nada que enviar empieza a sincronizar solo; con datos, pide revisarlos.
+            void autoSync?.checkAll();
           }}
         />
       )}
@@ -164,35 +131,9 @@ export function ClubLinkCard({ team, onDataChanged }: { team: Team; onDataChange
           onClose={() => {
             setSheet(null);
             load();
-            // Tras un envío manual, el envío automático vuelve a mirar (y se reanuda si estaba detenido).
+            // Tras un envío manual, el envío automático vuelve a mirar: se reanuda si estaba
+            // detenido y, si ya no queda nada pendiente, empieza a enviar solo.
             void autoSync?.checkAll();
-          }}
-        />
-      )}
-      {confirmAuto && (
-        <ConfirmSheet
-          title="Activar el envío automático"
-          message={
-            <>
-              <p>Hay cambios en este dispositivo que todavía no están en el servidor del club:</p>
-              <ul className="problem-list">
-                {confirmAuto.players > 0 && <li>{confirmAuto.players} jugadores</li>}
-                {confirmAuto.matches > 0 && <li>{confirmAuto.matches} partidos (datos, convocatoria o cronómetro)</li>}
-                {confirmAuto.events > 0 && <li>{confirmAuto.events} acciones</li>}
-                {confirmAuto.matchDeletions > 0 && <li>{confirmAuto.matchDeletions} partidos eliminados en este dispositivo</li>}
-              </ul>
-              <p>
-                Al activarlo se enviarán ahora y, a partir de entonces, cada cambio se enviará solo, sin más confirmaciones. Lo
-                que ya está en el servidor y no ha cambiado no se vuelve a enviar.
-              </p>
-            </>
-          }
-          confirmLabel="Activar y enviar"
-          onCancel={() => setConfirmAuto(null)}
-          onConfirm={async () => {
-            setConfirmAuto(null);
-            await autoSync?.setEnabled(team.id, true);
-            load();
           }}
         />
       )}

@@ -1,8 +1,10 @@
 // Envío automático e incremental desde el dispositivo que registra.
 //
-// * Solo equipos vinculados en los que el usuario ha ACTIVADO expresamente el
-//   envío automático en este dispositivo (por defecto, desactivado), con sesión
-//   y permiso de entrenador vigente. El envío manual sigue disponible.
+// * Siempre activo en los equipos vinculados con sesión y permiso de
+//   entrenador vigente: no es una preferencia. Un vínculo anterior sin activar
+//   lo adopta solo si no tiene nada sin enviar; si guarda cambios antiguos sin
+//   enviar, se conservan y se piden revisar una vez (con el envío comprobado).
+//   El envío manual sigue disponible como herramienta secundaria.
 // * Agrupa los cambios: espera a que pasen unos segundos sin cambios (o un
 //   máximo desde el primero) y entonces envía SOLO lo que ha cambiado, con el
 //   mismo envío idempotente que el manual. Nunca bloquea el registro.
@@ -17,7 +19,7 @@
 import { RemoteError, type Api, type RemoteTeam } from './api';
 import type { ClubSync } from './clubsync';
 import type { AccountStore } from './store';
-import { runUpload, UploadBusyError } from './upload';
+import { pendingTotal, runUpload, UploadBusyError } from './upload';
 
 export type AutoStatus = 'off' | 'synced' | 'pending' | 'sending' | 'offline' | 'attention';
 
@@ -26,18 +28,26 @@ export interface AutoState {
   /** Motivo, si requiere atención (sin datos sensibles). */
   message: string | null;
   lastSyncedAt: string | null;
+  /**
+   * Qué puede hacer el usuario cuando requiere atención: revisar cambios
+   * antiguos sin enviar antes del primer envío, o reintentar tras un rechazo.
+   */
+  action?: 'review' | 'retry' | null;
 }
 
 export const AUTO_LABEL: Record<AutoStatus, string> = {
-  off: 'Envío automático desactivado',
+  off: 'Guardado en este dispositivo',
   synced: 'Sincronizado',
-  pending: 'Pendiente',
-  sending: 'Pendiente',
+  pending: 'Guardado en este dispositivo',
+  sending: 'Sincronizando',
   offline: 'Sin conexión',
   attention: 'Requiere atención',
 };
 
-const OFF: AutoState = { status: 'off', message: null, lastSyncedAt: null };
+const OFF: AutoState = { status: 'off', message: null, lastSyncedAt: null, action: null };
+
+/** Aviso de cambios antiguos sin enviar (antes de que este dispositivo envíe solo). */
+export const REVIEW_MESSAGE = 'Hay cambios guardados en este dispositivo que aún no están en el club. Revísalos para enviarlos.';
 
 export interface Timers {
   set: (fn: () => void, ms: number) => unknown;
@@ -181,7 +191,37 @@ export class AutoSync {
     if (r.timer !== null) this.timers.clear(r.timer);
     r.timer = null;
     r.firstPendingAt = null;
-    this.setState(localTeamId, { status: 'off', message: null });
+    this.setState(localTeamId, { status: 'off', message: null, action: null });
+  }
+
+  /**
+   * Un vínculo sin el envío automático guardado (anterior a que fuera siempre
+   * activo, o recién hecho) lo adopta si este dispositivo tiene permiso de
+   * entrenador y no tiene nada sin enviar. Con cambios sin enviar no envía nada:
+   * los conserva y pide revisarlos (el envío manual comprobado; al terminar sin
+   * pendientes se adopta aquí). Solo se guarda `auto: true`, así que repetirlo o
+   * cerrar la app a medias no cambia nada. No hace peticiones al servidor.
+   */
+  private async adopt(localTeamId: string, remoteTeamId: string, why: 'change' | 'check' | 'retry'): Promise<boolean> {
+    const remote = this.remoteTeams().find((t) => t.teamId === remoteTeamId);
+    if (!remote || remote.role !== 'coach' || remote.status !== 'active' || !(await this.store.getDevice())) return false;
+    const r = this.run(localTeamId);
+    // Ya se está pidiendo revisar: un cambio nuevo no hace falta volver a contarlo.
+    if (why === 'change' && r.state.action === 'review') return false;
+    let pending: number;
+    try {
+      pending = pendingTotal(await this.clubSync.pending(localTeamId));
+    } catch {
+      return false;
+    }
+    if (pending > 0) {
+      this.setState(localTeamId, { status: 'attention', message: REVIEW_MESSAGE, action: 'review' });
+      return false;
+    }
+    const fresh = await this.store.getLink(localTeamId);
+    if (!fresh || fresh.readOnly || fresh.importState === 'pending') return false;
+    if (fresh.auto !== true) await this.store.updateLink({ ...fresh, auto: true });
+    return true;
   }
 
   private async schedule(localTeamId: string, why: 'change' | 'check' | 'retry'): Promise<void> {
@@ -197,12 +237,16 @@ export class AutoSync {
   private async scheduleNow(localTeamId: string, why: 'change' | 'check' | 'retry'): Promise<void> {
     const link = await this.store.getLink(localTeamId);
     // Las copias del club de solo lectura nunca envían.
-    if (!link || link.auto !== true || link.readOnly || link.importState === 'pending') {
+    if (!link || link.readOnly || link.importState === 'pending') {
       if (this.teams.has(localTeamId)) this.stop(localTeamId);
       return;
     }
+    if (link.auto !== true && !(await this.adopt(localTeamId, link.remoteTeamId, why))) {
+      if (this.teams.has(localTeamId) && this.run(localTeamId).state.action !== 'review') this.stop(localTeamId);
+      return;
+    }
     if (link.autoBlocked) {
-      this.setState(localTeamId, { status: 'attention', message: link.autoBlocked });
+      this.setState(localTeamId, { status: 'attention', message: link.autoBlocked, action: 'retry' });
       return;
     }
     const r = this.run(localTeamId);
@@ -211,6 +255,7 @@ export class AutoSync {
       return;
     }
     const nowMs = this.now().getTime();
+    if (r.state.action === 'review') this.setState(localTeamId, { status: 'pending', message: null, action: null });
     if (why === 'change') {
       r.firstPendingAt ??= nowMs;
       if (r.state.status !== 'offline') this.setState(localTeamId, { status: 'pending', message: null });
@@ -257,7 +302,7 @@ export class AutoSync {
     if (link) await this.store.updateLink({ ...link, autoBlocked: message });
     const r = this.run(localTeamId);
     r.firstPendingAt = null;
-    this.setState(localTeamId, { status: 'attention', message });
+    this.setState(localTeamId, { status: 'attention', message, action: 'retry' });
   }
 
   private async sendOnce(localTeamId: string): Promise<void> {
@@ -317,7 +362,7 @@ export class AutoSync {
       r.retries = 0;
       r.conflictRetries = 0;
       r.firstPendingAt = null;
-      this.setState(localTeamId, { status: 'synced', message: null, lastSyncedAt: this.now().toISOString() });
+      this.setState(localTeamId, { status: 'synced', message: null, action: null, lastSyncedAt: this.now().toISOString() });
     } catch (e) {
       if (e instanceof UploadBusyError) {
         // Hay un envío manual en curso: se vuelve a mirar después.

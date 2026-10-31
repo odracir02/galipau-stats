@@ -302,16 +302,16 @@ describe('envío automático', () => {
     expect((await d.sync.upload(team.id)).status).toBe('verified');
   });
 
-  it('desactivado: no envía; al activarlo envía lo pendiente', async () => {
+  it('vínculo anterior desactivado y sin pendientes: se activa solo, sin enviar nada, y después envía cada cambio', async () => {
     const d = await deviceSetup(coachToken, 'iphone');
     await firstManualUpload(d);
     await d.auto.setEnabled(team.id, false);
     expect((await d.store.getLink(team.id))?.auto).toBe(false);
+    await d.auto.checkAll();
+    await settle(d.auto, 'synced');
+    expect((await d.store.getLink(team.id))?.auto).toBe(true);
+    expect(net).toMatchObject({ writes: 0, reads: 0 });
     await svc.recordEvent(local, match, { kind: 'recovery' }, ids[0]!, { period: 1, matchTimeMs: 0 });
-    await new Promise((r) => setTimeout(r, 300));
-    expect(net.writes).toBe(0);
-    expect(d.auto.state(team.id).status).toBe('off');
-    await d.auto.setEnabled(team.id, true);
     await settle(d.auto, 'synced');
     expect(net.writes).toBe(1);
   });
@@ -327,17 +327,51 @@ describe('envío automático', () => {
 });
 
 describe('activación expresa', () => {
-  it('al actualizar la app con un equipo ya vinculado, el envío automático sigue desactivado', async () => {
+  it('al actualizar la app con pendientes antiguos: no envía nada y pide revisarlos; tras el envío comprobado, envía solo', async () => {
     const d = await deviceSetup(coachToken, 'iphone');
     // Vínculo y envío hechos con la versión anterior (sin preferencia guardada).
     await firstManualUpload(d, { enable: false });
     expect((await d.store.getLink(team.id))?.auto).toBeUndefined();
     await svc.recordEvent(local, match, { kind: 'recovery' }, ids[0]!, { period: 1, matchTimeMs: 0 });
     await d.auto.checkAll();
-    await new Promise((r) => setTimeout(r, 300));
-    expect(d.auto.state(team.id).status).toBe('off');
+    await settle(d.auto, 'attention');
+    expect(d.auto.state(team.id)).toMatchObject({ action: 'review' });
+    expect((await d.store.getLink(team.id))?.auto).toBeUndefined();
+    // Más cambios mientras tanto: se guardan, no se envían y no se vuelven a contar.
+    d.previews.n = 0;
+    await svc.recordEvent(local, match, { kind: 'recovery' }, ids[1]!, { period: 1, matchTimeMs: 0 });
+    await d.auto.checkAll();
+    await settle(d.auto, 'attention');
     expect(net).toMatchObject({ writes: 0, reads: 0 });
     expect(count("SELECT COUNT(*) AS n FROM events WHERE kind = 'recovery'")).toBe(0);
+    // Cerrar y reabrir la app a mitad: sigue igual, sin enviar ni perder nada.
+    d.off();
+    const reopened = await deviceSetup(coachToken, 'iphone', 'coach', `cuenta-${n}-iphone`);
+    await reopened.auto.checkAll();
+    await settle(reopened.auto, 'attention');
+    expect(net.writes).toBe(0);
+    expect((await reopened.sync.pending(team.id)).events).toBe(2);
+    // «Revisar y enviar»: el envío comprobado; al volver a mirar, ya envía solo.
+    expect((await reopened.sync.upload(team.id)).status).toBe('verified');
+    expect(count("SELECT COUNT(*) AS n FROM events WHERE kind = 'recovery'")).toBe(2);
+    await reopened.auto.checkAll();
+    await settle(reopened.auto, 'synced');
+    expect((await reopened.store.getLink(team.id))?.auto).toBe(true);
+    await svc.recordEvent(local, match, { kind: 'recovery' }, ids[0]!, { period: 1, matchTimeMs: 2000 });
+    await settle(reopened.auto, 'synced');
+    expect(count("SELECT COUNT(*) AS n FROM events WHERE kind = 'recovery'")).toBe(3);
+  });
+
+  it('vínculo sin permiso de entrenador (ahora consulta): no se activa ni envía nada', async () => {
+    const d = await deviceSetup(coachToken, 'iphone', 'viewer');
+    // Vinculado cuando era entrenador; la sesión dice ahora que solo es consulta.
+    await d.store.addLink({ localTeamId: team.id, remoteTeamId: REMOTE, remoteTeamName: 'Senior Masculino A', remoteTeamCode: 'SMA2627', remoteSeason: '2026/27', clubName: 'Club A', linkedAt: '2026-10-30T10:00:00.000Z' });
+    await d.auto.checkAll();
+    await svc.recordEvent(local, match, { kind: 'recovery' }, ids[0]!, { period: 1, matchTimeMs: 0 });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(d.auto.state(team.id).status).toBe('off');
+    expect((await d.store.getLink(team.id))?.auto).not.toBe(true);
+    expect(net.writes).toBe(0);
   });
 
   it('activar sin pendientes: no hay nada que confirmar ni que enviar', async () => {
@@ -363,7 +397,7 @@ describe('activación expresa', () => {
     expect(await d.sync.pending(team.id)).toEqual({ players: 0, matches: 0, events: 0, matchDeletions: 0 });
   });
 
-  it('la preferencia se recuerda al cerrar y reabrir; desactivar no pierde pendientes', async () => {
+  it('se recuerda al cerrar y reabrir; un vínculo desactivado con pendientes los conserva sin enviarlos', async () => {
     const d = await deviceSetup(coachToken, 'iphone');
     await firstManualUpload(d);
     d.off();

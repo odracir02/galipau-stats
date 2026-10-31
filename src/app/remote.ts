@@ -86,6 +86,11 @@ if (autoSync && remote) {
   // Al abrir la app, volver a ella o recuperar la conexión, se mira si quedaba algo pendiente.
   const check = () => void remote.whenReady().then(() => autoSync.checkAll());
   check();
+  // Al cambiar la sesión (unirse con un código, permiso nuevo o retirado) o al
+  // incorporarse un equipo del club, también: así empieza a sincronizar solo.
+  // Mirar es local; solo hay peticiones si queda algo por enviar.
+  remote.subscribe(check);
+  teamImporter?.subscribe(check);
   window.addEventListener('online', check);
   window.addEventListener('pageshow', check);
   document.addEventListener('visibilitychange', () => {

@@ -1,9 +1,9 @@
-// Recepción de los cambios del club en un equipo vinculado: cuándo se
-// recibieron, «Recibir cambios», conflictos (con elección expresa) y, en las
-// copias del club, quitarla del dispositivo. Discreto: solo destaca algo cuando
-// hay conflictos o falta el permiso.
+// Recepción de los cambios del club en un equipo vinculado (automática):
+// conflictos (con elección expresa) y, en las copias del club, quitarla del
+// dispositivo. Discreto: solo destaca algo cuando hay conflictos o falta el
+// permiso. Cuándo se recibieron y «Recibir cambios» quedan en «Opciones avanzadas».
 import { CloudDownload, TriangleAlert } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { errorMessage } from '../../app/errors';
 import { teamImporter, teamPuller } from '../../app/remote';
 import { navigate } from '../../app/router';
@@ -21,7 +21,7 @@ const PULL_TEXT = {
   busy: 'Hay un envío en curso: vuelve a intentarlo en un momento.',
 } as const;
 
-export function ClubChangesBlock({ team, link, onChanged }: { team: Team; link: TeamLink; onChanged: () => void }) {
+export function ClubChangesBlock({ team, link, onChanged, advanced }: { team: Team; link: TeamLink; onChanged: () => void; advanced?: ReactNode }) {
   const [busy, setBusy] = useState(false);
   const [conflicts, setConflicts] = useState(false);
   const [removing, setRemoving] = useState<{ pending: boolean } | null>(null);
@@ -59,19 +59,23 @@ export function ClubChangesBlock({ team, link, onChanged }: { team: Team; link: 
             ha mezclado nada: elige cuál conservar.
           </span>
           <button type="button" className="btn btn-sm" onClick={() => setConflicts(true)}>
-            Revisar
+            Resolver conflicto
           </button>
         </div>
       )}
-      {!link.accessLost && (
-        <p className="hint club-receive">
-          {link.refreshedAt ? `Cambios del club recibidos ${formatChecked(link.refreshedAt)}` : 'Todavía no se han recibido cambios del club.'}
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => void receive()} disabled={busy}>
-            <Icon as={CloudDownload} size={16} />
-            {busy ? 'Recibiendo…' : 'Recibir cambios'}
-          </button>
-        </p>
-      )}
+      <details className="exact club-advanced">
+        <summary>Opciones avanzadas</summary>
+        {advanced}
+        {!link.accessLost && (
+          <p className="hint club-receive">
+            {link.refreshedAt ? `Cambios del club recibidos ${formatChecked(link.refreshedAt)}` : 'Todavía no se han recibido cambios del club.'}
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => void receive()} disabled={busy}>
+              <Icon as={CloudDownload} size={16} />
+              {busy ? 'Recibiendo…' : 'Recibir cambios'}
+            </button>
+          </p>
+        )}
+      </details>
       {link.origin === 'imported' && (
         <button
           type="button"

@@ -499,8 +499,8 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
                   Este partido ya está en el servidor del club. Al eliminarlo, dejará de aparecer en los móviles de consulta
                   cuando actualicen.{' '}
                   {overlay.auto
-                    ? 'El borrado se enviará con el envío automático.'
-                    : 'El borrado se enviará la próxima vez que uses «Enviar al servidor».'}{' '}
+                    ? 'El borrado se enviará automáticamente.'
+                    : 'El borrado se enviará cuando revises los cambios pendientes en la ficha del equipo.'}{' '}
                   Sus acciones no se borran: se conservan marcadas con el partido.
                 </p>
               )}
