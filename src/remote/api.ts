@@ -126,7 +126,7 @@ const MESSAGES: Record<RemoteErrorKind, string> = {
 };
 
 /** Mensajes del servidor que se pueden mostrar tal cual (no contienen datos sensibles). */
-const SERVER_MESSAGE_CODES = new Set(['conflict', 'match_recorded_elsewhere', 'number_taken', 'invalid_data', 'invalid_event', 'unknown_player', 'match_deleted']);
+const SERVER_MESSAGE_CODES = new Set(['conflict', 'match_recorded_elsewhere', 'number_taken', 'invalid_data', 'invalid_event', 'unknown_player', 'match_deleted', 'control_changed', 'match_not_active']);
 
 function errorFor(status: number, code: string | undefined, serverMessage: string | undefined): RemoteError {
   let kind: RemoteErrorKind;
@@ -159,6 +159,8 @@ export interface Api {
   syncEvent(token: string, op: SyncOp<MatchEvent>): Promise<OpResult>;
   snapshot(token: string, teamId: string): Promise<TeamSnapshot>;
   changes(token: string, teamId: string, since: number): Promise<ChangesPage>;
+  /** Toma el control de un partido en curso (entrenador), con el contador de control visto. */
+  takeControl(token: string, op: { opId: string; teamId: string; matchId: string; expectedEpoch: number }): Promise<{ status: 'applied' | 'duplicate'; entityId: string; epoch: number }>;
 }
 
 export function createApi({ baseUrl, fetch: doFetch = globalThis.fetch.bind(globalThis), timeoutMs = 10_000 }: ApiOptions): Api {
@@ -213,6 +215,7 @@ export function createApi({ baseUrl, fetch: doFetch = globalThis.fetch.bind(glob
     syncMatch: (token, { record, ...op }) => call<OpResult>('POST', '/api/sync/matches', token, { ...op, match: record }),
     syncEvent: (token, { record, ...op }) => call<OpResult>('POST', '/api/sync/events', token, { ...op, event: record }),
     snapshot: (token, teamId) => call<TeamSnapshot>('GET', `/api/teams/${encodeURIComponent(teamId)}/snapshot`, token),
+    takeControl: (token, op) => call('POST', '/api/sync/control', token, op),
     changes: (token, teamId, since) =>
       call<ChangesPage>('GET', `/api/teams/${encodeURIComponent(teamId)}/changes?since=${since}`, token),
   };

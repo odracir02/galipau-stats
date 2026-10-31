@@ -138,3 +138,5 @@
 | D134 | Un conflicto aparta solo sus registros del envío; no detiene el envío automático del equipo | Un dato antiguo en conflicto no puede parar el registro de un partido en directo. |
 | D135 | Un partido eliminado en el club con acciones sin enviar aquí es un conflicto, no un borrado automático | Esas acciones quedarían ocultas sin enviarse; el usuario decide. |
 | D136 | Resolver un conflicto exige confirmación y quitar o bloquear una copia espera al envío o recepción en curso | Nada se sustituye por error ni queda escrito después de retirar una copia. |
+| D137 | «Tomar el control» solo aparece en un partido en curso que registra otro dispositivo, con confirmación y conexión | Lo normal (un registrador, los demás consultan) no muestra nada técnico; transferir es una decisión explícita y comprobada con el servidor. |
+| D138 | Lo registrado en un partido que ahora controla otro dispositivo se conserva y se aparta del envío | Nada se pierde ni bloquea el resto; se envía si se recupera el control. |

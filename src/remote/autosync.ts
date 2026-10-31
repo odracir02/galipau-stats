@@ -302,7 +302,9 @@ export class AutoSync {
         if (outcome.stop!.reason === 'offline') {
           this.setState(localTeamId, { status: 'offline', message: null });
           this.retryLater(localTeamId);
-        } else if (outcome.stop!.reason === 'conflict' && this.receiver && r.conflictRetries < 2) {
+        } else if ((outcome.stop!.reason === 'conflict' || outcome.stop!.reason === 'recorded_elsewhere') && this.receiver && r.conflictRetries < 2) {
+          // Conflicto o partido que ahora registra otro dispositivo: se recibe el
+          // estado del club (lo afectado queda apartado, sin perder nada) y se reintenta.
           r.conflictRetries++;
           await this.receiver.pull(localTeamId);
           this.setState(localTeamId, { status: 'pending', message: null });

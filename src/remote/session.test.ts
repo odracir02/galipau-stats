@@ -37,6 +37,7 @@ function fakeApi() {
     syncEvent: vi.fn<Api['syncEvent']>(),
     snapshot: vi.fn<Api['snapshot']>(),
     changes: vi.fn<Api['changes']>(),
+    takeControl: vi.fn<Api['takeControl']>(),
   };
 }
 const failing = (e: RemoteError) => async () => Promise.reject(e);

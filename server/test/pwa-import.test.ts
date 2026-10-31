@@ -338,7 +338,8 @@ describe('protección de los equipos existentes', () => {
     expect((await iphoneStore.listMeta(REMOTE)).map((m) => [m.key, m.version, m.hash]).sort()).toEqual(metasBefore.map((m) => [m.key, m.version, m.hash]).sort());
     const after = (await iphoneStore.getLink(iphoneTeam.id))!;
     expect(after.cursor).toBeGreaterThan(0);
-    expect({ ...after, cursor: undefined, refreshedAt: undefined, controlledElsewhere: undefined, readOnly: undefined }).toEqual({ ...linkBefore, cursor: undefined, refreshedAt: undefined, controlledElsewhere: undefined, readOnly: undefined });
+    const sync = { cursor: undefined, refreshedAt: undefined, controlledElsewhere: undefined, controlEpochs: undefined, readOnly: undefined };
+    expect({ ...after, ...sync }).toEqual({ ...linkBefore, ...sync });
     // Segunda: solo /changes, sin descargar el equipo.
     const reads = net.reads;
     expect(await puller.pull(iphoneTeam.id)).toEqual({ status: 'ok', applied: 0, conflicts: 0, full: false });

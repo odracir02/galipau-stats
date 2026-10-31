@@ -20,6 +20,7 @@ import { CONFLICT_BLOCK, TeamPuller } from '../../src/remote/pull';
 import { AccountStore } from '../../src/remote/store';
 import { stableJson, withLock } from '../../src/remote/upload';
 import worker, { type Env } from '../src/index';
+import { takeControl as serverTakeControl } from '../src/control';
 import { addClub, addDevice, addTeam, CODE_KEY, PEPPER } from './seed';
 import { migratedDb, type SqliteD1 } from './sqliteD1';
 
@@ -235,11 +236,16 @@ describe('dos entrenadores sobre el mismo equipo', () => {
     expect((await A.sync.upload(teamA.id)).status).toBe('verified');
     await B.puller.pull(idB);
     expect((await B.store.getLink(idB))?.controlledElsewhere).toEqual([m.id]);
-    // Aun así, si B escribe (p. ej. sin haberlo recibido), el servidor lo rechaza y B lo conserva.
+    // Si B escribe aun así, su acción se conserva aquí y se aparta del envío (el resto se envía).
     const local = (await B.local.getMatch(m.id))!;
     const e = await svc.recordEvent(B.repo, local, { kind: 'recovery' }, null, { period: 1, matchTimeMs: 0 });
-    expect(await B.sync.upload(idB)).toMatchObject({ status: 'stopped', stop: { reason: 'recorded_elsewhere' } });
+    expect((await B.sync.preview(idB)).setAside).toEqual(expect.arrayContaining([`match:${m.id}`, `event:${e.id}`]));
+    expect((await B.sync.upload(idB)).status).toBe('verified');
     expect(await B.local.getEvent(e.id)).toBeDefined();
+    expect(count(`events WHERE id = '${e.id}'`)).toBe(0);
+    // Y si no lo sabía (sin haberlo recibido), el servidor lo rechaza igualmente.
+    await B.store.saveSyncState({ ...(await B.store.getLink(idB))!, controlledElsewhere: [] }, []);
+    expect(await B.sync.upload(idB)).toMatchObject({ status: 'stopped', stop: { reason: 'recorded_elsewhere' } });
     expect(count(`events WHERE id = '${e.id}'`)).toBe(0);
   });
 
@@ -655,5 +661,138 @@ describe('eliminaciones y revocaciones', () => {
     expect((await B.store.getLink(idB))?.accessLost).toBeUndefined();
     expect((await B.sync.upload(idB)).status).toBe('verified');
     expect(count(`events WHERE id = '${e.id}'`)).toBe(1);
+  });
+});
+
+describe('control entre entrenadores (H3)', () => {
+  /** A empieza un partido, registra una acción y lo envía: A tiene el control. */
+  async function liveByA() {
+    let m = await svc.createMatch(A.repo, { teamId: teamA.id, opponent: 'Prueba entrenador 2', date: '2026-11-05', venue: 'home', season: '2026/27', playerIds: ids });
+    m = await svc.toggleClock(A.repo, m);
+    await svc.recordEvent(A.repo, m, { kind: 'shot', shotType: 'six_m', result: 'goal' }, ids[0]!, { period: 1, matchTimeMs: 1000 });
+    expect((await A.sync.upload(teamA.id)).status).toBe('verified');
+    return m;
+  }
+  const holder = (id: string) => (db.sqlite.prepare('SELECT control_device_id AS c FROM matches WHERE id = ?').get(id) as { c: string | null }).c;
+
+  it('A registra mientras B consulta: consultar no cambia el control ni bloquea a A', async () => {
+    const B = await coachB();
+    const idB = await B.localTeam();
+    const m = await liveByA();
+    await B.puller.pull(idB);
+    expect((await B.store.getLink(idB))!.controlledElsewhere).toEqual([m.id]);
+    for (let i = 0; i < 3; i++) {
+      await svc.recordEvent(A.repo, (await A.local.getMatch(m.id))!, { kind: 'shot', shotType: 'nine_m', result: 'goal' }, ids[1]!, { period: 1, matchTimeMs: 2000 + i });
+      expect((await A.sync.upload(teamA.id)).status).toBe('verified');
+      await B.puller.pull(idB); // B consulta en directo
+      expect(holder(m.id)).toBe('iphone');
+    }
+    expect((await B.local.listEvents(m.id)).length).toBe(4);
+    expect(await B.sync.pending(idB)).toEqual({ players: 0, matches: 0, events: 0, matchDeletions: 0 });
+  });
+
+  it('transferencia A → B: B sigue registrando; A ya no puede enviar y conserva lo suyo', async () => {
+    const B = await coachB();
+    const idB = await B.localTeam();
+    const m = await liveByA();
+    await B.puller.pull(idB);
+    expect(await B.puller.takeControl(idB, m.id)).toBe('taken');
+    expect(holder(m.id)).toBe('entrenador-b');
+    expect((await B.store.getLink(idB))!.controlledElsewhere ?? []).not.toContain(m.id);
+    // B registra y envía.
+    await svc.recordEvent(B.repo, (await B.local.getMatch(m.id))!, { kind: 'shot', shotType: 'six_m', result: 'goal' }, ids[2]!, { period: 1, matchTimeMs: 5000 });
+    expect((await B.sync.upload(idB)).status).toBe('verified');
+    // A (sin saberlo todavía) registra: el servidor lo rechaza; A recibe el estado y lo aparta, sin perderlo.
+    const mine = await svc.recordEvent(A.repo, (await A.local.getMatch(m.id))!, { kind: 'recovery' }, ids[0]!, { period: 1, matchTimeMs: 6000 });
+    expect(await A.sync.upload(teamA.id)).toMatchObject({ status: 'stopped', stop: { reason: 'recorded_elsewhere' } });
+    expect((await A.store.getLink(teamA.id))!.controlledElsewhere).toContain(m.id);
+    expect(await A.puller.pendingEventsIn(teamA.id, m.id)).toBe(1);
+    expect(await A.local.getEvent(mine.id)).toBeDefined();
+    expect(count(`events WHERE id = '${mine.id}'`)).toBe(0);
+    // El resto de A se sigue enviando.
+    await savePlayer(A.repo, teamA.id, { name: 'Nuevo', number: 40, position: 'field', active: true });
+    const rest = await A.sync.upload(teamA.id);
+    expect(rest.status).toBe('verified');
+    expect(rest.setAside).toBeGreaterThan(0); // se indica lo que no se ha enviado
+    expect(count("players WHERE name = 'Nuevo'")).toBe(1);
+    // Si A recupera el control, lo suyo se envía.
+    expect(await A.puller.takeControl(teamA.id, m.id)).toBe('taken');
+    expect((await A.sync.upload(teamA.id)).status).toBe('verified');
+    expect(count(`events WHERE id = '${mine.id}'`)).toBe(1);
+  });
+
+  it('dos peticiones a la vez: solo una lo consigue; la otra avisa sin cambiar nada', async () => {
+    const B = await coachB();
+    const idB = await B.localTeam();
+    const m = await liveByA();
+    // B comprueba el estado; antes de que pida el control, A lo recupera... (se simula con una petición retrasada).
+    const realTake = B.api.takeControl;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    B.api.takeControl = async (...args) => {
+      await gate;
+      return realTake(...args);
+    };
+    const asking = B.puller.takeControl(idB, m.id);
+    await new Promise((r) => setTimeout(r, 50));
+    // Otro dispositivo (C) toma el control entretanto, desde su propio móvil.
+    const c = await addDevice(db, 'entrenador-c', [{ clubId: 'A', teamId: REMOTE, role: 'coach' }]);
+    const epoch = (db.sqlite.prepare('SELECT control_epoch AS e FROM matches WHERE id = ?').get(m.id) as { e: number }).e;
+    await serverTakeControl(db, c.auth, { opId: 'c-toma', teamId: REMOTE, matchId: m.id, expectedEpoch: epoch });
+    release();
+    await expect(asking).rejects.toThrow(/mientras tanto/);
+    expect(holder(m.id)).toBe('entrenador-c');
+    B.api.takeControl = realTake;
+  });
+
+  it('sin conexión no se puede tomar el control; el registrador sigue sin cobertura y nada se pierde', async () => {
+    const B = await coachB();
+    const idB = await B.localTeam();
+    const m = await liveByA();
+    await B.puller.pull(idB);
+    B.net.down = true;
+    await expect(B.puller.takeControl(idB, m.id)).rejects.toThrow(/Hace falta conexión/);
+    expect(holder(m.id)).toBe('iphone');
+    // A sin cobertura registra; B toma el control; A vuelve: sus acciones se conservan y se le avisa (apartadas).
+    B.net.down = false;
+    A.net.down = true;
+    const offline = await svc.recordEvent(A.repo, (await A.local.getMatch(m.id))!, { kind: 'recovery' }, null, { period: 1, matchTimeMs: 7000 });
+    expect(await B.puller.takeControl(idB, m.id)).toBe('taken');
+    A.net.down = false;
+    const auto = new AutoSync(A.sync, A.store, A.api, () => A.teams, { quietMs: 10, maxWaitMs: 50, retryMs: [30] }).receiveWith(A.puller);
+    autos.push(auto);
+    await A.store.updateLink({ ...(await A.store.getLink(teamA.id))!, auto: true });
+    await auto.checkAll();
+    const until = Date.now() + 3000;
+    while (Date.now() < until && !(await A.store.getLink(teamA.id))!.controlledElsewhere?.includes(m.id)) await new Promise((r) => setTimeout(r, 30));
+    expect((await A.store.getLink(teamA.id))!.controlledElsewhere).toContain(m.id);
+    expect(await A.local.getEvent(offline.id)).toBeDefined();
+    expect(count(`events WHERE id = '${offline.id}'`)).toBe(0);
+    expect((await A.store.getLink(teamA.id))!.autoBlocked ?? null).toBeNull();
+  });
+
+  it('partido preparado o finalizado: no hace falta tomar el control; en el descanso sí se puede', async () => {
+    const B = await coachB();
+    const idB = await B.localTeam();
+    const ready = await svc.createMatch(A.repo, { teamId: teamA.id, opponent: 'Preparado', date: '2026-11-06', venue: 'home', season: '2026/27', playerIds: ids });
+    expect((await A.sync.upload(teamA.id)).status).toBe('verified');
+    expect(await B.puller.takeControl(idB, ready.id)).toBe('not_needed');
+    expect(await B.puller.takeControl(idB, finished.id)).toBe('not_needed');
+    let m = await liveByA();
+    m = await svc.startHalftime(A.repo, (await A.local.getMatch(m.id))!);
+    expect((await A.sync.upload(teamA.id)).status).toBe('verified');
+    expect(await B.puller.takeControl(idB, m.id)).toBe('taken');
+    expect(holder(m.id)).toBe('entrenador-b');
+  });
+
+  it('consulta y otro club: no pueden tomar el control', async () => {
+    const m = await liveByA();
+    const V = await device('familia', tokens.viewer, 'viewer');
+    await expect(V.puller.takeControl('cualquiera', m.id)).rejects.toThrow();
+    // Directamente contra el servidor: consulta y otro club, rechazados.
+    await expect(V.api.takeControl(tokens.viewer, { opId: 'x1', teamId: REMOTE, matchId: m.id, expectedEpoch: 1 })).rejects.toMatchObject({ kind: 'forbidden' });
+    const C = await device('otro-club', tokens.otro);
+    await expect(C.api.takeControl(tokens.otro, { opId: 'x2', teamId: REMOTE, matchId: m.id, expectedEpoch: 1 })).rejects.toMatchObject({ kind: 'not_found' });
+    expect(holder(m.id)).toBe('iphone');
   });
 });

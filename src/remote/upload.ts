@@ -175,6 +175,11 @@ export interface UploadOutcome {
   unchanged: number;
   stop?: { reason: StopReason; message: string; record: string };
   differences: string[];
+  /**
+   * Datos de este dispositivo que no se han enviado por estar en conflicto o
+   * ser de un partido que registra otro dispositivo (se conservan aquí).
+   */
+  setAside?: number;
 }
 
 export interface UploadDeps {

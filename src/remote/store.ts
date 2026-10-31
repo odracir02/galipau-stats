@@ -68,6 +68,8 @@ export interface TeamLink {
   conflicts?: SyncConflict[];
   /** Partidos en curso que registra OTRO dispositivo (según la última descarga). */
   controlledElsewhere?: string[];
+  /** Contador de control de cada partido (según la última descarga), para tomar el control. */
+  controlEpochs?: Record<string, number>;
 }
 
 /** Un registro cambiado en este dispositivo y en el club a la vez. */

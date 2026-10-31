@@ -198,6 +198,12 @@ function Result({ outcome }: { outcome: UploadOutcome }) {
           <strong>Sincronización completada</strong>
           <p>{counts}</p>
           <p className="hint">El servidor coincide con este dispositivo: jugadores, partidos, acciones, resultados y estadísticas.</p>
+          {(outcome.setAside ?? 0) > 0 && (
+            <p className="hint">
+              {outcome.setAside} {outcome.setAside === 1 ? 'dato no se ha enviado' : 'datos no se han enviado'}: están en conflicto o son de un
+              partido que registra otro dispositivo. Se conservan en este dispositivo.
+            </p>
+          )}
         </div>
       </div>
     );

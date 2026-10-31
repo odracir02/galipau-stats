@@ -1,7 +1,8 @@
 import { ChartColumn, List, Lock, SquarePen } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { errorMessage } from '../../app/errors';
-import { clubSync, teamPuller } from '../../app/remote';
+import { clubSync, remote, teamPuller } from '../../app/remote';
+import { useRemote } from '../../app/useRemote';
 import { useRemoteRevision, useTeamLink } from '../../app/useTeamSync';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
@@ -42,6 +43,10 @@ export function MatchScreen({ matchId }: { matchId: Id }) {
   // Equipo bloqueado en este dispositivo (sin permiso, preparándose): solo sus estadísticas.
   const readOnly = useReadOnlyTeam(loadedTeamId ?? '');
   const link = useTeamLink(loadedTeamId);
+  const session = useRemote(remote);
+  // Solo un entrenador del equipo, con el equipo sin bloquear, puede tomar el control.
+  const canTake =
+    !!link && !link.accessLost && session.teams.some((t) => t.teamId === link.remoteTeamId && t.role === 'coach' && t.status === 'active');
 
   if (data.error) return <p className="form-error">{data.error}</p>;
   if (data.data === undefined) return <div className="screen" />;
@@ -68,7 +73,8 @@ export function MatchScreen({ matchId }: { matchId: Id }) {
         events={events}
         team={team}
         live
-        notice="Este partido lo está registrando otro dispositivo del equipo. Solo ese dispositivo puede continuarlo; aquí lo ves al día. (Pasar el registro a este dispositivo llegará en una próxima versión.)"
+        takeOver={canTake}
+        notice="Este partido lo está registrando otro dispositivo del equipo. Aquí lo ves al día; si tienes que seguir registrándolo desde este dispositivo, toma el control."
       />
     );
   }
@@ -79,8 +85,40 @@ export function MatchScreen({ matchId }: { matchId: Id }) {
  * Partido solo para consultar: estadísticas, sin registro ni correcciones. Con
  * `live`, recibe los cambios del club cada 5 s mientras está a la vista.
  */
-function ReadOnlyMatch({ match, events, team, notice, live = false }: { match: Match; events: MatchEvent[]; team: Team; notice: string; live?: boolean }) {
+function ReadOnlyMatch({
+  match,
+  events,
+  team,
+  notice,
+  live = false,
+  takeOver = false,
+}: {
+  match: Match;
+  events: MatchEvent[];
+  team: Team;
+  notice: string;
+  live?: boolean;
+  /** Ofrecer «Tomar el control» (entrenador del equipo). */
+  takeOver?: boolean;
+}) {
   const stats = useMemo(() => computeMatchStats(match, events), [match, events]);
+  const [confirming, setConfirming] = useState(false);
+  const [taking, setTaking] = useState(false);
+  // Acciones de este partido registradas aquí y sin enviar: se conservan siempre.
+  const pending = useLoad(async () => (teamPuller ? teamPuller.pendingEventsIn(team.id, match.id) : 0), [team.id, match.id, events.length]);
+  const take = async () => {
+    if (!teamPuller) return;
+    setConfirming(false);
+    setTaking(true);
+    try {
+      const r = await teamPuller.takeControl(team.id, match.id);
+      showToast(r === 'taken' ? 'Ahora registras este partido desde este dispositivo' : 'Este partido ya no lo registra otro dispositivo', 'info');
+    } catch (e) {
+      showToast(errorMessage(e), 'error');
+    } finally {
+      setTaking(false);
+    }
+  };
   useEffect(() => {
     if (!live || !teamPuller) return;
     const tick = () => {
@@ -97,6 +135,17 @@ function ReadOnlyMatch({ match, events, team, notice, live = false }: { match: M
           <Icon as={Lock} size={18} />
           {notice}
         </p>
+        {(pending.data ?? 0) > 0 && (
+          <p className="notice" role="status">
+            Este dispositivo tiene {pending.data} {pending.data === 1 ? 'acción' : 'acciones'} de este partido sin enviar: se
+            conservan aquí y se enviarán si vuelves a tener el control.
+          </p>
+        )}
+        {takeOver && (
+          <button type="button" className="btn btn-primary btn-block" onClick={() => setConfirming(true)} disabled={taking}>
+            {taking ? 'Tomando el control…' : 'Tomar el control'}
+          </button>
+        )}
         <StatsView
           mode="match"
           context={`${opponentLabel(match.opponent)} · ${formatDate(match.date)}`}
@@ -108,6 +157,26 @@ function ReadOnlyMatch({ match, events, team, notice, live = false }: { match: M
           summary={<MatchSummaryCard match={match} teamName={publicTeamName(team)} stats={stats} />}
         />
       </main>
+      {confirming && (
+        <ConfirmSheet
+          title="Tomar el control del partido"
+          message={
+            <>
+              <p>
+                <strong>{opponentLabel(match.opponent)}</strong> · {formatDate(match.date)}
+              </p>
+              <p>
+                El registro de este partido pasará a este dispositivo. El dispositivo que lo registra ahora dejará de poder enviar
+                acciones de este partido; lo que tenga sin enviar se conserva en ese dispositivo y no se borra.
+              </p>
+              <p>Hace falta conexión. Antes se comprueba el estado actual: si otro dispositivo ha tomado el control entretanto, no se cambia nada.</p>
+            </>
+          }
+          confirmLabel="Tomar el control"
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => void take()}
+        />
+      )}
     </div>
   );
 }

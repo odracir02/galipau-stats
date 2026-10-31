@@ -21,6 +21,7 @@
 // * Un envío y una recepción del mismo equipo nunca van a la vez (mismo bloqueo).
 // * No escribe nunca en el servidor.
 import { ConcurrentChangeError, StorageError, type Repository, type TeamData, type TeamDataStore } from '../data/repository';
+import { newId } from '../domain/ids';
 import type { Id, Match, MatchEvent, Player } from '../domain/types';
 import { RemoteError, type Api, type RemoteTeam, type TeamSnapshot } from './api';
 import { metaKey, type AccountStore, type SyncEntity, type SyncMeta, type TeamLink } from './store';
@@ -146,7 +147,8 @@ export class TeamPuller {
     }
     const snapshot = await this.api.snapshot(token, link.remoteTeamId);
     const elsewhere = snapshot.matches.filter((m) => m.control?.holder === 'other').map((m) => m.match.id);
-    return this.apply(link, data, fromSnapshot(snapshot), snapshot.seq, elsewhere, true);
+    const epochs = Object.fromEntries(snapshot.matches.filter((m) => m.control).map((m) => [m.match.id, m.control!.epoch]));
+    return this.apply({ ...link, controlEpochs: epochs }, data, fromSnapshot(snapshot), snapshot.seq, elsewhere, true);
   }
 
   private async apply(link: TeamLink, data: TeamData, incoming: Incoming[], cursor: number, elsewhere: string[] | undefined, full: boolean): Promise<PullResult> {
@@ -230,7 +232,8 @@ export class TeamPuller {
       // Los registros en conflicto se apartan del envío; el resto sigue enviándose.
       autoBlocked: link.autoBlocked === CONFLICT_BLOCK ? null : link.autoBlocked,
     };
-    const linkChanged = stableJson(next) !== stableJson({ ...link, refreshedAt: nowIso, cursor });
+    const before = (await this.store.getLink(link.localTeamId)) ?? link;
+    const linkChanged = stableJson(next) !== stableJson({ ...before, refreshedAt: nowIso, cursor });
     await this.store.saveSyncState(next, metaUpdates);
     if (linkChanged || link.readOnly !== next.readOnly) this.onLinkChanged();
     if (changes.length > 0 || linkChanged) {
@@ -283,6 +286,68 @@ export class TeamPuller {
     this.onLinkChanged();
     const record = conflict.server.record as { id: string; matchId?: string };
     this.emit(localTeamId, new Set(conflict.entity === 'player' ? [] : [conflict.entity === 'event' ? record.matchId! : record.id]));
+  }
+
+  /**
+   * Toma el control de un partido en curso que registra otro dispositivo
+   * (permiso de entrenador y conexión). Antes comprueba el estado actualizado
+   * del club (descarga completa) y usa su contador de control: si otro lo ha
+   * cambiado entretanto, el servidor lo rechaza y no se cambia nada. Las
+   * acciones sin enviar de cualquier dispositivo se conservan siempre.
+   * Devuelve «not_needed» si, al comprobarlo, ya no lo registra otro.
+   */
+  async takeControl(localTeamId: Id, matchId: string): Promise<'taken' | 'not_needed'> {
+    const first = await this.store.getLink(localTeamId);
+    if (!first || first.accessLost || first.importState === 'pending') {
+      throw new RemoteError('forbidden', 'Este equipo está bloqueado en este dispositivo: no se puede tomar el control.');
+    }
+    if (!this.remoteTeams().some((t) => t.teamId === first.remoteTeamId && t.role === 'coach' && t.status === 'active')) {
+      throw new RemoteError('forbidden', 'Solo un entrenador del equipo puede tomar el control de un partido.');
+    }
+    const device = await this.store.getDevice();
+    if (!device) throw new RemoteError('unauthorized', 'Este dispositivo no tiene sesión con el club.');
+    // 1. Estado actualizado: quién lo registra y su contador de control (si hay
+    //    un envío en curso en este dispositivo, se espera un momento).
+    let checked = await this.pull(localTeamId, { full: true });
+    for (let i = 0; checked.status === 'busy' && i < 100; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      checked = await this.pull(localTeamId, { full: true });
+    }
+    if (checked.status === 'offline') throw new RemoteError('offline', 'Hace falta conexión para tomar el control de un partido.');
+    if (checked.status !== 'ok') throw new RemoteError('server', checked.message ?? 'No se pudo comprobar el estado del partido. Inténtalo de nuevo.');
+    const link = (await this.store.getLink(localTeamId))!;
+    if (!link.controlledElsewhere?.includes(matchId)) return 'not_needed';
+    const epoch = link.controlEpochs?.[matchId];
+    if (epoch === undefined) throw new RemoteError('server', 'No se pudo comprobar el estado del partido. Inténtalo de nuevo.');
+    // 2. Transferencia (con el bloqueo del equipo: ningún envío ni recepción a la vez).
+    await waitForLock(link.remoteTeamId, async () => {
+      let result;
+      try {
+        result = await this.api.takeControl(device.token, { opId: newId(), teamId: link.remoteTeamId, matchId, expectedEpoch: epoch });
+      } catch (e) {
+        if (e instanceof RemoteError && e.code === 'control_changed') {
+          throw new RemoteError('conflict', 'Otro dispositivo ha cambiado el control de este partido mientras tanto. No se ha cambiado nada: revisa quién lo registra ahora.', e.status, e.code);
+        }
+        if (e instanceof RemoteError && e.code === 'match_not_active') {
+          throw new RemoteError('conflict', 'El partido ya no está en curso: no hace falta tomar el control.', e.status, e.code);
+        }
+        throw e;
+      }
+      const fresh = (await this.store.getLink(localTeamId)) ?? link;
+      await this.store.saveSyncState(
+        {
+          ...fresh,
+          controlledElsewhere: (fresh.controlledElsewhere ?? []).filter((id) => id !== matchId),
+          controlEpochs: { ...(fresh.controlEpochs ?? {}), [matchId]: result.epoch },
+        },
+        [],
+      );
+    });
+    this.onLinkChanged();
+    this.emit(localTeamId, new Set([matchId]));
+    // 3. Datos del partido al día para continuarlo aquí (si falla, se reciben después).
+    await this.pull(localTeamId);
+    return 'taken';
   }
 
   /**

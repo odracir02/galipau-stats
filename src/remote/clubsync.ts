@@ -96,7 +96,9 @@ export class ClubSync {
     const plan = buildPlan(await this.repo.readAll(), team, link, sentMatches);
     // Los registros en conflicto con el club se apartan (y las acciones de un
     // partido en conflicto): esperan a que el usuario elija; lo demás se envía.
-    const conflicted = new Set((link.conflicts ?? []).map((c) => c.key));
+    // Igual con los partidos en curso que registra otro dispositivo: lo de aquí
+    // se conserva sin enviar hasta recuperar su control.
+    const conflicted = new Set([...(link.conflicts ?? []).map((c) => c.key), ...(link.controlledElsewhere ?? []).map((id) => `match:${id}`)]);
     if (conflicted.size === 0) return plan;
     const matchOut = (id: string) => conflicted.has(`match:${id}`);
     const setAside = [...conflicted];
@@ -159,6 +161,11 @@ export class ClubSync {
         if (outcome.status === 'sent') {
           await this.receiver.pull(localTeamId);
           outcome = { ...outcome, ...(await verifyUpload(await this.preview(localTeamId), deps)) };
+        } else if (outcome.stop?.reason === 'recorded_elsewhere' || outcome.stop?.reason === 'conflict') {
+          // Se recibe el estado del club: lo afectado queda apartado (conflicto o
+          // partido que registra otro dispositivo), sin perder nada, y el
+          // siguiente envío manda lo demás.
+          await this.receiver.pull(localTeamId);
         }
       } else {
         outcome = await runUpload(plan, deps);
@@ -175,6 +182,9 @@ export class ClubSync {
       skipped: outcome.unchanged,
       message: outcome.stop?.message ?? (outcome.differences.length ? `${outcome.differences.length} diferencias` : null),
     });
+    // Lo apartado (conflictos, partidos que registra otro dispositivo) se indica en el resultado.
+    const aside = (await this.preview(localTeamId).catch(() => plan)).setAside?.length ?? 0;
+    if (aside > 0) outcome = { ...outcome, setAside: aside };
     // Un envío manual completo y comprobado vuelve a activar el envío automático detenido
     // (se relee el vínculo: la recepción puede haberlo actualizado).
     const fresh = await this.store.getLink(localTeamId);

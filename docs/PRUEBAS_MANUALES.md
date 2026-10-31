@@ -239,3 +239,11 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 137. Cambiar el mismo dato en los dos móviles antes de enviar. ✔ El que envía después ve «Hay 1 dato cambiado aquí y en el club a la vez» y elige cuál conservar.
 138. Retirar el código de entrenador del segundo móvil con cambios sin enviar. ✔ El equipo queda bloqueado con el aviso, sin perder nada; al volver a canjear un código, se desbloquea.
 139. «Quitar este equipo del dispositivo» en el segundo móvil. ✔ Desaparece y no vuelve solo; «Añadir a este dispositivo» en «Equipos del club».
+
+## V. Control entre entrenadores (005E.2H3, vista previa de `develop`, con datos de prueba)
+
+140. El iPhone empieza un partido y registra; el otro entrenador lo abre. ✔ Modo consulta al día, con «Tomar el control»; el iPhone sigue registrando y enviando sin problemas.
+141. En el otro dispositivo, «Tomar el control» → «Cancelar». ✔ No cambia nada. «Tomar el control» → confirmar. ✔ Pasa a registrar ese partido; el iPhone lo ve en consulta.
+142. Con una acción del iPhone sin enviar antes de perder el control. ✔ No se borra: el partido indica «Este dispositivo tiene 1 acción de este partido sin enviar»; si el iPhone vuelve a tomar el control, se envía.
+143. «Tomar el control» sin conexión. ✔ Aviso de que hace falta conexión; nada cambia.
+144. Con código de consulta. ✔ Nunca aparece «Tomar el control» ni el registro.
