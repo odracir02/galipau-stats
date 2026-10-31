@@ -45,6 +45,23 @@ export interface TeamLink {
    * solo. Un envío manual completo y comprobado lo vuelve a activar.
    */
   autoBlocked?: string | null;
+  /**
+   * «imported»: el equipo local se creó en este dispositivo como copia del
+   * equipo del club (no se subió desde aquí). Sin el campo: vínculo de un equipo
+   * propio del dispositivo (como el del registrador original).
+   */
+  origin?: 'imported';
+  /** Importación empezada y sin terminar: el equipo aún no se puede usar. */
+  importState?: 'pending';
+  /**
+   * Solo lectura en este dispositivo: no se puede editar ni enviar nada hasta que
+   * exista la sincronización en los dos sentidos.
+   */
+  readOnly?: boolean;
+  /** Último cambio del club incluido en la copia (seq de /changes). */
+  cursor?: number;
+  /** Última descarga completa de la copia. */
+  refreshedAt?: string;
 }
 
 export type SyncEntity = 'player' | 'match' | 'event';
@@ -175,6 +192,51 @@ export class AccountStore {
     const current = await db.get('links', link.localTeamId);
     if (!current || current.remoteTeamId !== link.remoteTeamId) throw new LinkTakenError(null);
     await db.put('links', link);
+  }
+
+  /**
+   * Registra una copia importada: vínculo nuevo y versiones del servidor de
+   * todos sus registros, en una sola transacción. Falla sin escribir nada si el
+   * equipo local o el del club ya están vinculados.
+   */
+  async addImportedLink(link: TeamLink, metas: SyncMeta[]): Promise<void> {
+    const db = await this.dbPromise;
+    const tx = db.transaction(['links', 'syncMeta'], 'readwrite');
+    try {
+      await Promise.all([tx.objectStore('links').add(link), ...metas.map((m) => tx.objectStore('syncMeta').put(m)), tx.done]);
+    } catch (e) {
+      throw new LinkTakenError(e);
+    }
+  }
+
+  /** Actualiza una copia importada (vínculo y versiones) en una sola transacción. */
+  async updateImportedLink(link: TeamLink, metas: SyncMeta[]): Promise<void> {
+    const db = await this.dbPromise;
+    const tx = db.transaction(['links', 'syncMeta'], 'readwrite');
+    const current = await tx.objectStore('links').get(link.localTeamId);
+    if (!current || current.remoteTeamId !== link.remoteTeamId || current.origin !== 'imported') {
+      tx.abort();
+      await tx.done.catch(() => undefined);
+      throw new LinkTakenError(null);
+    }
+    await Promise.all([tx.objectStore('links').put(link), ...metas.map((m) => tx.objectStore('syncMeta').put(m)), tx.done]);
+  }
+
+  /** Olvida una copia importada: su vínculo y sus versiones, en una sola transacción. */
+  async removeImportedLink(localTeamId: string): Promise<void> {
+    const db = await this.dbPromise;
+    const tx = db.transaction(['links', 'syncMeta'], 'readwrite');
+    const link = await tx.objectStore('links').get(localTeamId);
+    if (!link || link.origin !== 'imported') {
+      await tx.done;
+      return;
+    }
+    const keys = await tx.objectStore('syncMeta').index('byRemoteTeam').getAllKeys(link.remoteTeamId);
+    await Promise.all([...keys.map((k) => tx.objectStore('syncMeta').delete(k)), tx.objectStore('links').delete(localTeamId), tx.done]);
+  }
+
+  async getLinkByRemote(remoteTeamId: string): Promise<TeamLink | null> {
+    return (await (await this.dbPromise).getFromIndex('links', 'byRemote', remoteTeamId)) ?? null;
   }
 
   /** Quita un vínculo. Solo se ofrece si todavía no se ha enviado nada con él. */

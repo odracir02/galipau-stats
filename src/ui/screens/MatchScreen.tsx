@@ -1,10 +1,11 @@
-import { ChartColumn, List, SquarePen } from 'lucide-react';
+import { ChartColumn, List, Lock, SquarePen } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { errorMessage } from '../../app/errors';
 import { clubSync } from '../../app/remote';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
 import { showToast } from '../../app/toast';
+import { useReadOnlyTeam } from '../../app/useImportedTeam';
 import { useLoad } from '../../app/useLoad';
 import { useWakeLock } from '../../app/useWakeLock';
 import { describePayload } from '../../domain/catalog';
@@ -25,6 +26,7 @@ import { RecordPanel } from '../match/RecordPanel';
 import { ReductionSheet } from '../match/ReductionSheet';
 import { Timeline } from '../match/Timeline';
 import { StatsView } from '../stats/StatsView';
+import { TopBar } from '../components/TopBar';
 
 export function MatchScreen({ matchId }: { matchId: Id }) {
   const data = useLoad(async () => {
@@ -33,6 +35,8 @@ export function MatchScreen({ matchId }: { matchId: Id }) {
     const [team, events] = await Promise.all([repo.getTeam(match.teamId), repo.listEvents(match.id)]);
     return { match, team, events };
   }, [matchId]);
+  // Partido de una copia del club de solo lectura: solo sus estadísticas.
+  const readOnly = useReadOnlyTeam(data.data?.match.teamId ?? '');
 
   if (data.error) return <p className="form-error">{data.error}</p>;
   if (data.data === undefined) return <div className="screen" />;
@@ -46,7 +50,34 @@ export function MatchScreen({ matchId }: { matchId: Id }) {
       </div>
     );
   }
+  if (readOnly) return <ReadOnlyMatch match={data.data.match} events={data.data.events} team={data.data.team} />;
   return <MatchLive key={matchId} initialMatch={data.data.match} initialEvents={data.data.events} team={data.data.team} />;
+}
+
+/** Partido de una copia del club de solo lectura: estadísticas, sin registro ni correcciones. */
+function ReadOnlyMatch({ match, events, team }: { match: Match; events: MatchEvent[]; team: Team }) {
+  const stats = useMemo(() => computeMatchStats(match, events), [match, events]);
+  return (
+    <div className="screen">
+      <TopBar title={opponentLabel(match.opponent)} subtitle={`${formatDate(match.date)} · ${team.name}`} back={() => navigate({ name: 'team', teamId: team.id })} />
+      <main className="content">
+        <p className="notice">
+          <Icon as={Lock} size={18} />
+          Copia del club de solo lectura: aquí no se registra ni se corrige nada.
+        </p>
+        <StatsView
+          mode="match"
+          context={`${opponentLabel(match.opponent)} · ${formatDate(match.date)}`}
+          redCards={disqualifications(events)}
+          team={stats.team}
+          rows={match.squad.map((s) => ({ ...s, counters: stats.players.get(s.playerId)! }))}
+          intervals={stats.intervals}
+          pendingCount={stats.pendingCount}
+          summary={<MatchSummaryCard match={match} teamName={publicTeamName(team)} stats={stats} />}
+        />
+      </main>
+    </div>
+  );
 }
 
 type Tab = 'record' | 'timeline' | 'stats';

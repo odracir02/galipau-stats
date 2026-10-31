@@ -3017,3 +3017,10 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
 .rank-empty-icon {
   color: var(--c-text-3);
 }
+
+/* Acción de entrenador bajo cada equipo del club (copiar o abrir su copia). */
+.remote-import {
+  margin: var(--s-1) 0 var(--s-2);
+  width: 100%;
+  justify-content: flex-start;
+}

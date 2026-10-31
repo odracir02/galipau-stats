@@ -155,6 +155,9 @@ export class AutoSync {
   async setEnabled(localTeamId: string, enabled: boolean): Promise<void> {
     const link = await this.store.getLink(localTeamId);
     if (!link) return;
+    if (enabled && (link.readOnly || link.importState === 'pending')) {
+      throw new RemoteError('forbidden', 'Esta copia del club es de solo lectura en este dispositivo: no se puede activar el envío automático.');
+    }
     await this.store.updateLink({ ...link, auto: enabled });
     if (enabled) await this.schedule(localTeamId, 'check');
     else this.stop(localTeamId);
@@ -180,7 +183,8 @@ export class AutoSync {
 
   private async scheduleNow(localTeamId: string, why: 'change' | 'check' | 'retry'): Promise<void> {
     const link = await this.store.getLink(localTeamId);
-    if (!link || link.auto !== true) {
+    // Las copias del club de solo lectura nunca envían.
+    if (!link || link.auto !== true || link.readOnly || link.importState === 'pending') {
       if (this.teams.has(localTeamId)) this.stop(localTeamId);
       return;
     }
@@ -246,7 +250,7 @@ export class AutoSync {
   private async sendOnce(localTeamId: string): Promise<void> {
     const r = this.run(localTeamId);
     const link = await this.store.getLink(localTeamId);
-    if (!link || link.auto !== true || link.autoBlocked) return;
+    if (!link || link.auto !== true || link.autoBlocked || link.readOnly || link.importState === 'pending') return;
     // Solo con permiso de entrenador vigente según la última comprobación de la sesión.
     const remote = this.remoteTeams().find((t) => t.teamId === link.remoteTeamId);
     if (!remote || remote.role !== 'coach' || remote.status !== 'active') {

@@ -73,6 +73,10 @@ export class ClubSync {
   async preview(localTeamId: string): Promise<UploadPlan> {
     const link = await this.store.getLink(localTeamId);
     if (!link) throw new RemoteError('not_found', 'El equipo no está vinculado con ningún equipo del club.');
+    // Copia del club de solo lectura: desde aquí no se envía nada (aún no hay sincronización en los dos sentidos).
+    if (link.readOnly || link.importState === 'pending') {
+      throw new RemoteError('forbidden', 'Esta copia del club es de solo lectura en este dispositivo: todavía no se puede enviar nada desde aquí.');
+    }
     const team = await this.repo.getTeam(localTeamId);
     if (!team) throw new RemoteError('not_found', 'El equipo local no existe.');
     const sentMatches = new Set((await this.store.listMeta(link.remoteTeamId)).filter((m) => m.entity === 'match').map((m) => m.entityId));

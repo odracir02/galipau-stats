@@ -1,11 +1,12 @@
 import { createApi } from '../remote/api';
 import { AutoSync } from '../remote/autosync';
 import { ClubSync } from '../remote/clubsync';
+import { TeamImporter } from '../remote/importer';
 import { LiveFeed } from '../remote/live';
 import { RemoteSession } from '../remote/session';
 import { AccountStore } from '../remote/store';
 import { ClubViewer, ViewerStore } from '../remote/viewer';
-import { repo } from './repo';
+import { localDb, repo } from './repo';
 
 /**
  * Servidor de la API, fijado al compilar (ver vite.config.ts). Vacío: esta
@@ -31,6 +32,18 @@ export const clubViewer: ClubViewer | null =
 
 // Los datos descargados siguen a la sesión: sin acceso verificado, se retiran.
 if (remote && clubViewer) clubViewer.followSession(remote);
+
+/** Copias de equipos del club en este dispositivo (entrenadores); null si esta versión no usa servidor. */
+export const teamImporter: TeamImporter | null =
+  api && accountStore && remote ? new TeamImporter(localDb, accountStore, api, () => remote.getState().teams) : null;
+
+if (teamImporter && remote) {
+  // Las copias de solo lectura no se pueden modificar desde ninguna pantalla.
+  repo.protectReadOnly(teamImporter);
+  void teamImporter.load();
+  // Sin permiso de entrenador verificado, la copia se retira (como lo descargado para consulta).
+  teamImporter.followSession(remote);
+}
 
 /** Actualización en directo de la consulta (solo con una pantalla de consulta abierta y la app visible). */
 export const liveFeed: LiveFeed | null = clubViewer && remote ? new LiveFeed(clubViewer, () => remote.getState().teams) : null;

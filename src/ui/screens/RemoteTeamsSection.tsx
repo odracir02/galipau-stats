@@ -1,20 +1,27 @@
 // Equipos del club a los que este dispositivo tiene acceso con un código. Es
 // una sección separada de los equipos guardados en el dispositivo: no los
-// sustituye, no los mezcla y no los modifica.
-import { ChevronRight, CloudOff, KeyRound, UserRound } from 'lucide-react';
+// sustituye, no los mezcla y no los modifica. Con permiso de entrenador, se
+// puede copiar un equipo del club en el dispositivo («Trabajar con este equipo
+// aquí»), salvo que ya esté vinculado con uno de sus equipos.
+import { ChevronRight, CloudDownload, CloudOff, KeyRound, Link2, UserRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { remote } from '../../app/remote';
+import { remote, teamImporter } from '../../app/remote';
 import { navigate } from '../../app/router';
 import { useRemote } from '../../app/useRemote';
+import type { RemoteTeam } from '../../remote/api';
+import type { ImportState } from '../../remote/importer';
 import { formatChecked, ROLE_LABEL } from '../../remote/session';
 import { Icon } from '../components/Icon';
 import { DeviceSessionSheet } from './DeviceSessionSheet';
+import { ImportTeamSheet } from './ImportTeamSheet';
 import { JoinSheet } from './JoinSheet';
 
 export function RemoteTeamsSection() {
   const state = useRemote(remote);
   const [joining, setJoining] = useState(false);
   const [account, setAccount] = useState(false);
+  const [importing, setImporting] = useState<{ team: RemoteTeam; state: ImportState } | null>(null);
+  const imports = useImportStates(state.teams);
 
   // Al abrir la pantalla y al recuperar la conexión se comprueban los permisos con el servidor.
   useEffect(() => {
@@ -74,6 +81,7 @@ export function RemoteTeamsSection() {
                 <span className={`status status-${t.role}`}>{ROLE_LABEL[t.role]}</span>
                 <Icon as={ChevronRight} className="chevron" />
               </button>
+              <ImportAction team={t} state={imports.get(t.teamId)} onImport={(st) => setImporting({ team: t, state: st })} />
             </li>
           ))}
         </ul>
@@ -92,6 +100,72 @@ export function RemoteTeamsSection() {
       </div>
       {joining && <JoinSheet onClose={() => setJoining(false)} />}
       {account && <DeviceSessionSheet onClose={() => setAccount(false)} />}
+      {importing && (
+        <ImportTeamSheet
+          team={importing.team}
+          state={importing.state}
+          onClose={() => setImporting(null)}
+          onOpen={(localTeamId) => {
+            setImporting(null);
+            navigate({ name: 'team', teamId: localTeamId });
+          }}
+        />
+      )}
     </section>
   );
+}
+
+/** Situación de cada equipo del club en este dispositivo (se recalcula al cambiar las copias). */
+function useImportStates(teams: readonly RemoteTeam[]): Map<string, ImportState> {
+  const [states, setStates] = useState(new Map<string, ImportState>());
+  const [version, setVersion] = useState(0);
+  useEffect(() => teamImporter?.subscribe(() => setVersion((v) => v + 1)), []);
+  useEffect(() => {
+    if (!teamImporter) return;
+    let alive = true;
+    void Promise.all(teams.map(async (t) => [t.teamId, await teamImporter!.state(t.teamId)] as const)).then((list) => {
+      if (alive) setStates(new Map(list));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [teams, version]);
+  return states;
+}
+
+/** Acción de entrenador bajo cada equipo: copiarlo, abrir su copia o el equipo vinculado. */
+function ImportAction({ team, state, onImport }: { team: RemoteTeam; state: ImportState | undefined; onImport: (s: ImportState) => void }) {
+  if (!state || team.role !== 'coach') return null;
+  switch (state.kind) {
+    case 'available':
+      return (
+        <button type="button" className="btn btn-sm remote-import" onClick={() => onImport(state)}>
+          <Icon as={CloudDownload} size={16} />
+          Trabajar con este equipo aquí
+        </button>
+      );
+    case 'pending':
+      return (
+        <button type="button" className="btn btn-sm remote-import" onClick={() => onImport(state)}>
+          <Icon as={CloudDownload} size={16} />
+          Importación sin terminar
+        </button>
+      );
+    case 'imported':
+      return (
+        <button type="button" className="btn btn-sm btn-ghost remote-import" onClick={() => navigate({ name: 'team', teamId: state.link.localTeamId })}>
+          <Icon as={Link2} size={16} />
+          Copia en este dispositivo (solo lectura) · Abrir
+        </button>
+      );
+    case 'linked':
+      return (
+        <button type="button" className="btn btn-sm btn-ghost remote-import" onClick={() => navigate({ name: 'team', teamId: state.link.localTeamId })}>
+          <Icon as={Link2} size={16} />
+          Vinculado con un equipo de este dispositivo · Abrir
+        </button>
+      );
+    default:
+      return null;
+  }
 }

@@ -228,3 +228,12 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 129. Entrar en un equipo sin partidos en curso. ✔ Sin «En directo»; una sola consulta al entrar. Si el entrenador empieza un partido, se ve al pulsar «Actualizar» o al volver a entrar.
 130. Corregir una acción del partido ya finalizado en el entrenador. ✔ Se envía sola (con el envío automático activado); en la consulta, se ve con «Actualizar».
 131. (Opcional, larga) Dejar una pantalla de consulta abierta 2 h con un partido en curso. ✔ «Actualización automática pausada» y «Reanudar directo»; volver a la app no la reanuda; al pulsarlo, vuelve «En directo».
+
+## U. Copia de un equipo del club en otro dispositivo (005E.2H2A, vista previa de `develop`, con datos de prueba)
+
+132. En el iPhone principal, «Equipos del club». ✔ Su equipo aparece como «Vinculado con un equipo de este dispositivo»; no se ofrece importarlo y su envío automático no cambia.
+133. En otro móvil, unirse con el código de entrenador y pulsar «Trabajar con este equipo aquí» → «Importar». ✔ Progreso y «Copia lista y comprobada» con jugadores, partidos y acciones; «Nada pendiente de enviar».
+134. Abrir la copia. ✔ Mismos partidos y resultados que en el iPhone; aviso de solo lectura; sin «Nuevo partido», sin editar el equipo ni la plantilla; los partidos muestran solo estadísticas.
+135. Con código de consulta. ✔ No aparece «Trabajar con este equipo aquí».
+136. Registrar algo en el iPhone y enviarlo; en el otro móvil, abrir la copia. ✔ «Hay cambios en el club posteriores a esta copia»; «Actualizar copia» lo pone al día.
+137. «Quitar la copia de este dispositivo». ✔ Desaparece del móvil; en el club no cambia nada y se puede volver a importar.

@@ -123,6 +123,24 @@ Código: `src/remote/autosync.ts`, `src/app/observableRepository.ts` y el indica
 - **Exclusión mutua:** el envío automático y el manual comparten el mismo bloqueo; si coinciden, el automático espera y vuelve a intentarlo.
 - **Estado:** un icono en la cabecera del partido (sin botón) y una línea en el menú del partido y en la ficha del equipo: «Sincronizado», «Pendiente», «Sin conexión» o «Requiere atención».
 
+## Copia de un equipo del club en otro dispositivo (005E.2H2A)
+
+Código: [`src/remote/importer.ts`](../src/remote/importer.ts); interfaz en «Equipos del club» y en la ficha del equipo.
+
+- **Quién:** solo un dispositivo con permiso de entrenador vigente en el equipo (y club activo). Con código de consulta no se ofrece y se rechaza.
+- **«Trabajar con este equipo aquí»** descarga el equipo completo y crea un equipo local con **los mismos identificadores** de jugadores, partidos y acciones (también los partidos eliminados, las acciones anuladas y las sanciones adicionales). Las estadísticas se calculan con las funciones de siempre.
+- **Sin pendientes ni reenvíos:** se anotan en `syncMeta` la versión y la huella de cada registro (las mismas funciones que el envío), y el vínculo guarda el cursor (`seq`) para descargas futuras. El envío automático queda desactivado.
+- **Nunca se duplica ni se fusiona:**
+  - si el equipo del club ya está vinculado con un equipo del dispositivo (p. ej. el del registrador original), se muestra «Vinculado con un equipo de este dispositivo» y no se importa;
+  - si el dispositivo tiene un equipo sin vincular con el mismo código, o registros con los mismos identificadores (p. ej. una copia de seguridad restaurada), se detiene sin escribir nada y se explica;
+  - repetir la importación no hace nada (ni siquiera vuelve a descargar).
+- **Atomicidad:** primero se registra el vínculo como pendiente con sus versiones (una transacción en `galipaustats-cuenta`); después se escriben todos los datos del equipo (una transacción en `galipaustats`, con `add`: si algún registro ya existe, no se escribe nada); al final se marca terminado. Si falla el guardado, se retira el vínculo. Si la aplicación se cierra a mitad, queda «Importación sin terminar», de solo lectura, para reanudar o descartar: nunca un equipo a medias a la vista ni un equipo sin vincular.
+- **Solo lectura (hasta la sincronización en los dos sentidos, H2B):** el repositorio rechaza cualquier escritura en la copia (`ReadOnlyTeamError`), venga de la pantalla que venga; el envío manual y el automático se niegan. La interfaz oculta crear partidos, editar el equipo y la plantilla, y los partidos se abren solo con sus estadísticas.
+- **«Actualizar copia»** descarga de nuevo el equipo y lo pone al día, solo si la copia no tiene cambios propios (cada registro coincide con lo anotado o con lo que hay en el club); si los tuviera, no se sobrescribe nada. Al abrir la ficha se comprueba con una consulta ligera (`/changes`) si hay cambios en el club.
+- **Acceso retirado:** tras una comprobación correcta de la sesión sin permiso de entrenador en ese equipo (o sin sesión), la copia se retira del dispositivo, igual que lo descargado para consulta. Sin conexión no se retira nada. Nunca se retira un equipo propio del dispositivo.
+- **«Quitar la copia de este dispositivo»** la borra (primero los datos, después el vínculo y sus versiones). En el club no cambia nada.
+- **Regla para cuando la copia sea editable (H2B, aún no implementada):** una retirada del acceso **nunca** podrá destruir automáticamente cambios locales pendientes de enviar. El servidor ya rechaza cualquier operación sin permiso (H1); en el dispositivo, la copia con cambios pendientes se conservará bloqueada (sin edición ni envío) y marcada como sin acceso, para recuperarla con autorización (volver a tener permiso, exportar una copia de seguridad o descartarla expresamente). El diseño actual lo permite sin cambios estructurales: el único borrado automático es la retirada por sesión (`TeamImporter.retireExcept`), que solo actúa sobre copias importadas y hoy solo existen de solo lectura; en H2B bastará con que no retire las copias editables con pendientes y las marque como sin acceso.
+
 ## Consulta desde otros móviles (005E.2E)
 
 Código: `src/remote/viewer.ts` y las pantallas `RemoteTeamScreen` y `RemoteViews` (partido y rankings).

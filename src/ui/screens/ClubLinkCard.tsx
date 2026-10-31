@@ -15,6 +15,7 @@ import { pendingTotal, type PendingChanges } from '../../remote/upload';
 import { Icon } from '../components/Icon';
 import { SyncIndicator } from '../match/SyncIndicator';
 import { ConfirmSheet } from '../components/Sheet';
+import { ImportedTeamCard } from './ImportedTeamCard';
 import { LinkSheet } from './LinkSheet';
 import { UploadSheet } from './UploadSheet';
 
@@ -27,7 +28,7 @@ const STATUS_TEXT: Record<UploadRecord['status'], string> = {
   stopped: 'Envío detenido',
 };
 
-export function ClubLinkCard({ team }: { team: Team }) {
+export function ClubLinkCard({ team, onDataChanged }: { team: Team; onDataChanged?: () => void }) {
   const session = useRemote(remote);
   const [sheet, setSheet] = useState<'link' | 'upload' | 'unlink' | null>(null);
   /** Cambios sin enviar al activar el envío automático: se confirman antes del primer envío. */
@@ -42,6 +43,19 @@ export function ClubLinkCard({ team }: { team: Team }) {
 
   if (!clubSync || !info.data) return null;
   const { link, last, sent } = info.data;
+  // Copia del club importada en este dispositivo: tarjeta propia (solo lectura).
+  if (link?.origin === 'imported') {
+    return (
+      <ImportedTeamCard
+        team={team}
+        link={link}
+        onChanged={() => {
+          load();
+          onDataChanged?.();
+        }}
+      />
+    );
+  }
   const writable = session.teams.some((t) => t.role === 'coach' && t.status === 'active');
   if (!link && !writable) return null;
   const canSend = link ? session.teams.some((t) => t.teamId === link.remoteTeamId && t.role === 'coach' && t.status === 'active') : false;

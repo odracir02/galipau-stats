@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
 import { showToast } from '../../app/toast';
+import { useReadOnlyTeam } from '../../app/useImportedTeam';
 import { useLoad } from '../../app/useLoad';
 import { formatDate, opponentLabel } from '../../domain/format';
 import type { Id, Player, Team } from '../../domain/types';
@@ -24,6 +25,10 @@ export function TeamScreen({ teamId }: { teamId: Id }) {
   const team = useLoad(() => repo.getTeam(teamId), [teamId]);
   const [tab, setTab] = useState<Tab>('matches');
   const [editingTeam, setEditingTeam] = useState(false);
+  // Copia del club de solo lectura: se consulta, pero no se edita desde aquí.
+  const readOnly = useReadOnlyTeam(teamId);
+  /** Cambia al actualizar la copia del club: las listas se vuelven a leer. */
+  const [dataKey, setDataKey] = useState(0);
 
   if (team.error) return <p className="form-error">{team.error}</p>;
   if (!team.data) return team.data === undefined ? <div className="screen" /> : null;
@@ -45,15 +50,17 @@ export function TeamScreen({ teamId }: { teamId: Id }) {
             >
               <Icon as={Trophy} />
             </button>
-            <button type="button" className="icon-btn" onClick={() => setEditingTeam(true)} aria-label="Editar equipo">
-              <Icon as={Pencil} />
-            </button>
+            {!readOnly && (
+              <button type="button" className="icon-btn" onClick={() => setEditingTeam(true)} aria-label="Editar equipo">
+                <Icon as={Pencil} />
+              </button>
+            )}
           </>
         }
       />
       <main className="content">
         <OngoingMatchBanner teamId={t.id} />
-        <ClubLinkCard team={t} />
+        <ClubLinkCard team={t} onDataChanged={() => setDataKey((k) => k + 1)} />
         <Segmented
           ariaLabel="Secciones del equipo"
           value={tab}
@@ -64,9 +71,9 @@ export function TeamScreen({ teamId }: { teamId: Id }) {
             { value: 'season', label: 'Temporada' },
           ]}
         />
-        {tab === 'matches' && <MatchList team={t} />}
-        {tab === 'roster' && <Roster team={t} />}
-        {tab === 'season' && <SeasonPanel team={t} />}
+        {tab === 'matches' && <MatchList key={dataKey} team={t} readOnly={readOnly} />}
+        {tab === 'roster' && <Roster key={dataKey} team={t} readOnly={readOnly} />}
+        {tab === 'season' && <SeasonPanel key={dataKey} team={t} />}
       </main>
       {editingTeam && (
         <TeamFormSheet
@@ -83,7 +90,7 @@ export function TeamScreen({ teamId }: { teamId: Id }) {
   );
 }
 
-function MatchList({ team }: { team: Team }) {
+function MatchList({ team, readOnly }: { team: Team; readOnly: boolean }) {
   const data = useLoad(async () => {
     const matches = await repo.listMatches(team.id);
     return Promise.all(
@@ -96,19 +103,21 @@ function MatchList({ team }: { team: Team }) {
 
   return (
     <>
-      <button
-        type="button"
-        className="btn btn-primary btn-block btn-lg"
-        onClick={() => navigate({ name: 'newMatch', teamId: team.id })}
-      >
-        <Icon as={Plus} />
-        Nuevo partido
-      </button>
+      {!readOnly && (
+        <button
+          type="button"
+          className="btn btn-primary btn-block btn-lg"
+          onClick={() => navigate({ name: 'newMatch', teamId: team.id })}
+        >
+          <Icon as={Plus} />
+          Nuevo partido
+        </button>
+      )}
       {data.error && <p className="form-error">{data.error}</p>}
       {data.data?.length === 0 && (
         <div className="empty-card">
           <strong>Todavía no hay partidos</strong>
-          <span>Crea el primero para empezar a registrar estadísticas.</span>
+          <span>{readOnly ? 'El equipo del club todavía no tiene partidos.' : 'Crea el primero para empezar a registrar estadísticas.'}</span>
         </div>
       )}
       <ul className="list">
@@ -139,7 +148,7 @@ function MatchList({ team }: { team: Team }) {
   );
 }
 
-function Roster({ team }: { team: Team }) {
+function Roster({ team, readOnly }: { team: Team; readOnly: boolean }) {
   const players = useLoad(() => repo.listPlayers(team.id), [team.id]);
   const [editing, setEditing] = useState<{ player?: Player; key: number } | null>(null);
   const list = players.data ?? [];
@@ -150,10 +159,12 @@ function Roster({ team }: { team: Team }) {
 
   return (
     <>
-      <button type="button" className="btn btn-primary btn-block" onClick={() => setEditing({ key: Date.now() })}>
-        <Icon as={Plus} />
-        Añadir jugador
-      </button>
+      {!readOnly && (
+        <button type="button" className="btn btn-primary btn-block" onClick={() => setEditing({ key: Date.now() })}>
+          <Icon as={Plus} />
+          Añadir jugador
+        </button>
+      )}
       {players.error && <p className="form-error">{players.error}</p>}
       {groups.map(([title, group]) => (
         <section key={title}>
@@ -168,13 +179,14 @@ function Roster({ team }: { team: Team }) {
                   type="button"
                   className={`list-item ${p.active ? '' : 'inactive'}`}
                   onClick={() => setEditing({ player: p, key: Date.now() })}
+                  disabled={readOnly}
                 >
                   <span className="dorsal dorsal-lg">{p.number}</span>
                   <span className="list-main">
                     <strong>{p.name}</strong>
                     {!p.active && <span className="muted">Inactivo</span>}
                   </span>
-                  <Icon as={ChevronRight} className="chevron" />
+                  {!readOnly && <Icon as={ChevronRight} className="chevron" />}
                 </button>
               </li>
             ))}

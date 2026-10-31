@@ -2,6 +2,7 @@ import { ChevronRight, DatabaseBackup, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { remote } from '../../app/remote';
 import { repo } from '../../app/repo';
+import { useImportedTeam } from '../../app/useImportedTeam';
 import { navigate } from '../../app/router';
 import { useLoad } from '../../app/useLoad';
 import { Icon } from '../components/Icon';
@@ -50,6 +51,7 @@ export function TeamsScreen() {
                   <strong>{t.name}</strong>
                   <span className="muted">
                     {t.code} · Temporada {t.season}
+                    <ImportedMark teamId={t.id} />
                   </span>
                 </span>
                 <Icon as={ChevronRight} className="chevron" />
@@ -75,4 +77,10 @@ export function TeamsScreen() {
       )}
     </div>
   );
+}
+
+/** Marca de las copias del club en la lista de equipos del dispositivo. */
+function ImportedMark({ teamId }: { teamId: string }) {
+  const link = useImportedTeam(teamId);
+  return link ? <> · Copia del club (solo lectura)</> : null;
 }

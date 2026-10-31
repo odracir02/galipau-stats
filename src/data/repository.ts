@@ -41,6 +41,38 @@ export interface LocalSnapshot {
   events: MatchEvent[];
 }
 
+/** Un equipo completo: el equipo, su plantilla, sus partidos (también eliminados) y sus acciones. */
+export interface TeamData {
+  team: Team;
+  players: Player[];
+  matches: Match[];
+  events: MatchEvent[];
+}
+
+/**
+ * Operaciones sobre un equipo completo, cada una en UNA transacción: o se aplica
+ * entera o no se aplica nada (nunca quedan registros a medias a la vista).
+ * Solo para incorporar o retirar copias de equipos del club.
+ */
+export interface TeamDataStore {
+  /** Añade un equipo nuevo. Falla sin escribir nada si alguno de sus registros ya existe. */
+  addTeamData(data: TeamData): Promise<void>;
+  /** Sustituye los registros de un equipo ya guardado (mismos identificadores). */
+  replaceTeamData(data: TeamData): Promise<void>;
+  /** Lee un equipo completo en una sola lectura coherente (null si no existe). */
+  readTeamData(teamId: Id): Promise<TeamData | null>;
+  /** Borra un equipo y todos sus registros. */
+  removeTeamData(teamId: Id): Promise<void>;
+}
+
+/** Algún registro que se iba a añadir ya existe en el dispositivo: no se ha escrito nada. */
+export class RecordExistsError extends Error {
+  override name = 'RecordExistsError';
+  constructor(options?: { cause?: unknown }) {
+    super('Algunos de estos datos ya existen en el dispositivo.', options);
+  }
+}
+
 export class StorageError extends Error {
   override name = 'StorageError';
   constructor(message: string, options?: { cause?: unknown }) {

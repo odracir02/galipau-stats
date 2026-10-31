@@ -1,7 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { Id, Match, MatchEvent, Player, Team } from '../domain/types';
 import { compareEvents } from '../domain/events';
-import { StorageError, type LocalSnapshot, type Repository } from './repository';
+import { RecordExistsError, StorageError, type LocalSnapshot, type Repository, type TeamData, type TeamDataStore } from './repository';
 
 export const DB_NAME = 'galipaustats';
 export const DB_VERSION = 1;
@@ -33,7 +33,7 @@ export function openStatsDb(name: string = DB_NAME): Promise<IDBPDatabase<StatsD
 /** Copia profunda para que nadie mute los objetos que se guardan o se leen. */
 const clone = <T>(value: T): T => structuredClone(value);
 
-export class IndexedDbRepository implements Repository {
+export class IndexedDbRepository implements Repository, TeamDataStore {
   private readonly dbPromise: Promise<IDBPDatabase<StatsDB>>;
 
   constructor(name: string = DB_NAME) {
@@ -109,6 +109,67 @@ export class IndexedDbRepository implements Repository {
   }
   saveEvent(event: MatchEvent) {
     return this.put('events', event, 'guardar la acción');
+  }
+
+  // --- Equipos completos (una transacción por operación) -------------------------
+
+  async addTeamData(data: TeamData): Promise<void> {
+    try {
+      const db = await this.dbPromise;
+      const tx = db.transaction(['teams', 'players', 'matches', 'events'], 'readwrite', { durability: 'strict' });
+      // add (no put): si cualquier registro ya existe, la transacción entera se anula.
+      const writes = [
+        tx.objectStore('teams').add(clone(data.team)),
+        ...data.players.map((p) => tx.objectStore('players').add(clone(p))),
+        ...data.matches.map((m) => tx.objectStore('matches').add(clone(m))),
+        ...data.events.map((e) => tx.objectStore('events').add(clone(e))),
+      ];
+      await Promise.all([...writes, tx.done]);
+    } catch (cause) {
+      if ((cause as { name?: string } | null)?.name === 'ConstraintError') throw new RecordExistsError({ cause });
+      throw new StorageError('No se pudo guardar el equipo en el almacenamiento del dispositivo.', { cause });
+    }
+  }
+
+  replaceTeamData(data: TeamData): Promise<void> {
+    return this.run('guardar el equipo', async (db) => {
+      const tx = db.transaction(['teams', 'players', 'matches', 'events'], 'readwrite', { durability: 'strict' });
+      await Promise.all([
+        tx.objectStore('teams').put(clone(data.team)),
+        ...data.players.map((p) => tx.objectStore('players').put(clone(p))),
+        ...data.matches.map((m) => tx.objectStore('matches').put(clone(m))),
+        ...data.events.map((e) => tx.objectStore('events').put(clone(e))),
+        tx.done,
+      ]);
+    });
+  }
+
+  readTeamData(teamId: Id): Promise<TeamData | null> {
+    return this.run('leer el equipo', async (db) => {
+      const tx = db.transaction(['teams', 'players', 'matches', 'events'], 'readonly');
+      const team = await tx.objectStore('teams').get(teamId);
+      const players = await tx.objectStore('players').index('byTeam').getAll(teamId);
+      const matches = await tx.objectStore('matches').index('byTeam').getAll(teamId);
+      const events = (await Promise.all(matches.map((m) => tx.objectStore('events').index('byMatch').getAll(m.id)))).flat();
+      await tx.done;
+      return team ? clone({ team, players, matches, events }) : null;
+    });
+  }
+
+  removeTeamData(teamId: Id): Promise<void> {
+    return this.run('borrar el equipo', async (db) => {
+      const tx = db.transaction(['teams', 'players', 'matches', 'events'], 'readwrite', { durability: 'strict' });
+      const players = await tx.objectStore('players').index('byTeam').getAllKeys(teamId);
+      const matches = await tx.objectStore('matches').index('byTeam').getAllKeys(teamId);
+      const events = (await Promise.all(matches.map((id) => tx.objectStore('events').index('byMatch').getAllKeys(id)))).flat();
+      await Promise.all([
+        ...events.map((id) => tx.objectStore('events').delete(id)),
+        ...matches.map((id) => tx.objectStore('matches').delete(id)),
+        ...players.map((id) => tx.objectStore('players').delete(id)),
+        tx.objectStore('teams').delete(teamId),
+        tx.done,
+      ]);
+    });
   }
 
   readAll(): Promise<LocalSnapshot> {
