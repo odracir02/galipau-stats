@@ -49,7 +49,7 @@
 | D45 | Códigos de 12 símbolos sin confundibles, solo hash, rotación = revocar + crear, límite de intentos en D1 | Difíciles de adivinar, fáciles de dictar y revocables. El límite en D1 es exacto; el de Cloudflare es aproximado. |
 | D46 | Sin relación con el equipo o club → 404; con permiso insuficiente → 403 | No se revela qué equipos o clubes existen. |
 | D47 | Concurrencia optimista por `version` + `opId` idempotente + registro de cambios con `seq` | Reintentos seguros, conflictos detectados y descarga incremental sin relojes de dispositivo. |
-| D48 | Un dispositivo registra cada partido (`recorder_device_id`) | Evita conflictos en directo; la transferencia controlada cubre los casos excepcionales. |
+| D48 | Un dispositivo registra cada partido (`recorder_device_id`) | Evita conflictos en directo; la transferencia controlada cubre los casos excepcionales. Sustituida por D120. |
 | D49 | `people` opcional para jugadores en varios equipos | Ranking de club sin duplicar personas; solo el nombre visible (minimización). |
 | D50 | Validación de acciones compartida (`src/domain/validation.ts`) entre aplicación y Worker | Las reglas de catálogo, convocatoria y porteros son idénticas en ambos lados. |
 | D51 | Cuatro roles en dos sujetos: dispositivos (`coach`, `viewer` en `grants`) e identidades administrativas (`superadmin`, `club_admin` en `admin_roles`) | Los roles administrativos exigen una persona con credencial fuerte; los de equipo, solo un dispositivo. La base de datos impide mezclarlos. |
@@ -121,3 +121,7 @@
 | D117 | La consulta periódica solo existe con un partido en curso o en el descanso | Fuera de los partidos no hay nada que seguir; un partido nuevo se descubre al entrar o con «Actualizar», sin consultas permanentes. |
 | D118 | Tras terminar el último partido en curso, 3 consultas de cierre antes de parar | El registrador envía el partido antes que sus acciones; así llegan también las últimas. |
 | D119 | Seguimiento continuo de 2 h como máximo, con reanudación manual | Un partido olvidado en curso no genera peticiones toda la noche; el límite no se reinicia con cada gol ni al volver a la app. |
+| D120 | El control exclusivo de un partido solo existe en curso o en el descanso (`control_device_id`); los preparados y finalizados los corrige cualquier entrenador con su versión | Un partido no queda bloqueado para siempre por el dispositivo que lo subió (cierre de sesión, reinstalación, cambio de móvil). |
+| D121 | Cualquier entrenador del equipo toma el control con confirmación, sin esperar inactividad, indicando el contador de control visto | Si dos lo piden a la vez, solo uno lo consigue; nadie toma el control sin haber visto quién lo tenía. |
+| D122 | La condición de control va dentro de cada sentencia que escribe | Una escritura del dispositivo que acaba de perder el control nunca se aplica, aunque llegue a la vez que la transferencia. |
+| D123 | Un dispositivo revocado, o cuyo permiso de entrenador es posterior a cuando tomó el control, no lo conserva | Retirar el acceso libera sus partidos; volver a canjear un código no lo devuelve. |

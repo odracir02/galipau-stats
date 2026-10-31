@@ -7,11 +7,14 @@
 //   * Sin sobrescrituras silenciosas: el dispositivo indica la versión sobre la
 //     que editó (baseVersion). Si el servidor tiene otra, responde conflicto con
 //     su copia y el dispositivo decide.
-//   * Un partido lo registra un solo dispositivo; los demás reciben conflicto
-//     hasta que se transfiera.
+//   * Un partido en curso o en el descanso lo registra un solo dispositivo (el
+//     que tiene su control, ver control.ts); los demás reciben conflicto hasta
+//     que tomen el control. Los preparados y finalizados los corrige cualquier
+//     entrenador del equipo con la versión base correcta.
 import type { Id, MatchEvent } from '../../src/domain/types';
 import { assertValidEvent, ValidationError } from '../../src/domain/validation';
 import { authorize } from './auth';
+import { assertMayWrite, blockedSql, controlFollowUp, controlValidColumn, controlView, recordedElsewhere, type ControlRow } from './control';
 import type { Db, Statement } from './db';
 import { HttpError, notFound } from './errors';
 import {
@@ -70,15 +73,18 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
   }
 
   // 2. El partido debe ser de ese equipo y no estar eliminado.
-  const match = await db
-    .prepare('SELECT * FROM matches WHERE id = ? AND team_id = ?')
-    .bind(op.event.matchId, op.teamId)
-    .first<MatchRow & { recorder_device_id: string | null }>();
+  const readMatch = () =>
+    db
+      .prepare(`SELECT m.*, ${controlValidColumn('m')} FROM matches m WHERE m.id = ? AND m.team_id = ?`)
+      .bind(op.event.matchId, op.teamId)
+      .first<MatchRow & ControlRow & { recorder_device_id: string | null }>();
+  const match = await readMatch();
   if (!match) throw notFound();
   if (match.deleted_at) throw new HttpError(409, 'match_deleted', 'El partido está eliminado.');
-  if (match.recorder_device_id && match.recorder_device_id !== deviceId) {
-    throw new HttpError(409, 'match_recorded_elsewhere', 'Otro dispositivo registra este partido.');
-  }
+  // Partido activo con el control de otro dispositivo (se vuelve a comprobar dentro de la escritura).
+  assertMayWrite(match, deviceId);
+  /** La escritura solo se aplica si, en ese momento, el partido no está bloqueado para este dispositivo. */
+  const allowed = `NOT EXISTS (SELECT 1 FROM matches m WHERE m.id = ? AND ${blockedSql('m')})`;
 
   // 3. Mismas reglas que la aplicación (catálogo, convocatoria, porteros).
   const squad = await db.prepare('SELECT * FROM match_squad WHERE match_id = ?').bind(match.id).all<SquadRow>();
@@ -108,7 +114,8 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
   if (!current) {
     if (op.baseVersion !== null) throw conflict(null, 'La acción ya no existe en el servidor.');
     const ins = insertSql('events', { ...incoming, version: 1, updated_by_device_id: deviceId });
-    writes.push(db.prepare(ins.sql).bind(...ins.values));
+    const conditional = ins.sql.replace(/ VALUES \((.*)\)$/, ' SELECT $1') + ` WHERE ${allowed}`;
+    writes.push(db.prepare(conditional).bind(...ins.values, match.id, deviceId));
     result = { status: 'applied', entityId: op.event.id, version: 1 };
   } else if (op.baseVersion === null) {
     // Alta repetida sin registro de la operación (p. ej. opId regenerado):
@@ -124,7 +131,7 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
         .prepare(
           `UPDATE events SET player_id = ?, kind = ?, shot_type = ?, result = ?, turnover_type = ?, period = ?,
              match_time_ms = ?, updated_at = ?, deleted_at = ?, adds_to_previous = ?, version = ?, updated_by_device_id = ?
-           WHERE id = ? AND version = ?`,
+           WHERE id = ? AND version = ? AND ${allowed}`,
         )
         .bind(
           incoming.player_id,
@@ -141,6 +148,8 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
           deviceId,
           op.event.id,
           current.version,
+          match.id,
+          deviceId,
         ),
     );
     result = { status: 'applied', entityId: op.event.id, version };
@@ -150,13 +159,16 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
   //    solo se escriben si la acción quedó exactamente en la versión esperada y
   //    por este dispositivo: si otro la cambió entre la lectura y la escritura,
   //    no se marca como aplicada y se responde conflicto.
-  const guard = 'WHERE (SELECT version FROM events WHERE id = ?) = ? AND (SELECT updated_by_device_id FROM events WHERE id = ?) = ?';
+  const condition = '(SELECT version FROM events WHERE id = ?) = ? AND (SELECT updated_by_device_id FROM events WHERE id = ?) = ?';
+  const guard = `WHERE ${condition}`;
   const guardValues = [op.event.id, result.version, op.event.id, deviceId];
   if (result.status === 'applied') {
     writes.push(
       db
         .prepare('UPDATE matches SET recorder_device_id = ? WHERE id = ? AND recorder_device_id IS NULL')
         .bind(deviceId, match.id),
+      // Toma el control si el partido está activo y libre; anota la actividad.
+      ...controlFollowUp(db, match.id, deviceId, nowIso, condition, guardValues),
       db
         .prepare(`INSERT INTO change_log (team_id, entity, entity_id, version, changed_at) SELECT ?, ?, ?, ?, ? ${guard}`)
         .bind(op.teamId, 'event', op.event.id, result.version, nowIso, ...guardValues),
@@ -186,7 +198,12 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
     throw e;
   }
   const recorded = await db.prepare('SELECT 1 AS ok FROM sync_ops WHERE op_id = ?').bind(op.opId).first();
-  if (!recorded) throw conflict(await readEvent(db, op.event.id), 'La acción ha cambiado en el servidor durante la sincronización.');
+  if (!recorded) {
+    // Otro dispositivo tomó el control entre la lectura y la escritura.
+    const now2 = await readMatch();
+    if (now2 && controlView(now2, deviceId).holder === 'other') throw recordedElsewhere();
+    throw conflict(await readEvent(db, op.event.id), 'La acción ha cambiado en el servidor durante la sincronización.');
+  }
   return result;
 }
 

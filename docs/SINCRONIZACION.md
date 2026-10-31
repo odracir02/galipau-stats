@@ -30,7 +30,7 @@ Al recuperar la conexión, al volver a la app y periódicamente mientras hay pen
 2. Respuestas:
    - `applied` o `duplicate`: se guarda la nueva versión en `syncMeta` y se borra la operación de `outbox`.
    - **409 `conflict`**: llega la copia del servidor. La operación queda marcada y la app muestra «cambio en conflicto», con las dos versiones. El usuario elige; por defecto se conserva la del servidor. Nunca se pisa sola.
-   - **409 `match_recorded_elsewhere`**: otro dispositivo registra el partido. Hay que transferirlo (ver más abajo).
+   - **409 `match_recorded_elsewhere`**: el partido está en curso y lo registra otro dispositivo. Hay que tomar el control (ver más abajo).
    - **401 o 403**: credencial revocada o permiso insuficiente. Se detiene la subida y se avisa. Los datos locales se conservan.
    - **422**: acción no válida. Error de programa: se registra y se deja aparte.
    - **Error de red o 5xx**: reintento con espera creciente. La operación sigue en `outbox`.
@@ -51,14 +51,22 @@ En el servidor ([`applyEventOp`](../server/src/sync.ts)):
 - Los borrados llegan como registros con `deletedAt`: las estadísticas, que ya excluyen lo borrado, se recalculan solas.
 - Los dispositivos de consulta solo descargan.
 
-## Un partido, un dispositivo
+## Control de los partidos entre entrenadores (005E.2H1)
 
-- El primer dispositivo que sube una acción de un partido queda como `recorder_device_id`. Hoy el servidor lo asigna con la primera acción; en 005C se asignará al subir el partido.
-- Los demás dispositivos reciben `409 match_recorded_elsewhere` si intentan escribir en ese partido. Pueden consultarlo.
-- **Transferencia controlada** (005C), para cuando se agota la batería o hay un cambio de responsable:
-  1. Un entrenador o administrador pide la transferencia (permiso `match.transfer`).
-  2. El servidor cambia `recorder_device_id`.
-  3. El dispositivo anterior, al sincronizar, ve que ya no registra ese partido. Sus operaciones pendientes de ese partido se muestran como conflicto para decidir, no se descartan.
+Código: [`server/src/control.ts`](../server/src/control.ts) y migración `0005_match_control.sql`.
+
+- **Un partido en curso o en el descanso lo registra un solo dispositivo:** el que tiene su control (`control_device_id`). Los demás reciben **409 `match_recorded_elsewhere`** al escribir en él (partido, convocatoria, cronómetro, acciones o borrado) y pueden consultarlo.
+- **Los preparados y los finalizados no tienen dueño:** cualquier entrenador del equipo los corrige con la versión base correcta; dos correcciones sobre la misma versión dan conflicto y nunca se pisan.
+- **Tomar el control sin pedirlo:** quien escribe en un partido activo que no tiene control (al iniciarlo, al reanudar uno finalizado o si el anterior ya no está autorizado) lo toma. Al finalizar o eliminar el partido se libera.
+- **Tomar el control de otro:** `POST /api/sync/control` `{ opId, teamId, matchId, expectedEpoch }`, con permiso `match.transfer` (entrenador del equipo) y desde un dispositivo. `expectedEpoch` es el contador de control que ha visto el dispositivo (en la descarga: `matches[].control.epoch`).
+  - Atómica: solo se aplica si el contador sigue siendo el esperado. Si dos piden a la vez, uno lo consigue y el otro recibe **409 `control_changed`** con el estado nuevo (sin identificar dispositivos).
+  - Si el partido ya no está en curso: **409 `match_not_active`**.
+  - Idempotente por `opId`: un reintento no hace una segunda transferencia.
+  - El contenido del partido y su versión no cambian. Queda en `match_control_log` (auditoría interna) y en `change_log`, para que los demás dispositivos lo vean.
+- **El dispositivo anterior pierde el permiso al instante:** la condición de control va dentro de cada sentencia que escribe, así que una escritura suya que llegue durante o después de la transferencia no se aplica. Sus cambios sin enviar siguen en su dispositivo; la versión actual de la aplicación detiene el envío automático con el aviso «Otro dispositivo registra este partido» y los conserva como pendientes.
+- **Dispositivos revocados:** no retienen el control. Solo cuenta si el dispositivo sigue vigente y conserva el permiso de entrenador que tenía al tomarlo: si se le retira y vuelve a canjear un código, no lo recupera por ello. Cerrar la sesión o dejar el equipo lo libera en la misma transacción.
+- **La descarga** indica por partido `control: { holder: 'here' | 'other' | null, epoch, seenAt }`, sin identificadores de dispositivos. `recordedHere` se mantiene por compatibilidad (quién lo subió).
+- `recorder_device_id` se conserva como dato histórico; ya no bloquea nada.
 - El cronómetro (`clock_json`) se sube con el partido para que el nuevo dispositivo continúe desde el mismo punto. El servidor no lo interpreta.
 
 ## Jugadores, partidos y descarga completa (005E.2A)

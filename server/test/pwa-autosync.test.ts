@@ -5,7 +5,7 @@ import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ObservableRepository } from '../../src/app/observableRepository';
 import { IndexedDbRepository } from '../../src/data/indexedDbRepository';
-import type { Match, Team } from '../../src/domain/types';
+import type { Match, MatchEvent, Team } from '../../src/domain/types';
 import * as svc from '../../src/services/matchService';
 import { createTeam, savePlayer } from '../../src/services/teamService';
 import { createApi, type Api, type RemoteTeam } from '../../src/remote/api';
@@ -14,6 +14,7 @@ import { ClubSync } from '../../src/remote/clubsync';
 import { AccountStore } from '../../src/remote/store';
 import { UploadBusyError } from '../../src/remote/upload';
 import worker, { type Env } from '../src/index';
+import { takeControl } from '../src/control';
 import { addClub, addDevice, addTeam, CODE_KEY, PEPPER } from './seed';
 import { migratedDb, type SqliteD1 } from './sqliteD1';
 
@@ -495,5 +496,54 @@ describe('finalizar el partido no detiene el envío del registrador', () => {
     await settle(d.auto, 'synced');
     await new Promise((r) => setTimeout(r, 300));
     expect(net).toMatchObject({ writes: 0, reads: 0 });
+  });
+});
+
+describe('control del partido con la versión actual de la aplicación', () => {
+  it('otro entrenador toma el control: el envío automático se detiene y lo pendiente se conserva', async () => {
+    const d = await deviceSetup(coachToken, 'iphone');
+    match = await svc.toggleClock(local, match); // en curso
+    await firstManualUpload(d);
+    expect(db.sqlite.prepare('SELECT control_device_id, control_epoch FROM matches').get()).toEqual({ control_device_id: 'iphone', control_epoch: 1 });
+
+    const other = await addDevice(db, 'otro-entrenador', [{ clubId: 'A', teamId: REMOTE, role: 'coach' }]);
+    await takeControl(db, other.auth, { opId: 'tomar', teamId: REMOTE, matchId: match.id, expectedEpoch: 1 });
+
+    const mine = await svc.recordEvent(local, match, { kind: 'recovery' }, ids[0]!, { period: 1, matchTimeMs: 0 });
+    await waitFor(() => d.auto.state(team.id).status === 'attention');
+    expect(d.auto.state(team.id).message).toMatch(/Otro dispositivo registra este partido/);
+    // Nada se pierde: la acción sigue en el dispositivo y pendiente de enviar.
+    expect((await local.listEvents(match.id)).some((e) => e.id === mine.id)).toBe(true);
+    expect((await d.sync.pending(team.id)).events).toBe(1);
+    expect(count('SELECT COUNT(*) AS n FROM events')).toBe(20);
+    // Y no se reintenta solo.
+    const writes = net.writes;
+    await new Promise((r) => setTimeout(r, 300));
+    expect(net.writes).toBe(writes);
+  });
+
+  it('partidos finalizados del iPhone: otro entrenador los corrige y el iPhone no reenvía nada', async () => {
+    const d = await deviceSetup(coachToken, 'iphone');
+    match = await svc.finishMatch(local, match);
+    await firstManualUpload(d);
+    const other = await addDevice(db, 'otro-entrenador', [{ clubId: 'A', teamId: REMOTE, role: 'coach' }]);
+    const row = db.sqlite.prepare('SELECT version FROM matches').get() as { version: number };
+    expect(row.version).toBeGreaterThan(0);
+    const server = (await worker.fetch(new Request(`https://api.example/api/teams/${REMOTE}/snapshot`, { headers: { Authorization: `Bearer ${other.token}` } }), env).then((r) => r.json())) as {
+      events: { version: number; event: MatchEvent }[];
+    };
+    const target = server.events[0]!;
+    const res = await worker.fetch(
+      new Request('https://api.example/api/sync/events', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${other.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ opId: 'corr-1', teamId: REMOTE, baseVersion: target.version, event: { ...target.event, matchTimeMs: 12_000 } }),
+      }),
+      env,
+    );
+    expect(res.status).toBe(200);
+    await d.auto.checkAll();
+    await settle(d.auto, 'synced');
+    expect(net.writes).toBe(0);
   });
 });

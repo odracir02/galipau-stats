@@ -178,13 +178,19 @@ describe('partidos y convocatoria', () => {
     expect(JSON.parse(row2.clock_json)).not.toHaveProperty('ajeno');
   });
 
-  it('otro dispositivo no puede modificar el partido (409) y nada cambia', async () => {
-    await applyMatchOp(db, coach, mOp(localMatch()));
-    const err = await errorOf(applyMatchOp(db, otherCoach, mOp(localMatch({ opponent: 'Cambiado' }), 1)));
+  it('partido en curso: otro dispositivo no puede modificarlo (409) y nada cambia', async () => {
+    await applyMatchOp(db, coach, mOp(localMatch({ status: 'in_progress', finishedAt: null })));
+    const err = await errorOf(applyMatchOp(db, otherCoach, mOp(localMatch({ status: 'in_progress', finishedAt: null, opponent: 'Cambiado' }), 1)));
     expect(err).toMatchObject({ status: 409, code: 'match_recorded_elsewhere' });
     expect(db.sqlite.prepare('SELECT opponent, version FROM matches').get()).toEqual({ opponent: 'BM Rival', version: 1 });
     // Tampoco sus acciones.
     expect(await errorOf(applyEventOp(db, otherCoach, eOp(localEvents()[0]!)))).toMatchObject({ code: 'match_recorded_elsewhere' });
+  });
+
+  it('partido finalizado: otro entrenador lo corrige con la versión base correcta', async () => {
+    await applyMatchOp(db, coach, mOp(localMatch()));
+    expect(await applyMatchOp(db, otherCoach, mOp(localMatch({ opponent: 'Corregido' }), 1))).toMatchObject({ status: 'applied', version: 2 });
+    expect(db.sqlite.prepare('SELECT opponent, version, control_device_id FROM matches').get()).toEqual({ opponent: 'Corregido', version: 2, control_device_id: null });
   });
 
   it('edición del registrador sobre su versión; versión antigua: conflicto con su copia', async () => {

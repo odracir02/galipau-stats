@@ -61,7 +61,8 @@ Ver los comentarios de [`0001_initial.sql`](../server/migrations/0001_initial.sq
 | `teams` | Equipo: nombre, código corto, temporada, categoría, modalidad | Un club; código único dentro del club |
 | `people` | Persona del club que puede jugar en varios equipos (solo nombre visible) | Un club |
 | `players` | Jugador de la plantilla (= `Player` local) | Un equipo; opcionalmente una persona del mismo club |
-| `matches` | Partido (= `Match` local) y dispositivo que lo registra | Un equipo |
+| `matches` | Partido (= `Match` local), dispositivo que lo subió (histórico) y dispositivo con su control mientras está en curso | Un equipo |
+| `match_control_log` | Transferencias de control (auditoría interna) | Un equipo |
 | `match_squad` | Convocatoria con nombre/dorsal/posición del momento | Partido y jugadores del mismo equipo |
 | `events` | Acción (= `MatchEvent` local); `player_id` nulo = pendiente | Partido y jugador del mismo equipo |
 | `devices`, `device_tokens` | Dispositivos y hash de sus credenciales | — |
@@ -108,14 +109,14 @@ Correspondencia con IndexedDB:
 | `GET /api/teams/:teamId/changes?since=N` | consulta | Cambios posteriores al cursor N |
 | `GET /api/teams/:teamId/snapshot` | consulta | Equipo completo en una lectura coherente: jugadores, partidos con convocatoria y cronómetro, acciones (también las borradas) y el cursor `seq` para seguir con `changes`. Sin códigos, tokens ni identificadores de otros dispositivos |
 | `POST /api/sync/players` | entrenador (`roster.write`) | Subir un jugador (alta o edición) |
-| `POST /api/sync/matches` | entrenador (`match.write`) | Subir un partido con su convocatoria (alta, edición o borrado lógico). Solo el dispositivo que lo registra |
-| `POST /api/sync/events` | entrenador, administrador de club o superadministrador | Subir una acción (alta, edición o borrado) |
+| `POST /api/sync/matches` | entrenador (`match.write`) | Subir un partido con su convocatoria (alta, edición o borrado lógico). En curso o en el descanso, solo el dispositivo con su control |
+| `POST /api/sync/events` | entrenador, administrador de club o superadministrador | Subir una acción (alta, edición o borrado). En partidos en curso, solo el dispositivo con el control |
+| `POST /api/sync/control` | entrenador (`match.transfer`) | Tomar el control de un partido en curso o en el descanso, con el contador de control visto ([SINCRONIZACION.md](SINCRONIZACION.md#control-de-los-partidos-entre-entrenadores-005e2h1)) |
 
 Autenticación: `Authorization: Bearer <token del dispositivo>`. Las rutas de administración (`/api/admin/*`) usan Cloudflare Access y están en [AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#operaciones-implementadas). Roles y permisos: [SEGURIDAD.md](SEGURIDAD.md).
 
 De fases posteriores son:
 
-- la transferencia de partidos;
 - la subida de los datos del equipo (nombre, `publicName`).
 
 **Requisito de despliegue:** el código de jugadores, partidos y sanciones adicionales usa las columnas de la migración 0004. Antes de desplegarlo hay que aplicar 0004 en la D1 del entorno; con un Worker nuevo sobre una base sin 0004, la subida de acciones fallaría.

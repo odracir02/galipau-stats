@@ -284,14 +284,22 @@ describe('envío', () => {
     expect(await local.readAll()).toEqual(before);
   });
 
-  it('otro dispositivo no puede escribir los partidos ya registrados', async () => {
+  it('otro dispositivo con una copia sin versiones: no duplica y nunca sobrescribe', async () => {
     const first = await syncFor(tokens.coach, 'iphone');
     await first.sync.link(localTeam.id, REMOTE);
     await first.sync.upload(localTeam.id);
     const other = await syncFor(tokens.other, 'otro-movil');
     await other.sync.link(localTeam.id, REMOTE);
-    const out = await other.sync.upload(localTeam.id);
-    expect(out).toMatchObject({ status: 'stopped', stop: { reason: 'recorded_elsewhere' } });
+    // Mismos datos: nada nuevo en el servidor.
+    expect((await other.sync.upload(localTeam.id)).status).toBe('verified');
+    expect(counts()).toEqual([5, 2, 8, 8, 15]);
+    // Datos distintos sin la versión del servidor: conflicto, sin tocar nada.
+    const m = (await local.listMatches(localTeam.id))[0]!;
+    await local.saveMatch({ ...m, opponent: 'Copia antigua' });
+    const third = await syncFor(tokens.other, 'tercer-movil');
+    await third.sync.link(localTeam.id, REMOTE);
+    expect(await third.sync.upload(localTeam.id)).toMatchObject({ status: 'stopped', stop: { reason: 'conflict' } });
+    expect(count("matches WHERE opponent = 'Copia antigua'")).toBe(0);
     expect(counts()).toEqual([5, 2, 8, 8, 15]);
   });
 

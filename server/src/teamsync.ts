@@ -6,12 +6,15 @@
 //   * Sin sobrescrituras silenciosas: cada cambio indica la versión sobre la que
 //     se hizo (baseVersion); si el servidor tiene otra, responde conflicto con su
 //     copia y no toca nada.
-//   * Un partido lo modifica solo el dispositivo que lo registra.
+//   * Un partido en curso o en el descanso lo modifica solo el dispositivo con
+//     su control (control.ts); los preparados y finalizados, cualquier
+//     entrenador del equipo con la versión base correcta.
 //   * Los identificadores son los del dispositivo: el mismo UUID es el mismo
 //     registro, así que subir dos veces no duplica nada.
 import type { ClockState, Id, Match, Player } from '../../src/domain/types';
 import { assertValidPlayerFields, ValidationError } from '../../src/domain/validation';
 import { authorize } from './auth';
+import { assertMayWrite, blockedSql, controlFollowUp, controlValidColumn, controlView, isActive, recordedElsewhere, type ControlRow, type ControlView } from './control';
 import type { Db, SqlValue, Statement } from './db';
 import { HttpError, notFound } from './errors';
 import {
@@ -290,8 +293,10 @@ function sameSquad(a: readonly SquadRow[], b: readonly SquadRow[]): boolean {
   return sa.length === sb.length && sa.every((k, i) => k === sb[i]);
 }
 
-async function readMatch(db: Db, id: Id): Promise<{ row: Versioned<MatchRow> & { recorder_device_id: string | null }; squad: SquadRow[] } | null> {
-  const row = await db.prepare('SELECT * FROM matches WHERE id = ?').bind(id).first<Versioned<MatchRow> & { recorder_device_id: string | null }>();
+type StoredMatch = Versioned<MatchRow> & ControlRow & { recorder_device_id: string | null };
+
+async function readMatch(db: Db, id: Id): Promise<{ row: StoredMatch; squad: SquadRow[] } | null> {
+  const row = await db.prepare(`SELECT m.*, ${controlValidColumn('m')} FROM matches m WHERE m.id = ?`).bind(id).first<StoredMatch>();
   if (!row) return null;
   const squad = await db.prepare('SELECT * FROM match_squad WHERE match_id = ?').bind(id).all<SquadRow>();
   return { row, squad: squad.results };
@@ -318,17 +323,21 @@ export async function applyMatchOp(db: Db, auth: AuthContext, op: MatchOp, now =
 
   const current = await readMatch(db, match.id);
   if (current && current.row.team_id !== op.teamId) throw notFound();
-  if (current?.row.recorder_device_id && current.row.recorder_device_id !== deviceId) {
-    throw new HttpError(409, 'match_recorded_elsewhere', 'Otro dispositivo registra este partido.');
-  }
+  // Partido activo con el control de otro dispositivo: no se toca (se vuelve a
+  // comprobar dentro de la propia escritura).
+  if (current) assertMayWrite(current.row, deviceId);
+  const nowIso = now.toISOString();
 
   let result: OpResult;
   let write: Statement | null = null;
   let squadChanged = false;
   if (!current) {
     if (op.baseVersion !== null) throw conflict('match', null, 'El partido ya no existe en el servidor.');
-    // Quien lo sube es quien lo registra.
-    const ins = insertSql('matches', { ...rows.match, recorder_device_id: deviceId, version: 1, updated_by_device_id: deviceId });
+    // Quien lo sube es quien lo registró (histórico); si llega ya activo, tiene su control.
+    const control = isActive({ status: rows.match.status, deleted_at: rows.match.deleted_at })
+      ? { control_device_id: deviceId, control_epoch: 1, control_since: nowIso, control_seen_at: nowIso }
+      : {};
+    const ins = insertSql('matches', { ...rows.match, recorder_device_id: deviceId, version: 1, updated_by_device_id: deviceId, ...control });
     write = db.prepare(ins.sql).bind(...ins.values);
     squadChanged = true;
     result = { status: 'applied', entityId: match.id, version: 1 };
@@ -346,7 +355,7 @@ export async function applyMatchOp(db: Db, auth: AuthContext, op: MatchOp, now =
         `UPDATE matches SET opponent = ?, date = ?, venue = ?, season = ?, status = ?, half_minutes = ?, clock_json = ?,
            score_adj_own = ?, score_adj_opponent = ?, updated_at = ?, finished_at = ?, deleted_at = ?,
            recorder_device_id = COALESCE(recorder_device_id, ?), version = ?, updated_by_device_id = ?
-         WHERE id = ? AND version = ?`,
+         WHERE id = ? AND version = ? AND NOT ${blockedSql('matches')}`,
       )
       .bind(
         m.opponent,
@@ -366,14 +375,17 @@ export async function applyMatchOp(db: Db, auth: AuthContext, op: MatchOp, now =
         deviceId,
         match.id,
         current.row.version,
+        deviceId,
       );
     squadChanged = !sameSquad(current.squad, rows.squad);
     result = { status: 'applied', entityId: match.id, version };
   }
 
-  // Convocatoria: se sustituye entera, solo si la escritura del partido fue la propia.
-  const dependent = squadChanged
-    ? (guard: string, guardValues: SqlValue[]) => [
+  // Solo si la escritura del partido fue la propia: la convocatoria se sustituye
+  // entera y el control se toma, se mantiene o se libera según el estado nuevo.
+  const dependent = (guard: string, guardValues: SqlValue[]) => [
+    ...(squadChanged
+      ? [
         db.prepare(`DELETE FROM match_squad WHERE match_id = ? AND ${guard}`).bind(match.id, ...guardValues),
         ...rows.squad.map((s) =>
           db
@@ -383,8 +395,10 @@ export async function applyMatchOp(db: Db, auth: AuthContext, op: MatchOp, now =
             )
             .bind(s.match_id, s.player_id, s.team_id, s.name, s.number, s.position, s.sort_order, ...guardValues),
         ),
-      ]
-    : undefined;
+        ]
+      : []),
+    ...controlFollowUp(db, match.id, deviceId, nowIso, guard, guardValues),
+  ];
 
   try {
     await commit(db, { op, entity: 'match', table: 'matches', entityId: match.id, deviceId, result, write, dependent, now });
@@ -397,6 +411,8 @@ export async function applyMatchOp(db: Db, auth: AuthContext, op: MatchOp, now =
   }
   if (!(await wasRecorded(db, op.opId))) {
     const winner = await readMatch(db, match.id);
+    // Otro dispositivo tomó el control entre la lectura y la escritura.
+    if (winner && controlView(winner.row, deviceId).holder === 'other') throw recordedElsewhere();
     throw conflict('match', winner ? serverMatch(winner) : null, 'El partido ha cambiado en el servidor durante la sincronización.');
   }
   return result;
@@ -410,8 +426,12 @@ export interface TeamSnapshot {
   /** Último cambio incluido: continuar con GET /api/teams/:id/changes?since=seq. */
   seq: number;
   players: { version: number; player: Player }[];
-  /** Incluye los eliminados (con deletedAt) para que el dispositivo los retire. */
-  matches: { version: number; match: Match; recordedHere: boolean }[];
+  /**
+   * Incluye los eliminados (con deletedAt) para que el dispositivo los retire.
+   * `control`: si el partido activo lo registra este dispositivo, otro o ninguno
+   * (sin identificar a los demás dispositivos).
+   */
+  matches: { version: number; match: Match; recordedHere: boolean; control: ControlView }[];
   /** Incluye las borradas (con deletedAt); las estadísticas ya las excluyen. */
   events: { version: number; event: ReturnType<typeof rowToEvent> }[];
 }
@@ -428,7 +448,7 @@ export async function teamSnapshot(db: Db, auth: AuthContext, teamId: Id): Promi
     db.prepare('SELECT c.id, c.name FROM clubs c JOIN teams t ON t.club_id = c.id WHERE t.id = ?').bind(teamId),
     db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM change_log WHERE team_id = ?').bind(teamId),
     db.prepare('SELECT * FROM players WHERE team_id = ? ORDER BY number, id').bind(teamId),
-    db.prepare('SELECT * FROM matches WHERE team_id = ? ORDER BY date, created_at, id').bind(teamId),
+    db.prepare(`SELECT m.*, ${controlValidColumn('m')} FROM matches m WHERE m.team_id = ? ORDER BY m.date, m.created_at, m.id`).bind(teamId),
     db.prepare('SELECT * FROM match_squad WHERE team_id = ?').bind(teamId),
     db
       .prepare(
@@ -449,10 +469,11 @@ export async function teamSnapshot(db: Db, auth: AuthContext, teamId: Id): Promi
     club,
     seq: rows<{ seq: number }>(seqRes)[0]?.seq ?? 0,
     players: rows<Versioned<PlayerRow>>(playersRes).map((p) => ({ version: p.version, player: rowToPlayer(p) })),
-    matches: rows<Versioned<MatchRow> & { recorder_device_id: string | null }>(matchesRes).map((m) => ({
+    matches: rows<StoredMatch>(matchesRes).map((m) => ({
       version: m.version,
       match: rowsToMatch(m, squads.get(m.id) ?? []),
       recordedHere: auth.deviceId !== null && m.recorder_device_id === auth.deviceId,
+      control: controlView(m, auth.deviceId),
     })),
     events: rows<EventRow & { version: number }>(eventsRes).map((e) => ({ version: e.version, event: rowToEvent(e) })),
   };

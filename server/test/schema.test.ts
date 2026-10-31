@@ -34,6 +34,7 @@ describe('migraciones', () => {
       'events',
       'grants',
       'invites',
+      'match_control_log',
       'match_squad',
       'matches',
       'people',

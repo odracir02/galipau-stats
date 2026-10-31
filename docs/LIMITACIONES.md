@@ -26,7 +26,7 @@
 ## Backend (preparado, sin uso)
 
 - El Worker y D1 existen solo en el repositorio y en local. No hay recursos en Cloudflare ni sincronización en la app.
-- Faltan las rutas de alta de club y equipo, canje de códigos, transferencia de partidos y subida de partidos y plantillas (Tarea 005C).
+- Faltan las rutas de alta de club y equipo, canje de códigos y subida de partidos y plantillas (Tarea 005C).
 - La autenticación administrativa (Cloudflare Access) está implementada pero sin configurar: hasta crear las aplicaciones de Access, la administración responde 503. Ver [AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#limitaciones-y-riesgos).
 - La tabla de intentos de canje necesitará una purga periódica cuando se despliegue.
 

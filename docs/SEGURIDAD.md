@@ -2,7 +2,7 @@
 
 > **Estado:** implementado y probado en local. **Nada de esto está operativo todavía**: no hay Worker desplegado, ni aplicaciones de Cloudflare Access creadas, y la aplicación no se conecta a ningún servidor. Siguen pendientes:
 > - la configuración de Cloudflare Access ([AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#configuración-pendiente-en-cloudflare));
-> - las rutas de canje de códigos, alta de equipos, gestión de códigos y transferencia de partidos;
+> - las rutas de canje de códigos, alta de equipos y gestión de códigos;
 > - el cliente de sincronización de la aplicación y los paneles de administración.
 >
 > Las rutas existentes están en [BACKEND.md](BACKEND.md#api-fase-actual) y [AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#operaciones-implementadas).

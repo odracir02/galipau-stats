@@ -1,6 +1,6 @@
 // Lógica del Worker de GalipauStats: API y panel de administración, en el mismo
 // origen. El punto de entrada es index.ts.
-// Pendientes: transferencia de partidos y sincronización completa.
+// Pendiente: descarga de cambios sobre la base editable de otros entrenadores (005E.2H2).
 //
 // Dispositivos (Authorization: Bearer <token de dispositivo>; CORS solo para la PWA, sin cookies):
 //   GET  /api/health                         sin autenticación
@@ -15,6 +15,7 @@
 //   POST /api/sync/players                   escritura: entrenador (plantilla)
 //   POST /api/sync/matches                   escritura: entrenador (partido y convocatoria)
 //   POST /api/sync/events                    escritura: entrenador
+//   POST /api/sync/control                   tomar el control de un partido en curso (entrenador)
 //
 // Administración (Cloudflare Access + roles en D1; mismo origen, sin CORS):
 //   GET    /admin, /admin/*                                 panel (archivos estáticos)
@@ -50,6 +51,7 @@ import {
 } from './admin';
 import { authenticate, authenticateAdmin, authorize, bearerToken } from './auth';
 import { codeKey } from './codecrypt';
+import { takeControl, type ControlOp } from './control';
 import { assertSafeAdminWrite } from './csrf';
 import type { Db } from './db';
 import { HttpError, notFound } from './errors';
@@ -257,6 +259,22 @@ async function route(request: Request, env: Env): Promise<Response> {
       throw new HttpError(400, 'bad_request', 'Operación incompleta.');
     }
     return json(await applyEventOp(env.DB, auth, op));
+  }
+
+  if (request.method === 'POST' && parts[1] === 'sync' && parts[2] === 'control' && parts.length === 3) {
+    const op = await readJson<ControlOp>(request);
+    if (
+      !op ||
+      typeof op.opId !== 'string' ||
+      !op.opId ||
+      typeof op.teamId !== 'string' ||
+      typeof op.matchId !== 'string' ||
+      !Number.isInteger(op.expectedEpoch) ||
+      op.expectedEpoch < 0
+    ) {
+      throw new HttpError(400, 'bad_request', 'Operación incompleta.');
+    }
+    return json(await takeControl(env.DB, auth, { opId: op.opId, teamId: op.teamId, matchId: op.matchId, expectedEpoch: op.expectedEpoch }));
   }
 
   throw notFound();

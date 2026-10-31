@@ -27,7 +27,7 @@ function before0004(): SqliteD1 {
 
 describe('migración 0004', () => {
   it('va tras 0003 y solo añade columnas', () => {
-    expect(migrationFiles()).toEqual([
+    expect(migrationFiles().slice(0, 4)).toEqual([
       '0001_initial.sql',
       '0002_cloudflare_access.sql',
       '0003_clubs_status_and_codes.sql',

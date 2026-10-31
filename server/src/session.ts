@@ -1,6 +1,7 @@
 // Sesión del dispositivo: qué equipos tiene, salir de uno y cerrar la sesión.
 // Solo actúa sobre el propio dispositivo (el del token); nunca sobre otros.
 import type { Id } from '../../src/domain/types';
+import { releaseDeviceControl } from './control';
 import type { Db } from './db';
 import { HttpError, notFound } from './errors';
 import type { AuthContext, TeamRole } from './model';
@@ -65,20 +66,24 @@ export async function getSession(db: Db, auth: AuthContext, now = new Date()): P
   return { deviceId, teams: results };
 }
 
-/** El dispositivo deja un equipo: retira su propio permiso. Siempre posible, aunque el club esté suspendido. */
+/**
+ * El dispositivo deja un equipo: retira su propio permiso y el control de los
+ * partidos que registraba (quedan libres para otro entrenador). Siempre
+ * posible, aunque el club esté suspendido.
+ */
 export async function leaveTeam(db: Db, auth: AuthContext, teamId: Id, now = new Date()): Promise<void> {
   const deviceId = requireDevice(auth);
-  const res = await db
-    .prepare('UPDATE grants SET revoked_at = ? WHERE device_id = ? AND team_id = ? AND revoked_at IS NULL')
-    .bind(now.toISOString(), deviceId, teamId)
-    .run();
-  if (res.meta.changes === 0) throw notFound();
+  const [res] = await db.batch([
+    db.prepare('UPDATE grants SET revoked_at = ? WHERE device_id = ? AND team_id = ? AND revoked_at IS NULL').bind(now.toISOString(), deviceId, teamId),
+    releaseDeviceControl(db, deviceId, teamId),
+  ]);
+  if (!res || res.meta.changes === 0) throw notFound();
 }
 
 /**
  * Cierra la sesión del dispositivo: revoca el dispositivo, todos sus tokens y
- * todos sus permisos, en una transacción. Para volver hará falta canjear un
- * código de nuevo.
+ * todos sus permisos, y libera el control de sus partidos, en una transacción.
+ * Para volver hará falta canjear un código de nuevo.
  */
 export async function logout(db: Db, auth: AuthContext, now = new Date()): Promise<void> {
   const deviceId = requireDevice(auth);
@@ -87,5 +92,6 @@ export async function logout(db: Db, auth: AuthContext, now = new Date()): Promi
     db.prepare('UPDATE grants SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL').bind(at, deviceId),
     db.prepare('UPDATE device_tokens SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL').bind(at, deviceId),
     db.prepare('UPDATE devices SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').bind(at, deviceId),
+    releaseDeviceControl(db, deviceId),
   ]);
 }

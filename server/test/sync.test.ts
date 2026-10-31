@@ -4,6 +4,7 @@ import { ev, goal } from '../../src/test/fixtures';
 import { HttpError } from '../src/errors';
 import type { AuthContext } from '../src/model';
 import { applyEventOp, pullChanges, type EventOp } from '../src/sync';
+import { takeControl } from '../src/control';
 import { addDevice, addMatch, NOW, twoClubs } from './seed';
 import { migratedDb, type SqliteD1 } from './sqliteD1';
 
@@ -119,16 +120,21 @@ describe('subida de acciones', () => {
     expect(eventRows()).toHaveLength(0);
   });
 
-  it('un partido lo registra un único dispositivo hasta que se transfiera', async () => {
+  it('un partido en curso lo registra un único dispositivo hasta que otro tome el control', async () => {
     const other = (await addDevice(db, 'other', [{ clubId: 'A', teamId: 'a1', role: 'coach' }])).auth;
     await applyEventOp(db, coach, op(action(goal(), 'p7')));
-    expect(db.sqlite.prepare('SELECT recorder_device_id FROM matches').get()).toEqual({ recorder_device_id: 'coach' });
+    expect(db.sqlite.prepare('SELECT recorder_device_id, control_device_id, control_epoch FROM matches').get()).toEqual({
+      recorder_device_id: 'coach',
+      control_device_id: 'coach',
+      control_epoch: 1,
+    });
     expect(await errorOf(applyEventOp(db, other, op(action(goal(), 'p14'))))).toMatchObject({
       status: 409,
       code: 'match_recorded_elsewhere',
     });
-    db.run("UPDATE matches SET recorder_device_id = 'other'");
+    await takeControl(db, other, { opId: 'tomar-1', teamId: 'a1', matchId: 'm1', expectedEpoch: 1 });
     expect(await applyEventOp(db, other, op(action(goal(), 'p14')))).toMatchObject({ status: 'applied' });
+    expect(await errorOf(applyEventOp(db, coach, op(action(goal(), 'p7'))))).toMatchObject({ code: 'match_recorded_elsewhere' });
   });
 
   it('no se aceptan acciones de partidos eliminados', async () => {
