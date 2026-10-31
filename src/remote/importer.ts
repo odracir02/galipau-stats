@@ -7,9 +7,11 @@
 // * Se conservan los identificadores del servidor y se anotan sus versiones y
 //   huellas, así que la copia queda «sincronizada»: no hay nada pendiente ni se
 //   reenvía nada.
-// * La copia es de SOLO LECTURA hasta que exista la sincronización en los dos
-//   sentidos: no se puede editar ni enviar nada desde ella. «Actualizar copia»
-//   la pone al día con el club.
+// * Se hace sola al canjear un código de entrenador (incorporate): un equipo,
+//   una entrada. La copia se edita como cualquier equipo; los cambios del club
+//   llegan con la recepción de cambios (pull.ts).
+// * Al perder el permiso, una copia sin cambios propios se retira; con cambios
+//   sin enviar se conserva bloqueada para recuperarla con autorización.
 // * Atomicidad: los datos del equipo se escriben en una sola transacción de la
 //   base local, y el vínculo con sus versiones en otra de la base de la cuenta.
 //   El vínculo se registra antes como «pendiente» (de solo lectura); si algo se
@@ -22,7 +24,7 @@ import type { Id, Team } from '../domain/types';
 import { RemoteError, type Api, type RemoteTeam, type TeamSnapshot } from './api';
 import type { RemoteSession } from './session';
 import { metaKey, type AccountStore, type SyncEntity, type SyncMeta, type TeamLink } from './store';
-import { eventContent, matchContent, playerContent, sha256, stableJson } from './upload';
+import { eventContent, matchContent, playerContent, sha256, stableJson, waitForLock } from './upload';
 
 /** Situación de un equipo del club en este dispositivo. */
 export type ImportState =
@@ -197,9 +199,11 @@ export class TeamImporter {
       linkedAt: nowIso,
       origin: 'imported',
       importState: 'pending',
-      readOnly: true,
+      // Recién descargada y al día: se puede editar en cuanto termina la importación.
+      readOnly: false,
       cursor: snapshot.seq,
       refreshedAt: nowIso,
+      controlledElsewhere: snapshot.matches.filter((m) => m.control?.holder === 'other').map((m) => m.match.id),
     };
     onProgress?.('save');
     // 1. Vínculo pendiente y versiones (una transacción). Desde aquí el equipo es de solo lectura.
@@ -240,7 +244,18 @@ export class TeamImporter {
       await this.assertNoOverlap(data, link.remoteTeamId);
       await this.local.addTeamData(data);
     }
-    return this.finish({ ...link, importState: undefined, cursor: snapshot.seq, refreshedAt: this.now().toISOString() }, metas, onProgress);
+    return this.finish(
+      {
+        ...link,
+        importState: undefined,
+        readOnly: false,
+        cursor: snapshot.seq,
+        refreshedAt: this.now().toISOString(),
+        controlledElsewhere: snapshot.matches.filter((m) => m.control?.holder === 'other').map((m) => m.match.id),
+      },
+      metas,
+      onProgress,
+    );
   }
 
   private async finish(link: TeamLink, metas: SyncMeta[], onProgress?: (phase: ImportPhase) => void): Promise<ImportSummary> {
@@ -311,46 +326,109 @@ export class TeamImporter {
     }
   }
 
-  // --- Mantener la copia ---------------------------------------------------------
+  // --- Incorporación automática (al canjear un código de entrenador) -------------
 
-  /** Pone la copia al día con el club (descarga completa). No envía nada. */
-  async refresh(localTeamId: Id, onProgress?: (phase: ImportPhase) => void): Promise<ImportSummary> {
-    const link = await this.store.getLink(localTeamId);
-    if (!link || link.origin !== 'imported') throw new RemoteError('not_found', 'Este equipo no es una copia del club.');
-    if (link.importState === 'pending') return this.importTeam(link.remoteTeamId, onProgress);
-    if (!this.coachTeam(link.remoteTeamId)) throw new RemoteError('forbidden', 'Este dispositivo ya no tiene permiso de entrenador en ese equipo del club.');
-    const device = await this.store.getDevice();
-    if (!device) throw new RemoteError('unauthorized', 'Este dispositivo no tiene sesión con el club.');
-    onProgress?.('download');
-    const snapshot = await this.api.snapshot(device.token, link.remoteTeamId);
-    const hashes = await serverHashes(snapshot);
-    const nowIso = this.now().toISOString();
-    const metas: SyncMeta[] = [...hashes.entries()].map(([key, h]) => ({ key, entity: h.entity, entityId: h.id, remoteTeamId: link.remoteTeamId, version: h.version, hash: h.hash, syncedAt: nowIso }));
-    onProgress?.('check');
-    return this.resume({ ...link, importState: 'pending' }, snapshot, metas, hashes, onProgress);
+  /** Situación de la incorporación de cada equipo del club, para mostrarla (solo en memoria). */
+  private readonly incorporation = new Map<string, Incorporation>();
+
+  incorporationOf(remoteTeamId: string): Incorporation | null {
+    return this.incorporation.get(remoteTeamId) ?? null;
   }
 
-  /** ¿Hay cambios en el club posteriores a la copia? Una consulta ligera; null si no se sabe. */
-  async isBehind(localTeamId: Id): Promise<boolean | null> {
-    const link = await this.store.getLink(localTeamId);
-    const device = await this.store.getDevice();
-    if (!link || link.origin !== 'imported' || link.cursor === undefined || !device) return null;
-    try {
-      const page = await this.api.changes(device.token, link.remoteTeamId, link.cursor);
-      return page.nextSeq > link.cursor;
-    } catch {
-      return null;
-    }
+  private setIncorporation(remoteTeamId: string, value: Incorporation | null): void {
+    if (value) this.incorporation.set(remoteTeamId, value);
+    else this.incorporation.delete(remoteTeamId);
+    this.emit();
   }
 
   /**
-   * Retira la copia de este dispositivo (datos del equipo, vínculo y versiones).
-   * Solo copias importadas: nunca un equipo propio del dispositivo.
+   * Prepara en este dispositivo los equipos del club con permiso de entrenador
+   * que aún no están: si ya hay uno vinculado, se usa tal cual; si no, se
+   * importa. Nunca reintenta solo los que el usuario quitó ni los que no se
+   * pudieron incorporar por coincidir con datos de este dispositivo.
    */
-  async discard(localTeamId: Id): Promise<void> {
+  async incorporate(onlyRemoteTeamId?: string): Promise<void> {
+    const prefs = await this.store.getPrefs();
+    for (const t of this.remoteTeams()) {
+      if (t.role !== 'coach' || t.status !== 'active') continue;
+      if (onlyRemoteTeamId && t.teamId !== onlyRemoteTeamId) continue;
+      const link = await this.store.getLinkByRemote(t.teamId);
+      if (link && link.importState !== 'pending') {
+        if (this.incorporation.has(t.teamId)) this.setIncorporation(t.teamId, null);
+        continue;
+      }
+      if (prefs.dismissed.includes(t.teamId)) {
+        this.setIncorporation(t.teamId, { status: 'dismissed' });
+        continue;
+      }
+      const blocked = prefs.blocked[t.teamId];
+      if (blocked) {
+        this.setIncorporation(t.teamId, { status: 'blocked', message: blocked });
+        continue;
+      }
+      if (this.incorporation.get(t.teamId)?.status === 'working') continue;
+      this.setIncorporation(t.teamId, { status: 'working' });
+      try {
+        await this.importTeam(t.teamId);
+        this.setIncorporation(t.teamId, null);
+      } catch (e) {
+        if (e instanceof RemoteError && (e.kind === 'offline' || e.kind === 'timeout')) {
+          this.setIncorporation(t.teamId, { status: 'offline', message: 'Hace falta conexión una vez para preparar el equipo en este dispositivo.' });
+        } else if (e instanceof RemoteError && e.kind === 'conflict') {
+          // Coincide con datos de este dispositivo: no se fusiona ni se reintenta solo.
+          const next = await this.store.getPrefs();
+          await this.store.savePrefs({ ...next, blocked: { ...next.blocked, [t.teamId]: e.message } });
+          this.setIncorporation(t.teamId, { status: 'blocked', message: e.message });
+        } else {
+          this.setIncorporation(t.teamId, { status: 'error', message: e instanceof Error ? e.message : 'No se pudo preparar el equipo.' });
+        }
+      }
+    }
+  }
+
+  /** «Añadir a este dispositivo» tras haberlo quitado o tras resolver una coincidencia. */
+  async addAgain(remoteTeamId: string): Promise<void> {
+    const prefs = await this.store.getPrefs();
+    const blocked = { ...prefs.blocked };
+    delete blocked[remoteTeamId];
+    await this.store.savePrefs({ dismissed: prefs.dismissed.filter((id) => id !== remoteTeamId), blocked });
+    this.setIncorporation(remoteTeamId, null);
+    await this.incorporate(remoteTeamId);
+  }
+
+  // --- Quitar, perder el acceso ------------------------------------------------------
+
+  /** ¿Tiene la copia cambios hechos aquí que no están en el club (registros nuevos o distintos)? */
+  async hasLocalChanges(localTeamId: Id): Promise<boolean> {
+    const link = await this.store.getLink(localTeamId);
+    const data = await this.local.readTeamData(localTeamId);
+    if (!link || !data) return false;
+    const known = new Map((await this.store.listMeta(link.remoteTeamId)).map((m) => [m.key, m.hash]));
+    for (const [key, hash] of await localHashes(data, link.remoteTeamId)) if (known.get(key) !== hash) return true;
+    return false;
+  }
+
+  /**
+   * Quita la copia de este dispositivo (datos del equipo, vínculo y versiones).
+   * Solo copias importadas: nunca un equipo propio del dispositivo. Si la quita
+   * el usuario (`dismiss`), no se vuelve a añadir sola.
+   */
+  async discard(localTeamId: Id, { dismiss = false }: { dismiss?: boolean } = {}): Promise<void> {
     const link = await this.store.getLink(localTeamId);
     if (!link || link.origin !== 'imported') throw new RemoteError('not_found', 'Este equipo no es una copia del club.');
-    // Primero los datos (sigue siendo de solo lectura mientras tanto) y después el vínculo.
+    // Espera a que termine cualquier envío o recepción del equipo: nada puede escribir después.
+    await waitForLock(link.remoteTeamId, () => this.discardLocked(localTeamId, dismiss));
+  }
+
+  private async discardLocked(localTeamId: Id, dismiss: boolean): Promise<void> {
+    const link = await this.store.getLink(localTeamId);
+    if (!link || link.origin !== 'imported') return;
+    if (dismiss) {
+      const prefs = await this.store.getPrefs();
+      if (!prefs.dismissed.includes(link.remoteTeamId)) await this.store.savePrefs({ ...prefs, dismissed: [...prefs.dismissed, link.remoteTeamId] });
+    }
+    // Primero los datos (de solo lectura mientras tanto) y después el vínculo.
+    this.imported.set(localTeamId, { ...link, readOnly: true });
     await this.local.removeTeamData(localTeamId);
     await this.store.removeImportedLink(localTeamId);
     this.imported.delete(localTeamId);
@@ -358,11 +436,11 @@ export class TeamImporter {
   }
 
   /**
-   * Sigue a la sesión: sin sesión, o si una comprobación correcta ya no da
-   * permiso de entrenador en el equipo, se retira la copia (como lo descargado
-   * para consulta). Sin conexión no se retira nada.
+   * Sigue a la sesión. Tras cada comprobación correcta: retira (o bloquea) las
+   * copias de equipos sin permiso de entrenador y prepara los que faltan. Sin
+   * sesión, se retiran o bloquean todas. Sin conexión no se hace nada.
    */
-  followSession(session: Pick<RemoteSession, 'getState' | 'subscribe'>): () => void {
+  followSession(session: Pick<RemoteSession, 'getState' | 'subscribe'>, afterCheck?: () => void): () => void {
     let lastChecked: string | null = null;
     const check = () => {
       const s = session.getState();
@@ -372,22 +450,63 @@ export class TeamImporter {
         void this.retireExcept([]);
       } else if (s.problem === null && s.checkedAt && s.checkedAt !== lastChecked) {
         lastChecked = s.checkedAt;
-        void this.retireExcept(s.teams.filter((t) => t.role === 'coach' && t.status === 'active').map((t) => t.teamId));
+        void this.retireExcept(s.teams.filter((t) => t.role === 'coach' && t.status === 'active').map((t) => t.teamId))
+          .then(() => this.incorporate())
+          .then(() => afterCheck?.());
       }
     };
     check();
     return session.subscribe(check);
   }
 
-  /** Retira las copias de los equipos que no estén en la lista. Devuelve los equipos locales retirados. */
+  /**
+   * Copias de equipos que ya no están en la lista: sin cambios propios se
+   * retiran; con cambios sin enviar se CONSERVAN bloqueadas (sin edición ni
+   * envío), para recuperarlas con autorización. Las que vuelven a tener permiso
+   * se desbloquean. Nunca toca un equipo propio del dispositivo. Devuelve los
+   * equipos locales retirados.
+   */
   async retireExcept(remoteTeamIds: readonly string[]): Promise<Id[]> {
     const allowed = new Set(remoteTeamIds);
     const retired: Id[] = [];
     for (const link of await this.store.listLinks()) {
-      if (link.origin !== 'imported' || allowed.has(link.remoteTeamId)) continue;
-      await this.discard(link.localTeamId);
-      retired.push(link.localTeamId);
+      if (link.origin !== 'imported') continue;
+      if (allowed.has(link.remoteTeamId) && !link.accessLost) continue; // con permiso y sin bloquear: nada que hacer
+      // Con el bloqueo del equipo: ningún envío ni recepción a la vez.
+      const gone = await waitForLock(link.remoteTeamId, async () => {
+        const current = await this.store.getLink(link.localTeamId);
+        if (!current || current.origin !== 'imported') return false;
+        if (allowed.has(current.remoteTeamId)) {
+          if (current.accessLost) {
+            await this.store.saveSyncState({ ...current, accessLost: undefined, readOnly: false, autoBlocked: current.autoBlocked === ACCESS_LOST ? null : current.autoBlocked }, []);
+            await this.load();
+          }
+          return false;
+        }
+        if (current.importState !== 'pending' && (await this.hasLocalChanges(current.localTeamId))) {
+          if (!current.accessLost) {
+            await this.store.saveSyncState({ ...current, accessLost: true, readOnly: true, autoBlocked: ACCESS_LOST }, []);
+            await this.load();
+          }
+          return false;
+        }
+        await this.discardLocked(current.localTeamId, false);
+        return true;
+      });
+      if (gone) retired.push(link.localTeamId);
     }
     return retired;
   }
 }
+
+/** Aviso en una copia que perdió el permiso con cambios sin enviar. */
+export const ACCESS_LOST =
+  'Este dispositivo ya no tiene permiso de entrenador en el equipo del club. Los cambios sin enviar se conservan aquí, bloqueados, hasta recuperar el permiso.';
+
+/** Situación de la incorporación automática de un equipo del club. */
+export type Incorporation =
+  | { status: 'working' }
+  | { status: 'offline'; message: string }
+  | { status: 'blocked'; message: string }
+  | { status: 'error'; message: string }
+  | { status: 'dismissed' };

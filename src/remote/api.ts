@@ -56,7 +56,11 @@ export interface TeamSnapshot {
   club: { id: string; name: string };
   seq: number;
   players: { version: number; player: Player }[];
-  matches: { version: number; match: Match; recordedHere: boolean }[];
+  /**
+   * `control` (servidor con control de partidos): si el partido en curso lo
+   * registra este dispositivo, otro o ninguno. Opcional por compatibilidad.
+   */
+  matches: { version: number; match: Match; recordedHere: boolean; control?: { holder: 'here' | 'other' | null; epoch: number; seenAt: string | null } }[];
   events: { version: number; event: MatchEvent }[];
 }
 

@@ -63,6 +63,8 @@ interface TeamRun {
   /** Llegaron cambios durante un envío: hay que volver a mirar al terminar. */
   again: boolean;
   retries: number;
+  /** Conflictos seguidos tras recibir los cambios del club (para no insistir). */
+  conflictRetries: number;
 }
 
 export class AutoSync {
@@ -76,6 +78,17 @@ export class AutoSync {
   private readonly retryMs: readonly number[];
   private readonly timers: Timers;
   private readonly now: () => Date;
+  private receiver: { pull(localTeamId: string): Promise<unknown> } | null = null;
+
+  /**
+   * Con recepción de cambios: ante un conflicto se reciben primero los cambios
+   * del club (el registro queda apartado como conflicto) y se reintenta, en vez
+   * de detener todo el envío del equipo por un solo registro.
+   */
+  receiveWith(receiver: { pull(localTeamId: string): Promise<unknown> }): this {
+    this.receiver = receiver;
+    return this;
+  }
 
   constructor(
     private readonly clubSync: ClubSync,
@@ -109,7 +122,7 @@ export class AutoSync {
   private run(localTeamId: string): TeamRun {
     let r = this.teams.get(localTeamId);
     if (!r) {
-      r = { state: OFF, timer: null, firstPendingAt: null, running: false, again: false, retries: 0 };
+      r = { state: OFF, timer: null, firstPendingAt: null, running: false, again: false, retries: 0, conflictRetries: 0 };
       this.teams.set(localTeamId, r);
     }
     return r;
@@ -289,12 +302,18 @@ export class AutoSync {
         if (outcome.stop!.reason === 'offline') {
           this.setState(localTeamId, { status: 'offline', message: null });
           this.retryLater(localTeamId);
+        } else if (outcome.stop!.reason === 'conflict' && this.receiver && r.conflictRetries < 2) {
+          r.conflictRetries++;
+          await this.receiver.pull(localTeamId);
+          this.setState(localTeamId, { status: 'pending', message: null });
+          r.again = true;
         } else {
           await this.block(localTeamId, `${outcome.stop!.record}: ${outcome.stop!.message}`);
         }
         return;
       }
       r.retries = 0;
+      r.conflictRetries = 0;
       r.firstPendingAt = null;
       this.setState(localTeamId, { status: 'synced', message: null, lastSyncedAt: this.now().toISOString() });
     } catch (e) {

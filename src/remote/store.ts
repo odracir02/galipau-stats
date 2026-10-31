@@ -53,15 +53,53 @@ export interface TeamLink {
   origin?: 'imported';
   /** Importación empezada y sin terminar: el equipo aún no se puede usar. */
   importState?: 'pending';
-  /**
-   * Solo lectura en este dispositivo: no se puede editar ni enviar nada hasta que
-   * exista la sincronización en los dos sentidos.
-   */
+  /** Solo lectura en este dispositivo: no se puede editar ni enviar nada. */
   readOnly?: boolean;
-  /** Último cambio del club incluido en la copia (seq de /changes). */
+  /**
+   * Se perdió el permiso de entrenador con cambios sin enviar: se conservan en
+   * el dispositivo, bloqueados (sin edición ni envío), para recuperarlos.
+   */
+  accessLost?: boolean;
+  /** Último cambio del club ya recibido en este dispositivo (seq de /changes). */
   cursor?: number;
-  /** Última descarga completa de la copia. */
+  /** Última recepción de cambios del club. */
   refreshedAt?: string;
+  /** Registros cambiados aquí y en el club a la vez: esperan a que el usuario elija. */
+  conflicts?: SyncConflict[];
+  /** Partidos en curso que registra OTRO dispositivo (según la última descarga). */
+  controlledElsewhere?: string[];
+}
+
+/** Un registro cambiado en este dispositivo y en el club a la vez. */
+export interface SyncConflict {
+  key: string;
+  entity: SyncEntity;
+  entityId: string;
+  /** Descripción para el usuario (sin datos sensibles). */
+  label: string;
+  /** Versión del club, tal como llegó (para «Quedarme con la del club»). */
+  server: { version: number; hash: string; record: unknown };
+}
+
+/** Copia de un dato de este dispositivo sustituido por la versión del club al resolver un conflicto. */
+export interface DiscardedRecord {
+  at: string;
+  remoteTeamId: string;
+  entity: SyncEntity;
+  entityId: string;
+  label: string;
+  record: unknown;
+}
+
+/** Cuántas copias de datos sustituidos se conservan (las más recientes). */
+const DISCARDED_LIMIT = 50;
+
+/** Preferencias de incorporación automática de equipos del club en este dispositivo. */
+export interface TeamPrefs {
+  /** Equipos del club que el usuario quitó de este dispositivo: no se vuelven a añadir solos. */
+  dismissed: string[];
+  /** Equipos del club que no se pudieron incorporar, con el motivo (no se reintenta solo). */
+  blocked: Record<string, string>;
 }
 
 export type SyncEntity = 'player' | 'match' | 'event';
@@ -94,8 +132,8 @@ export interface UploadRecord {
 
 interface AccountDB extends DBSchema {
   account: {
-    key: 'device' | 'teams';
-    value: StoredDevice | StoredTeams;
+    key: 'device' | 'teams' | 'prefs' | 'discarded';
+    value: StoredDevice | StoredTeams | TeamPrefs | DiscardedRecord[];
   };
   links: {
     key: string;
@@ -149,6 +187,28 @@ export class AccountStore {
 
   async saveTeams(teams: StoredTeams): Promise<void> {
     await (await this.dbPromise).put('account', teams, 'teams');
+  }
+
+  async getPrefs(): Promise<TeamPrefs> {
+    const p = (await (await this.dbPromise).get('account', 'prefs')) as TeamPrefs | undefined;
+    return { dismissed: p?.dismissed ?? [], blocked: p?.blocked ?? {} };
+  }
+
+  async savePrefs(prefs: TeamPrefs): Promise<void> {
+    await (await this.dbPromise).put('account', prefs, 'prefs');
+  }
+
+  /** Copias de los datos sustituidos por la versión del club (más recientes primero). */
+  async listDiscarded(): Promise<DiscardedRecord[]> {
+    return ((await (await this.dbPromise).get('account', 'discarded')) as DiscardedRecord[] | undefined) ?? [];
+  }
+
+  /** Guarda una copia de un dato antes de sustituirlo (se conservan las últimas). */
+  async keepDiscarded(record: DiscardedRecord): Promise<void> {
+    const db = await this.dbPromise;
+    const tx = db.transaction('account', 'readwrite');
+    const list = ((await tx.store.get('discarded')) as DiscardedRecord[] | undefined) ?? [];
+    await Promise.all([tx.store.put([record, ...list].slice(0, DISCARDED_LIMIT), 'discarded'), tx.done]);
   }
 
   /**
@@ -215,6 +275,22 @@ export class AccountStore {
     const tx = db.transaction(['links', 'syncMeta'], 'readwrite');
     const current = await tx.objectStore('links').get(link.localTeamId);
     if (!current || current.remoteTeamId !== link.remoteTeamId || current.origin !== 'imported') {
+      tx.abort();
+      await tx.done.catch(() => undefined);
+      throw new LinkTakenError(null);
+    }
+    await Promise.all([tx.objectStore('links').put(link), ...metas.map((m) => tx.objectStore('syncMeta').put(m)), tx.done]);
+  }
+
+  /**
+   * Guarda el estado de sincronización de un vínculo (cursor, conflictos…) y las
+   * versiones recibidas, en una sola transacción. Nunca cambia los equipos.
+   */
+  async saveSyncState(link: TeamLink, metas: SyncMeta[]): Promise<void> {
+    const db = await this.dbPromise;
+    const tx = db.transaction(['links', 'syncMeta'], 'readwrite');
+    const current = await tx.objectStore('links').get(link.localTeamId);
+    if (!current || current.remoteTeamId !== link.remoteTeamId) {
       tx.abort();
       await tx.done.catch(() => undefined);
       throw new LinkTakenError(null);

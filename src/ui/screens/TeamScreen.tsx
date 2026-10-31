@@ -1,9 +1,11 @@
 import { ChevronRight, Pencil, Plus, Trophy } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
 import { showToast } from '../../app/toast';
 import { useReadOnlyTeam } from '../../app/useImportedTeam';
+import { remote, teamPuller } from '../../app/remote';
+import { useRemoteRevision } from '../../app/useTeamSync';
 import { useLoad } from '../../app/useLoad';
 import { formatDate, opponentLabel } from '../../domain/format';
 import type { Id, Player, Team } from '../../domain/types';
@@ -27,8 +29,14 @@ export function TeamScreen({ teamId }: { teamId: Id }) {
   const [editingTeam, setEditingTeam] = useState(false);
   // Copia del club de solo lectura: se consulta, pero no se edita desde aquí.
   const readOnly = useReadOnlyTeam(teamId);
-  /** Cambia al actualizar la copia del club: las listas se vuelven a leer. */
+  /** Cambia al recibir cambios del club: las listas se vuelven a leer. */
   const [dataKey, setDataKey] = useState(0);
+  const revision = useRemoteRevision(teamId);
+  // Al entrar en el equipo se reciben los cambios del club (consulta puntual; sin novedades no descarga nada).
+  // Espera a tener la sesión leída (al abrir la app directamente en el equipo).
+  useEffect(() => {
+    void remote?.whenReady().then(() => teamPuller?.pull(teamId));
+  }, [teamId]);
 
   if (team.error) return <p className="form-error">{team.error}</p>;
   if (!team.data) return team.data === undefined ? <div className="screen" /> : null;
@@ -59,7 +67,7 @@ export function TeamScreen({ teamId }: { teamId: Id }) {
         }
       />
       <main className="content">
-        <OngoingMatchBanner teamId={t.id} />
+        <OngoingMatchBanner key={`banner-${dataKey}-${revision}`} teamId={t.id} />
         <ClubLinkCard team={t} onDataChanged={() => setDataKey((k) => k + 1)} />
         <Segmented
           ariaLabel="Secciones del equipo"
@@ -71,9 +79,9 @@ export function TeamScreen({ teamId }: { teamId: Id }) {
             { value: 'season', label: 'Temporada' },
           ]}
         />
-        {tab === 'matches' && <MatchList key={dataKey} team={t} readOnly={readOnly} />}
-        {tab === 'roster' && <Roster key={dataKey} team={t} readOnly={readOnly} />}
-        {tab === 'season' && <SeasonPanel key={dataKey} team={t} />}
+        {tab === 'matches' && <MatchList key={`matches-${dataKey}-${revision}`} team={t} readOnly={readOnly} />}
+        {tab === 'roster' && <Roster key={`roster-${dataKey}-${revision}`} team={t} readOnly={readOnly} />}
+        {tab === 'season' && <SeasonPanel key={`season-${dataKey}-${revision}`} team={t} />}
       </main>
       {editingTeam && (
         <TeamFormSheet

@@ -2,6 +2,7 @@ import { createApi } from '../remote/api';
 import { AutoSync } from '../remote/autosync';
 import { ClubSync } from '../remote/clubsync';
 import { TeamImporter } from '../remote/importer';
+import { TeamPuller } from '../remote/pull';
 import { LiveFeed } from '../remote/live';
 import { RemoteSession } from '../remote/session';
 import { AccountStore } from '../remote/store';
@@ -37,12 +38,35 @@ if (remote && clubViewer) clubViewer.followSession(remote);
 export const teamImporter: TeamImporter | null =
   api && accountStore && remote ? new TeamImporter(localDb, accountStore, api, () => remote.getState().teams) : null;
 
-if (teamImporter && remote) {
-  // Las copias de solo lectura no se pueden modificar desde ninguna pantalla.
+/** Recepción de los cambios del club en los equipos vinculados; null si esta versión no usa servidor. */
+export const teamPuller: TeamPuller | null =
+  api && accountStore && remote
+    ? new TeamPuller(localDb, accountStore, api, () => remote.getState().teams, undefined, () => void teamImporter?.load())
+    : null;
+
+if (teamImporter && teamPuller && remote) {
+  // Un envío manual recibe lo del club antes de comprobar que todo coincide.
+  clubSync?.receiveWith(teamPuller);
+  // Las copias bloqueadas (importación sin terminar, permiso perdido) no se pueden modificar desde ninguna pantalla.
   repo.protectReadOnly(teamImporter);
   void teamImporter.load();
-  // Sin permiso de entrenador verificado, la copia se retira (como lo descargado para consulta).
-  teamImporter.followSession(remote);
+  // Tras cada comprobación correcta de la sesión: copias sin permiso retiradas
+  // (o bloqueadas si tienen cambios sin enviar), equipos de entrenador que faltan
+  // preparados y cambios del club recibidos.
+  teamImporter.followSession(remote, () => void teamPuller.pullAll());
+  // Recepción puntual al abrir la app, al volver a ella o al recuperar la
+  // conexión (nunca periódica salvo en un partido que registra otro dispositivo).
+  let last = 0;
+  const pull = () => {
+    if (Date.now() - last < 15_000) return;
+    last = Date.now();
+    void remote.whenReady().then(() => teamPuller.pullAll());
+  };
+  pull();
+  window.addEventListener('online', pull);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') pull();
+  });
 }
 
 /** Actualización en directo de la consulta (solo con una pantalla de consulta abierta y la app visible). */
@@ -53,6 +77,8 @@ export const autoSync: AutoSync | null =
   clubSync && accountStore && api && remote ? new AutoSync(clubSync, accountStore, api, () => remote.getState().teams) : null;
 
 if (autoSync && remote) {
+  // Ante un conflicto, el envío automático recibe primero los cambios del club.
+  if (teamPuller) autoSync.receiveWith(teamPuller);
   // Cada cambio guardado en un equipo local (jugadores, partidos, acciones) programa su envío.
   repo.onChange((c) => {
     if (c.entity !== 'team') autoSync.changed(c.teamId);

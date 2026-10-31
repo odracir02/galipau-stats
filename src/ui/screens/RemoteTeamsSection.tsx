@@ -1,27 +1,31 @@
 // Equipos del club a los que este dispositivo tiene acceso con un código. Es
 // una sección separada de los equipos guardados en el dispositivo: no los
-// sustituye, no los mezcla y no los modifica. Con permiso de entrenador, se
-// puede copiar un equipo del club en el dispositivo («Trabajar con este equipo
-// aquí»), salvo que ya esté vinculado con uno de sus equipos.
-import { ChevronRight, CloudDownload, CloudOff, KeyRound, Link2, UserRound } from 'lucide-react';
+// sustituye, no los mezcla y no los modifica. Un equipo, una entrada: los
+// equipos de entrenador que ya están en el dispositivo (preparados solos al
+// canjear el código) aparecen solo en «En este dispositivo»; aquí quedan los de
+// consulta y, con una línea discreta, los de entrenador que aún no están.
+import { ChevronRight, CloudOff, KeyRound, UserRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { remote, teamImporter } from '../../app/remote';
 import { navigate } from '../../app/router';
 import { useRemote } from '../../app/useRemote';
 import type { RemoteTeam } from '../../remote/api';
-import type { ImportState } from '../../remote/importer';
+import type { ImportState, Incorporation } from '../../remote/importer';
 import { formatChecked, ROLE_LABEL } from '../../remote/session';
 import { Icon } from '../components/Icon';
 import { DeviceSessionSheet } from './DeviceSessionSheet';
-import { ImportTeamSheet } from './ImportTeamSheet';
 import { JoinSheet } from './JoinSheet';
 
 export function RemoteTeamsSection() {
   const state = useRemote(remote);
   const [joining, setJoining] = useState(false);
   const [account, setAccount] = useState(false);
-  const [importing, setImporting] = useState<{ team: RemoteTeam; state: ImportState } | null>(null);
   const imports = useImportStates(state.teams);
+  // Los equipos que ya están en este dispositivo se abren desde «En este dispositivo».
+  const shown = state.teams.filter((t) => {
+    const kind = imports.get(t.teamId)?.kind;
+    return !(t.role === 'coach' && (kind === 'imported' || kind === 'linked'));
+  });
 
   // Al abrir la pantalla y al recuperar la conexión se comprueban los permisos con el servidor.
   useEffect(() => {
@@ -64,7 +68,7 @@ export function RemoteTeamsSection() {
         </p>
       ) : (
         <ul className="list">
-          {state.teams.map((t) => (
+          {shown.map((t) => (
             <li key={t.teamId}>
               <button
                 type="button"
@@ -81,7 +85,7 @@ export function RemoteTeamsSection() {
                 <span className={`status status-${t.role}`}>{ROLE_LABEL[t.role]}</span>
                 <Icon as={ChevronRight} className="chevron" />
               </button>
-              <ImportAction team={t} state={imports.get(t.teamId)} onImport={(st) => setImporting({ team: t, state: st })} />
+              {t.role === 'coach' && <IncorporationLine teamId={t.teamId} />}
             </li>
           ))}
         </ul>
@@ -100,17 +104,7 @@ export function RemoteTeamsSection() {
       </div>
       {joining && <JoinSheet onClose={() => setJoining(false)} />}
       {account && <DeviceSessionSheet onClose={() => setAccount(false)} />}
-      {importing && (
-        <ImportTeamSheet
-          team={importing.team}
-          state={importing.state}
-          onClose={() => setImporting(null)}
-          onOpen={(localTeamId) => {
-            setImporting(null);
-            navigate({ name: 'team', teamId: localTeamId });
-          }}
-        />
-      )}
+
     </section>
   );
 }
@@ -133,39 +127,35 @@ function useImportStates(teams: readonly RemoteTeam[]): Map<string, ImportState>
   return states;
 }
 
-/** Acción de entrenador bajo cada equipo: copiarlo, abrir su copia o el equipo vinculado. */
-function ImportAction({ team, state, onImport }: { team: RemoteTeam; state: ImportState | undefined; onImport: (s: ImportState) => void }) {
-  if (!state || team.role !== 'coach') return null;
-  switch (state.kind) {
-    case 'available':
+/** Situación de un equipo de entrenador que todavía no está en este dispositivo. */
+function IncorporationLine({ teamId }: { teamId: string }) {
+  const [, setVersion] = useState(0);
+  useEffect(() => teamImporter?.subscribe(() => setVersion((v) => v + 1)), []);
+  const inc: Incorporation | null = teamImporter?.incorporationOf(teamId) ?? null;
+  if (!inc) return null;
+  const retry = () => void teamImporter?.addAgain(teamId);
+  switch (inc.status) {
+    case 'working':
+      return <p className="hint remote-import">Preparando el equipo en este dispositivo…</p>;
+    case 'offline':
+      return <p className="hint remote-import">{inc.message}</p>;
+    case 'dismissed':
       return (
-        <button type="button" className="btn btn-sm remote-import" onClick={() => onImport(state)}>
-          <Icon as={CloudDownload} size={16} />
-          Trabajar con este equipo aquí
-        </button>
-      );
-    case 'pending':
-      return (
-        <button type="button" className="btn btn-sm remote-import" onClick={() => onImport(state)}>
-          <Icon as={CloudDownload} size={16} />
-          Importación sin terminar
-        </button>
-      );
-    case 'imported':
-      return (
-        <button type="button" className="btn btn-sm btn-ghost remote-import" onClick={() => navigate({ name: 'team', teamId: state.link.localTeamId })}>
-          <Icon as={Link2} size={16} />
-          Copia en este dispositivo (solo lectura) · Abrir
-        </button>
-      );
-    case 'linked':
-      return (
-        <button type="button" className="btn btn-sm btn-ghost remote-import" onClick={() => navigate({ name: 'team', teamId: state.link.localTeamId })}>
-          <Icon as={Link2} size={16} />
-          Vinculado con un equipo de este dispositivo · Abrir
-        </button>
+        <p className="hint remote-import">
+          Quitado de este dispositivo.{' '}
+          <button type="button" className="btn btn-sm" onClick={retry}>
+            Añadir a este dispositivo
+          </button>
+        </p>
       );
     default:
-      return null;
+      return (
+        <p className="notice remote-import" role="status">
+          <span>{inc.message}</span>{' '}
+          <button type="button" className="btn btn-sm" onClick={retry}>
+            Volver a intentarlo
+          </button>
+        </p>
+      );
   }
 }

@@ -130,3 +130,11 @@
 | D126 | Importar nunca fusiona: equipo ya vinculado, mismo código o mismos identificadores detienen la importación | Mezclar datos locales con los del club sin revisión podría duplicar o pisar estadísticas. |
 | D127 | La copia importada se retira al perder el permiso de entrenador, como lo descargado para consulta | No contiene trabajo propio (es de solo lectura) y se puede volver a importar. |
 | D128 | (Para H2B) Una retirada del acceso nunca borra automáticamente cambios locales pendientes de una copia editable | El servidor ya impide las operaciones sin permiso; los datos pendientes se conservan bloqueados para recuperarlos con autorización. Hoy no aplica: las copias son de solo lectura. |
+| D129 | El código de entrenador deja el equipo listo en el dispositivo sin pasos técnicos (un equipo, una entrada) | El entrenador no elige entre equipo local y remoto; si ya está vinculado, se reutiliza tal cual. |
+| D130 | La recepción de cambios usa `/changes` y solo descarga el equipo completo si cambian partidos o jugadores | Sin novedades, una consulta ligera; las acciones se aplican sin descargar todo. |
+| D131 | Un cambio del club solo se aplica si el registro local no ha cambiado desde la última sincronización; si cambió en los dos lados, conflicto con elección expresa | Nunca se pisa ni se mezcla un cambio sin enviar. |
+| D132 | El envío manual recibe los cambios del club antes de comprobar | Con varios entrenadores, el servidor tiene datos de los demás; la comprobación compara lo mismo en los dos lados. |
+| D133 | Las copias editables con cambios sin enviar se conservan bloqueadas al perder el permiso (aplica D128) | Nada se pierde; el servidor ya impide operar sin permiso. |
+| D134 | Un conflicto aparta solo sus registros del envío; no detiene el envío automático del equipo | Un dato antiguo en conflicto no puede parar el registro de un partido en directo. |
+| D135 | Un partido eliminado en el club con acciones sin enviar aquí es un conflicto, no un borrado automático | Esas acciones quedarían ocultas sin enviarse; el usuario decide. |
+| D136 | Resolver un conflicto exige confirmación y quitar o bloquear una copia espera al envío o recepción en curso | Nada se sustituye por error ni queda escrito después de retirar una copia. |

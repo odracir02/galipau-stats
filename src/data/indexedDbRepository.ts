@@ -1,7 +1,16 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { Id, Match, MatchEvent, Player, Team } from '../domain/types';
 import { compareEvents } from '../domain/events';
-import { RecordExistsError, StorageError, type LocalSnapshot, type Repository, type TeamData, type TeamDataStore } from './repository';
+import {
+  ConcurrentChangeError,
+  RecordExistsError,
+  StorageError,
+  type LocalSnapshot,
+  type RecordChange,
+  type Repository,
+  type TeamData,
+  type TeamDataStore,
+} from './repository';
 
 export const DB_NAME = 'galipaustats';
 export const DB_VERSION = 1;
@@ -170,6 +179,29 @@ export class IndexedDbRepository implements Repository, TeamDataStore {
         tx.done,
       ]);
     });
+  }
+
+  async applyRecords(changes: readonly RecordChange[]): Promise<void> {
+    if (changes.length === 0) return;
+    let changed = false;
+    try {
+      const db = await this.dbPromise;
+      const tx = db.transaction(['players', 'matches', 'events'], 'readwrite', { durability: 'strict' });
+      for (const c of changes) {
+        const store = tx.objectStore(c.store);
+        const current = await store.get(c.record.id);
+        if (!(c.expect as (x: unknown) => boolean)(current)) {
+          changed = true;
+          tx.abort();
+          break;
+        }
+        await store.put(clone(c.record) as never);
+      }
+      await tx.done;
+    } catch (cause) {
+      if (changed) throw new ConcurrentChangeError();
+      throw new StorageError('No se pudieron guardar los cambios del club en el almacenamiento del dispositivo.', { cause });
+    }
   }
 
   readAll(): Promise<LocalSnapshot> {

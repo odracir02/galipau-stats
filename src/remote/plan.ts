@@ -26,6 +26,12 @@ export interface UploadPlan {
   summary: PlanSummary;
   /** Incumplimientos de las reglas del servidor. Con alguno, no se ofrece enviar. */
   problems: string[];
+  /**
+   * Registros apartados del envío por estar en conflicto con el club (claves
+   * `entidad:id`), y las acciones de los partidos en conflicto. Esperan a que
+   * el usuario elija; el resto se envía con normalidad.
+   */
+  setAside?: string[];
 }
 
 export interface PlanSummary {

@@ -229,11 +229,13 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 130. Corregir una acción del partido ya finalizado en el entrenador. ✔ Se envía sola (con el envío automático activado); en la consulta, se ve con «Actualizar».
 131. (Opcional, larga) Dejar una pantalla de consulta abierta 2 h con un partido en curso. ✔ «Actualización automática pausada» y «Reanudar directo»; volver a la app no la reanuda; al pulsarlo, vuelve «En directo».
 
-## U. Copia de un equipo del club en otro dispositivo (005E.2H2A, vista previa de `develop`, con datos de prueba)
+## U. Entrenadores en varios dispositivos (005E.2H2B, vista previa de `develop`, con datos de prueba)
 
-132. En el iPhone principal, «Equipos del club». ✔ Su equipo aparece como «Vinculado con un equipo de este dispositivo»; no se ofrece importarlo y su envío automático no cambia.
-133. En otro móvil, unirse con el código de entrenador y pulsar «Trabajar con este equipo aquí» → «Importar». ✔ Progreso y «Copia lista y comprobada» con jugadores, partidos y acciones; «Nada pendiente de enviar».
-134. Abrir la copia. ✔ Mismos partidos y resultados que en el iPhone; aviso de solo lectura; sin «Nuevo partido», sin editar el equipo ni la plantilla; los partidos muestran solo estadísticas.
-135. Con código de consulta. ✔ No aparece «Trabajar con este equipo aquí».
-136. Registrar algo en el iPhone y enviarlo; en el otro móvil, abrir la copia. ✔ «Hay cambios en el club posteriores a esta copia»; «Actualizar copia» lo pone al día.
-137. «Quitar la copia de este dispositivo». ✔ Desaparece del móvil; en el club no cambia nada y se puede volver a importar.
+132. En el iPhone principal, abrir la app. ✔ Su equipo sigue igual, «Sincronizado» si lo estaba, sin reenvíos; no aparece repetido en «Equipos del club».
+133. En otro móvil, «Unirse con código» con el código de entrenador. ✔ «El equipo está listo en este dispositivo» y «Abrir el equipo»: mismas herramientas que en el iPhone; envío automático desactivado.
+134. Con código de consulta. ✔ Solo la vista de consulta; no se crea ningún equipo en el dispositivo.
+135. En el segundo móvil, corregir una acción de un partido finalizado y «Enviar al servidor». En el iPhone, entrar en el equipo. ✔ La corrección aparece sin pulsar nada más.
+136. Con un partido en curso registrado en el iPhone, abrirlo en el otro móvil. ✔ Modo consulta, al día, con la explicación; el aviso dice «En curso en otro dispositivo».
+137. Cambiar el mismo dato en los dos móviles antes de enviar. ✔ El que envía después ve «Hay 1 dato cambiado aquí y en el club a la vez» y elige cuál conservar.
+138. Retirar el código de entrenador del segundo móvil con cambios sin enviar. ✔ El equipo queda bloqueado con el aviso, sin perder nada; al volver a canjear un código, se desbloquea.
+139. «Quitar este equipo del dispositivo» en el segundo móvil. ✔ Desaparece y no vuelve solo; «Añadir a este dispositivo» en «Equipos del club».

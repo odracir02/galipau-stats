@@ -123,23 +123,41 @@ Código: `src/remote/autosync.ts`, `src/app/observableRepository.ts` y el indica
 - **Exclusión mutua:** el envío automático y el manual comparten el mismo bloqueo; si coinciden, el automático espera y vuelve a intentarlo.
 - **Estado:** un icono en la cabecera del partido (sin botón) y una línea en el menú del partido y en la ficha del equipo: «Sincronizado», «Pendiente», «Sin conexión» o «Requiere atención».
 
-## Copia de un equipo del club en otro dispositivo (005E.2H2A)
+## Entrenadores en varios dispositivos (005E.2H2A y 005E.2H2B)
 
-Código: [`src/remote/importer.ts`](../src/remote/importer.ts); interfaz en «Equipos del club» y en la ficha del equipo.
+Código: [`importer.ts`](../src/remote/importer.ts) (incorporación), [`pull.ts`](../src/remote/pull.ts) (recepción de cambios) y la tarjeta «Servidor del club».
 
-- **Quién:** solo un dispositivo con permiso de entrenador vigente en el equipo (y club activo). Con código de consulta no se ofrece y se rechaza.
-- **«Trabajar con este equipo aquí»** descarga el equipo completo y crea un equipo local con **los mismos identificadores** de jugadores, partidos y acciones (también los partidos eliminados, las acciones anuladas y las sanciones adicionales). Las estadísticas se calculan con las funciones de siempre.
-- **Sin pendientes ni reenvíos:** se anotan en `syncMeta` la versión y la huella de cada registro (las mismas funciones que el envío), y el vínculo guarda el cursor (`seq`) para descargas futuras. El envío automático queda desactivado.
-- **Nunca se duplica ni se fusiona:**
-  - si el equipo del club ya está vinculado con un equipo del dispositivo (p. ej. el del registrador original), se muestra «Vinculado con un equipo de este dispositivo» y no se importa;
-  - si el dispositivo tiene un equipo sin vincular con el mismo código, o registros con los mismos identificadores (p. ej. una copia de seguridad restaurada), se detiene sin escribir nada y se explica;
-  - repetir la importación no hace nada (ni siquiera vuelve a descargar).
-- **Atomicidad:** primero se registra el vínculo como pendiente con sus versiones (una transacción en `galipaustats-cuenta`); después se escriben todos los datos del equipo (una transacción en `galipaustats`, con `add`: si algún registro ya existe, no se escribe nada); al final se marca terminado. Si falla el guardado, se retira el vínculo. Si la aplicación se cierra a mitad, queda «Importación sin terminar», de solo lectura, para reanudar o descartar: nunca un equipo a medias a la vista ni un equipo sin vincular.
-- **Solo lectura (hasta la sincronización en los dos sentidos, H2B):** el repositorio rechaza cualquier escritura en la copia (`ReadOnlyTeamError`), venga de la pantalla que venga; el envío manual y el automático se niegan. La interfaz oculta crear partidos, editar el equipo y la plantilla, y los partidos se abren solo con sus estadísticas.
-- **«Actualizar copia»** descarga de nuevo el equipo y lo pone al día, solo si la copia no tiene cambios propios (cada registro coincide con lo anotado o con lo que hay en el club); si los tuviera, no se sobrescribe nada. Al abrir la ficha se comprueba con una consulta ligera (`/changes`) si hay cambios en el club.
-- **Acceso retirado:** tras una comprobación correcta de la sesión sin permiso de entrenador en ese equipo (o sin sesión), la copia se retira del dispositivo, igual que lo descargado para consulta. Sin conexión no se retira nada. Nunca se retira un equipo propio del dispositivo.
-- **«Quitar la copia de este dispositivo»** la borra (primero los datos, después el vínculo y sus versiones). En el club no cambia nada.
-- **Regla para cuando la copia sea editable (H2B, aún no implementada):** una retirada del acceso **nunca** podrá destruir automáticamente cambios locales pendientes de enviar. El servidor ya rechaza cualquier operación sin permiso (H1); en el dispositivo, la copia con cambios pendientes se conservará bloqueada (sin edición ni envío) y marcada como sin acceso, para recuperarla con autorización (volver a tener permiso, exportar una copia de seguridad o descartarla expresamente). El diseño actual lo permite sin cambios estructurales: el único borrado automático es la retirada por sesión (`TeamImporter.retireExcept`), que solo actúa sobre copias importadas y hoy solo existen de solo lectura; en H2B bastará con que no retire las copias editables con pendientes y las marque como sin acceso.
+### Acceso con código de entrenador
+
+- **Un equipo, una entrada.** Al canjear un código de entrenador (y tras cada comprobación correcta de la sesión), el equipo queda listo en el dispositivo sin pasos técnicos:
+  - si ya hay un equipo vinculado con él (p. ej. el del iPhone original), se usa tal cual, sin tocar sus datos ni sus preferencias;
+  - si no, se incorpora una copia con los datos del club (mismos identificadores, versiones y huellas: nada pendiente ni reenvíos), editable y con el envío automático desactivado.
+- **Nunca se duplica ni se fusiona:** un equipo sin vincular con el mismo código, o registros con los mismos identificadores, detienen la incorporación con una explicación y no se reintenta solo («Volver a intentarlo»). Sin conexión la primera vez: «Hace falta conexión una vez».
+- Los equipos de entrenador ya incorporados aparecen solo en «En este dispositivo»; en «Equipos del club» quedan los de consulta y una línea discreta para los de entrenador que aún no están. Un equipo quitado por el usuario no vuelve solo: «Añadir a este dispositivo».
+- **Atomicidad de la incorporación:** vínculo pendiente con sus versiones (una transacción) → datos del equipo (una transacción con `add`) → importación terminada. Interrumpida, queda «preparándose», de solo lectura, y se reanuda o se descarta sin dejar nada a medias.
+- El código de consulta mantiene solo las vistas de lectura.
+
+### Recepción de cambios del club
+
+- Para todos los equipos vinculados, también el del iPhone original. Se recibe al abrir la app, al volver a ella, al recuperar la conexión, al entrar en el equipo y tras cada comprobación de la sesión; nunca de forma periódica, salvo en un partido en curso que registra otro dispositivo (cada 5 s mientras está a la vista).
+- **Ligera:** pide solo lo posterior al cursor (`GET /changes?since=`). Sin novedades no se descarga nada; si solo han cambiado acciones de partidos que ya están aquí, se aplican sin descargar el equipo. Si cambian partidos o jugadores, o es la primera vez (p. ej. el iPhone, que aún no tenía cursor), se descarga el equipo completo.
+- **Nunca se pisa un cambio local:** un registro del club se incorpora solo si el de este dispositivo no ha cambiado desde la última sincronización (su huella coincide con la anotada). Lo que ya es igual en los dos lados solo actualiza la versión anotada (nada se reenvía). Dentro de la transacción se comprueba que nadie ha cambiado el registro entretanto; si ocurre, no se escribe nada y se reintenta después.
+- **Conflictos:** si un dato cambió aquí y en el club a la vez, no se toca ninguno de los dos. Se guarda la versión del club (la más reciente) y la tarjeta lo avisa («Hay N datos cambiados aquí y en el club a la vez»). Ese dato (y, si es un partido, sus acciones) se **aparta del envío**; el resto se sigue enviando, también el partido en curso. El usuario elige en cada uno, **con confirmación**: «Quedarme con la del club» (sustituye la de aquí) o «Quedarme con la mía» (se enviará sobre la versión del club; si el club lo vuelve a cambiar antes, aparece otro conflicto y no se sustituye nada). Nada se mezcla automáticamente. Si el servidor responde conflicto a un envío automático por algo aún no recibido, primero se reciben los cambios (queda apartado como conflicto) y se reintenta.
+- **Eliminaciones:** un partido eliminado en el club se elimina aquí solo si aquí no tiene acciones sin enviar; si las tiene, es un conflicto («eliminado en el club») y esas acciones nunca se borran. Una acción anulada en el club y corregida aquí, también. Lo eliminado no se resucita: las versiones impiden que una respuesta antigua sustituya a una más nueva.
+- **Dorsales:** si al recibir quedan dos jugadores con el mismo dorsal, el envío se detiene antes de salir y lo explica; el servidor también lo rechaza (`number_taken`).
+- **Envío manual:** envía, recibe lo de los demás y entonces comprueba que todo coincide con el servidor.
+- Envío y recepción del mismo equipo nunca van a la vez (mismo bloqueo). Quitar o bloquear una copia y resolver un conflicto esperan a que termine lo que esté en curso.
+- **Consistencia:** los registros se guardan en una transacción (comprobando dentro que no han cambiado); después, versiones, conflictos y cursor en otra. El cursor solo avanza con esa segunda transacción. Si falla el guardado, no cambia nada; si la app se cierra entre las dos, la siguiente recepción lo completa sin duplicar (lo que ya es igual solo actualiza la versión). Con muchos cambios (respuesta paginada) se descarga el equipo completo y el cursor queda en lo descargado.
+
+### Edición y partidos en curso
+
+- El entrenador crea, edita, inicia, finaliza y elimina partidos, gestiona convocatorias y jugadores, y registra y corrige acciones, como en su propio equipo.
+- **Control por partido (H1):** un partido en curso que registra otro dispositivo se abre en modo consulta, al día, con la explicación de quién puede continuarlo; el aviso de partido en curso dice «En curso en otro dispositivo · toca para verlo». Si aun así se escribe sin saberlo (p. ej. sin conexión), el servidor lo rechaza y los cambios se conservan aquí. La transferencia del control en la interfaz queda para H3.
+
+### Acceso retirado
+
+- Una copia sin cambios propios se retira del dispositivo. Una copia con cambios sin enviar **se conserva bloqueada** (sin edición ni envío) y con el aviso de permiso perdido; al recuperar el permiso (volver a canjear el código) se desbloquea y lo pendiente se envía. El servidor rechaza cualquier operación sin permiso.
+- Un equipo propio del dispositivo (como el del iPhone original) nunca se retira ni se modifica por esto.
 
 ## Consulta desde otros móviles (005E.2E)
 

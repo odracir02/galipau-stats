@@ -1,6 +1,6 @@
 import { ChevronRight, DatabaseBackup, Plus } from 'lucide-react';
-import { useState } from 'react';
-import { remote } from '../../app/remote';
+import { useEffect, useState } from 'react';
+import { remote, teamImporter } from '../../app/remote';
 import { repo } from '../../app/repo';
 import { useImportedTeam } from '../../app/useImportedTeam';
 import { navigate } from '../../app/router';
@@ -14,7 +14,10 @@ import { RemoteTeamsSection } from './RemoteTeamsSection';
 import { TeamFormSheet } from './TeamFormSheet';
 
 export function TeamsScreen() {
-  const teams = useLoad(() => repo.listTeams(), []);
+  // Cambia cuando se prepara (o se quita) un equipo del club en este dispositivo.
+  const [copies, setCopies] = useState(0);
+  useEffect(() => teamImporter?.subscribe(() => setCopies((v) => v + 1)), []);
+  const teams = useLoad(() => repo.listTeams(), [copies]);
   const [creating, setCreating] = useState(false);
   const [backup, setBackup] = useState(false);
 
@@ -79,8 +82,10 @@ export function TeamsScreen() {
   );
 }
 
-/** Marca de las copias del club en la lista de equipos del dispositivo. */
+/** Marca discreta de un equipo del club que está bloqueado en este dispositivo. */
 function ImportedMark({ teamId }: { teamId: string }) {
   const link = useImportedTeam(teamId);
-  return link ? <> · Copia del club (solo lectura)</> : null;
+  if (link?.accessLost) return <> · Sin permiso del club: cambios guardados aquí</>;
+  if (link?.importState === 'pending') return <> · Preparándose</>;
+  return null;
 }

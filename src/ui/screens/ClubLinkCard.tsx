@@ -2,12 +2,13 @@
 // club y enviar sus datos a mano. Solo aparece si este dispositivo tiene permiso
 // de entrenador en algún equipo del club o si el equipo ya está vinculado.
 import { CloudUpload, Link2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { errorMessage } from '../../app/errors';
-import { autoSync, clubSync, remote } from '../../app/remote';
+import { autoSync, clubSync, remote, teamImporter } from '../../app/remote';
 import { showToast } from '../../app/toast';
 import { useLoad } from '../../app/useLoad';
 import { useRemote } from '../../app/useRemote';
+import { useRemoteRevision } from '../../app/useTeamSync';
 import type { Team } from '../../domain/types';
 import { formatChecked } from '../../remote/session';
 import type { TeamLink, UploadRecord } from '../../remote/store';
@@ -15,7 +16,7 @@ import { pendingTotal, type PendingChanges } from '../../remote/upload';
 import { Icon } from '../components/Icon';
 import { SyncIndicator } from '../match/SyncIndicator';
 import { ConfirmSheet } from '../components/Sheet';
-import { ImportedTeamCard } from './ImportedTeamCard';
+import { ClubChangesBlock } from './ClubChangesBlock';
 import { LinkSheet } from './LinkSheet';
 import { UploadSheet } from './UploadSheet';
 
@@ -34,28 +35,19 @@ export function ClubLinkCard({ team, onDataChanged }: { team: Team; onDataChange
   /** Cambios sin enviar al activar el envío automático: se confirman antes del primer envío. */
   const [confirmAuto, setConfirmAuto] = useState<PendingChanges | null>(null);
   const [autoError, setAutoError] = useState<string | null>(null);
+  // Se vuelve a leer cuando llegan cambios del club (conflictos, permiso, cursor…).
+  const revision = useRemoteRevision(team.id);
+  const [copies, setCopies] = useState(0);
+  useEffect(() => teamImporter?.subscribe(() => setCopies((v) => v + 1)), []);
   const info = useLoad(async (): Promise<{ link: TeamLink | null; last: UploadRecord | null; sent: boolean } | null> => {
     if (!clubSync) return null;
     const link = await clubSync.getLink(team.id);
     return { link, last: await clubSync.lastUpload(team.id), sent: link ? await clubSync.hasSent(link) : false };
-  }, [team.id]);
+  }, [team.id, revision, copies]);
   const load = info.reload;
 
   if (!clubSync || !info.data) return null;
   const { link, last, sent } = info.data;
-  // Copia del club importada en este dispositivo: tarjeta propia (solo lectura).
-  if (link?.origin === 'imported') {
-    return (
-      <ImportedTeamCard
-        team={team}
-        link={link}
-        onChanged={() => {
-          load();
-          onDataChanged?.();
-        }}
-      />
-    );
-  }
   const writable = session.teams.some((t) => t.role === 'coach' && t.status === 'active');
   if (!link && !writable) return null;
   const canSend = link ? session.teams.some((t) => t.teamId === link.remoteTeamId && t.role === 'coach' && t.status === 'active') : false;
@@ -130,16 +122,24 @@ export function ClubLinkCard({ team, onDataChanged }: { team: Team; onDataChange
             </p>
           )}
           {link.auto === true && <SyncIndicator teamId={team.id} variant="text" />}
-          {link.autoBlocked && (
+          {link.autoBlocked && !link.conflicts?.length && !link.accessLost && (
             <p className="hint">
               El envío automático se ha detenido para no sobrescribir nada. Revisa el aviso y usa «Enviar al servidor»: si
               termina con «Sincronización completada», se reanuda solo.
             </p>
           )}
-          <button type="button" className="btn btn-primary btn-block" disabled={!canSend} onClick={() => setSheet('upload')}>
+          <button type="button" className="btn btn-primary btn-block" disabled={!canSend || link.accessLost === true} onClick={() => setSheet('upload')}>
             <Icon as={CloudUpload} />
             Enviar al servidor
           </button>
+          <ClubChangesBlock
+            team={team}
+            link={link}
+            onChanged={() => {
+              load();
+              onDataChanged?.();
+            }}
+          />
           {!sent && (
             <button type="button" className="btn btn-ghost btn-block" onClick={() => setSheet('unlink')}>
               Deshacer el vínculo

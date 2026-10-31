@@ -18,6 +18,7 @@ import { createApi, type Api, type RemoteTeam } from '../../src/remote/api';
 import { AutoSync } from '../../src/remote/autosync';
 import { ClubSync } from '../../src/remote/clubsync';
 import { TeamImporter } from '../../src/remote/importer';
+import { TeamPuller } from '../../src/remote/pull';
 import { buildPlan } from '../../src/remote/plan';
 import { AccountStore } from '../../src/remote/store';
 import { pendingChanges, pendingTotal, stableJson } from '../../src/remote/upload';
@@ -78,10 +79,11 @@ async function coachDevice(name: string, token = tokens.other, role: RemoteTeam[
   repo.protectReadOnly(importer);
   await importer.load();
   const sync = new ClubSync(repo, store, net.api, () => teams);
-  return { local, repo, store, net, teams, importer, sync };
+  const puller = new TeamPuller(local, store, net.api, () => teams, undefined, () => void importer.load());
+  return { local, repo, store, net, teams, importer, sync, puller };
 }
 
-/** Lo que mandaría un envío desde la copia (sin enviar nada), saltándose el bloqueo de solo lectura. */
+/** Lo que mandaría un envío desde la copia (sin enviar nada). */
 async function pendingOf(d: Awaited<ReturnType<typeof coachDevice>>, localTeamId: string) {
   const link = (await d.store.getLink(localTeamId))!;
   const team = (await d.local.getTeam(localTeamId))!;
@@ -166,8 +168,8 @@ describe('importar un equipo del club', () => {
     expect(metas).toHaveLength(23 + 4 + 283);
     const serverVersion = db.sqlite.prepare("SELECT version FROM matches WHERE opponent = 'Prueba'").get() as { version: number };
     expect(metas.find((m) => m.entity === 'match' && m.entityId === orig.matches.find((x) => x.opponent === 'Prueba')!.id)!.version).toBe(serverVersion.version);
-    // Vínculo de copia: solo lectura, sin envío automático, con el cursor del club.
-    expect(await d.store.getLink(r.localTeamId)).toMatchObject({ origin: 'imported', readOnly: true, cursor: expect.any(Number) });
+    // Vínculo de copia: editable, sin envío automático, con el cursor del club.
+    expect(await d.store.getLink(r.localTeamId)).toMatchObject({ origin: 'imported', readOnly: false, cursor: expect.any(Number) });
     expect((await d.store.getLink(r.localTeamId))?.auto).toBeUndefined();
   });
 
@@ -191,14 +193,16 @@ describe('importar un equipo del club', () => {
     const { localTeamId } = await d.importer.importTeam(REMOTE);
     expect(await pendingOf(d, localTeamId)).toBe(0);
     expect(d.net.writes).toBe(0);
-    // El envío automático no se puede activar y no envía nada.
+    // El envío automático está desactivado y, al activarlo, no hay nada que enviar.
     const auto = new AutoSync(d.sync, d.store, d.net.api, () => d.teams, { quietMs: 10, maxWaitMs: 50 });
-    await expect(auto.setEnabled(localTeamId, true)).rejects.toThrow(/solo lectura/);
     await auto.checkAll();
+    await new Promise((r) => setTimeout(r, 60));
+    expect(auto.state(localTeamId).status).toBe('off');
+    await auto.setEnabled(localTeamId, true);
     await new Promise((r) => setTimeout(r, 100));
     await auto.dispose();
-    // Tampoco el envío manual.
-    await expect(d.sync.upload(localTeamId)).rejects.toThrow(/solo lectura/);
+    // Un envío manual tampoco manda nada.
+    expect((await d.sync.upload(localTeamId)).status).toBe('verified');
     expect(d.net.writes).toBe(0);
     expect(serverDump()).toBe(before);
   });
@@ -314,6 +318,68 @@ describe('protección de los equipos existentes', () => {
     expect(await d.store.listLinks()).toEqual([]);
   });
 
+  it('el iPhone recibe cambios sin tocar su base ni reenviar las 273 acciones históricas', async () => {
+    const iphoneStore = new AccountStore(`cuenta-${n}-iphone`);
+    const net = network();
+    const teams = [remoteTeam('coach')];
+    const importer = new TeamImporter(iphoneRepo, iphoneStore, net.api, () => teams);
+    await importer.load();
+    const puller = new TeamPuller(iphoneRepo, iphoneStore, net.api, () => teams);
+    const before = await iphoneRepo.readAll();
+    const linkBefore = (await iphoneStore.getLink(iphoneTeam.id))!;
+    const metasBefore = await iphoneStore.listMeta(REMOTE);
+    const server = serverDump();
+    // Incorporar: ya está vinculado, no se descarga nada.
+    await importer.incorporate();
+    expect(net.reads + net.writes).toBe(0);
+    // Primera recepción (sin cursor): descarga completa y conciliación, sin cambios.
+    expect(await puller.pull(iphoneTeam.id)).toEqual({ status: 'ok', applied: 0, conflicts: 0, full: true });
+    expect(await iphoneRepo.readAll()).toEqual(before);
+    expect((await iphoneStore.listMeta(REMOTE)).map((m) => [m.key, m.version, m.hash]).sort()).toEqual(metasBefore.map((m) => [m.key, m.version, m.hash]).sort());
+    const after = (await iphoneStore.getLink(iphoneTeam.id))!;
+    expect(after.cursor).toBeGreaterThan(0);
+    expect({ ...after, cursor: undefined, refreshedAt: undefined, controlledElsewhere: undefined, readOnly: undefined }).toEqual({ ...linkBefore, cursor: undefined, refreshedAt: undefined, controlledElsewhere: undefined, readOnly: undefined });
+    // Segunda: solo /changes, sin descargar el equipo.
+    const reads = net.reads;
+    expect(await puller.pull(iphoneTeam.id)).toEqual({ status: 'ok', applied: 0, conflicts: 0, full: false });
+    expect(net.reads - reads).toBe(1);
+    // Y nada pendiente: no se reenvía nada.
+    expect((await iphone.pending(iphoneTeam.id))).toEqual({ players: 0, matches: 0, events: 0, matchDeletions: 0 });
+    expect(net.writes).toBe(0);
+    expect(serverDump()).toBe(server);
+  });
+
+  it('iPhone con envío automático activado: la primera recepción no cambia nada (datos, estadísticas, rankings ni preferencia)', async () => {
+    const iphoneStore = new AccountStore(`cuenta-${n}-iphone`);
+    await iphoneStore.updateLink({ ...(await iphoneStore.getLink(iphoneTeam.id))!, auto: true });
+    const net = network();
+    const teams = [remoteTeam('coach')];
+    const sync = new ClubSync(iphoneRepo, iphoneStore, net.api, () => teams);
+    const puller = new TeamPuller(iphoneRepo, iphoneStore, net.api, () => teams);
+    sync.receiveWith(puller);
+    const auto = new AutoSync(sync, iphoneStore, net.api, () => teams, { quietMs: 10, maxWaitMs: 50 }).receiveWith(puller);
+    const before = await iphoneRepo.readAll();
+    const items = await loadSeasonItems(iphoneRepo, iphoneTeam.id);
+    const rankings = RANKINGS.map((def) => rankPlayers(def, seasonCandidates(computeSeasonStats(items))).map((e) => [e.position, e.player.playerId, e.value]));
+    const server = serverDump();
+    expect(before.matches).toHaveLength(4);
+    expect(before.events).toHaveLength(283);
+    expect(before.players).toHaveLength(23);
+
+    expect(await puller.pull(iphoneTeam.id)).toEqual({ status: 'ok', applied: 0, conflicts: 0, full: true });
+    await auto.checkAll();
+    await new Promise((r) => setTimeout(r, 150));
+    await auto.dispose();
+
+    expect(await iphoneRepo.readAll()).toEqual(before); // cero modificaciones y cero duplicados
+    expect((await iphoneStore.getLink(iphoneTeam.id))?.auto).toBe(true); // preferencia intacta
+    const after = await loadSeasonItems(iphoneRepo, iphoneTeam.id);
+    expect(seasonJson(computeSeasonStats(after))).toBe(seasonJson(computeSeasonStats(items)));
+    expect(RANKINGS.map((def) => rankPlayers(def, seasonCandidates(computeSeasonStats(after))).map((e) => [e.position, e.player.playerId, e.value]))).toEqual(rankings);
+    expect(net.writes).toBe(0); // cero reenvíos
+    expect(serverDump()).toBe(server);
+  });
+
   it('el envío automático del iPhone sigue igual después de que otro importe', async () => {
     const d = await coachDevice('portatil');
     await d.importer.importTeam(REMOTE);
@@ -370,10 +436,10 @@ describe('permisos', () => {
 });
 
 describe('cambios en el club después de importar', () => {
-  it('se detectan, la copia no se puede editar y «Actualizar copia» la pone al día sin pendientes', async () => {
+  it('la recepción los incorpora sin pendientes ni reenvíos', async () => {
     const d = await coachDevice('portatil');
     const { localTeamId } = await d.importer.importTeam(REMOTE);
-    expect(await d.importer.isBehind(localTeamId)).toBe(false);
+    expect(await d.puller.pull(localTeamId)).toMatchObject({ status: 'ok', applied: 0, full: false });
 
     // El iPhone corrige una acción histórica y registra otra.
     const match = (await iphoneRepo.getMatch(matches[1]!.id))!;
@@ -381,21 +447,10 @@ describe('cambios en el club después de importar', () => {
     await svc.updateEvent(iphoneRepo, match, target, { matchTimeMs: target.matchTimeMs + 1000 });
     await svc.recordEvent(iphoneRepo, match, { kind: 'recovery' }, null, { period: 2, matchTimeMs: 3_000_000 });
     expect((await iphone.upload(iphoneTeam.id)).status).toBe('verified');
-    expect(await d.importer.isBehind(localTeamId)).toBe(true);
 
-    // Nadie puede sobrescribir desde la copia antigua.
-    const copyMatch = (await d.local.getMatch(match.id))!;
-    const stale = (await d.local.getEvent(target.id))!;
-    await expect(svc.updateEvent(d.repo, copyMatch, stale, { matchTimeMs: 1 })).rejects.toBeInstanceOf(ReadOnlyTeamError);
-    await expect(svc.recordEvent(d.repo, copyMatch, { kind: 'recovery' }, null, { period: 1, matchTimeMs: 0 })).rejects.toBeInstanceOf(ReadOnlyTeamError);
-    await expect(d.repo.savePlayer({ ...(await d.local.listPlayers(localTeamId))[0]!, name: 'Cambio' })).rejects.toBeInstanceOf(ReadOnlyTeamError);
-    expect((await d.local.getEvent(target.id))!.matchTimeMs).toBe(target.matchTimeMs);
-
-    // Actualizar copia.
-    await d.importer.refresh(localTeamId);
+    expect(await d.puller.pull(localTeamId)).toMatchObject({ status: 'ok', applied: 2, conflicts: 0, full: false });
     expect((await d.local.getEvent(target.id))!.matchTimeMs).toBe(target.matchTimeMs + 1000);
     expect((await d.store.getMeta('event', target.id))!.version).toBe(2);
-    expect(await d.importer.isBehind(localTeamId)).toBe(false);
     expect(await pendingOf(d, localTeamId)).toBe(0);
     const a = await loadSeasonItems(iphoneRepo, iphoneTeam.id);
     const b = await loadSeasonItems(d.local, localTeamId);
@@ -403,13 +458,15 @@ describe('cambios en el club después de importar', () => {
     expect(d.net.writes).toBe(0);
   });
 
-  it('si la copia tuviera cambios propios, «Actualizar copia» no los sobrescribe', async () => {
+  it('un cambio hecho aquí y en el club a la vez no se sobrescribe: queda como conflicto', async () => {
     const d = await coachDevice('portatil');
     const { localTeamId } = await d.importer.importTeam(REMOTE);
-    // Cambio hecho por debajo del repositorio (no debería poder ocurrir).
     const p = (await d.local.listPlayers(localTeamId))[0]!;
-    await d.local.savePlayer({ ...p, name: 'Cambio local' });
-    await expect(d.importer.refresh(localTeamId)).rejects.toThrow(/no se sobrescribe/);
+    await d.repo.savePlayer({ ...p, name: 'Cambio local', updatedAt: '2026-10-31T12:00:00.000Z' });
+    const ip = (await iphoneRepo.getPlayer(p.id))!;
+    await iphoneRepo.savePlayer({ ...ip, name: 'Cambio del club', updatedAt: '2026-10-31T12:00:01.000Z' });
+    expect((await iphone.upload(iphoneTeam.id)).status).toBe('verified');
+    expect(await d.puller.pull(localTeamId)).toMatchObject({ status: 'ok', conflicts: 1 });
     expect((await d.local.getPlayer(p.id))!.name).toBe('Cambio local');
   });
 

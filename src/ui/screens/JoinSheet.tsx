@@ -4,7 +4,7 @@
 import { CircleCheck } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { errorMessage } from '../../app/errors';
-import { remote } from '../../app/remote';
+import { remote, teamImporter } from '../../app/remote';
 import { navigate } from '../../app/router';
 import { CODE_LENGTH, normalizeCode } from '../../remote/api';
 import { ROLE_LABEL, type JoinResult } from '../../remote/session';
@@ -12,15 +12,39 @@ import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
 
 const ROLE_HELP = {
-  coach: 'Como entrenador podrás registrar los partidos del equipo cuando se active la sincronización.',
+  coach: 'Como entrenador tienes en este dispositivo todas las herramientas del equipo: partidos, convocatorias, plantilla y estadísticas.',
   viewer: 'Con acceso de consulta puedes ver la información del equipo, pero no modificarla.',
 } as const;
+
+/** Resultado de preparar el equipo en el dispositivo tras un código de entrenador. */
+type Prepared = { localTeamId: string } | { message: string } | null;
 
 export function JoinSheet({ onClose }: { onClose: () => void }) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [joined, setJoined] = useState<JoinResult | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [prepared, setPrepared] = useState<Prepared>(null);
+
+  /** Con código de entrenador, el equipo se prepara solo en este dispositivo (o se usa el ya vinculado). */
+  async function prepare(result: JoinResult) {
+    if (result.role !== 'coach' || !teamImporter) return;
+    setPreparing(true);
+    try {
+      await teamImporter.incorporate(result.teamId);
+      const state = await teamImporter.state(result.teamId);
+      if (state.kind === 'imported' || state.kind === 'linked') setPrepared({ localTeamId: state.link.localTeamId });
+      else {
+        const inc = teamImporter.incorporationOf(result.teamId);
+        setPrepared({ message: inc && 'message' in inc ? inc.message : 'No se pudo preparar el equipo en este dispositivo.' });
+      }
+    } catch (e) {
+      setPrepared({ message: errorMessage(e) });
+    } finally {
+      setPreparing(false);
+    }
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -28,8 +52,10 @@ export function JoinSheet({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      setJoined(await remote.join(code));
+      const result = await remote.join(code);
+      setJoined(result);
       setCode('');
+      void prepare(result);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -43,16 +69,30 @@ export function JoinSheet({ onClose }: { onClose: () => void }) {
         title="Acceso concedido"
         onClose={onClose}
         footer={
-          <button
-            type="button"
-            className="btn btn-primary btn-block"
-            onClick={() => {
-              onClose();
-              navigate({ name: 'remoteTeam', teamId: joined.teamId });
-            }}
-          >
-            Ver el equipo
-          </button>
+          joined.role === 'coach' && prepared && 'localTeamId' in prepared ? (
+            <button
+              type="button"
+              className="btn btn-primary btn-block"
+              onClick={() => {
+                onClose();
+                navigate({ name: 'team', teamId: prepared.localTeamId });
+              }}
+            >
+              Abrir el equipo
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-primary btn-block"
+              disabled={preparing}
+              onClick={() => {
+                onClose();
+                navigate({ name: 'remoteTeam', teamId: joined.teamId });
+              }}
+            >
+              {preparing ? 'Preparando el equipo…' : 'Ver el equipo'}
+            </button>
+          )
         }
       >
         <div className="form">
@@ -69,7 +109,22 @@ export function JoinSheet({ onClose }: { onClose: () => void }) {
             Permiso concedido: <span className={`status status-${joined.role}`}>{ROLE_LABEL[joined.role]}</span>
           </p>
           <p className="hint">{ROLE_HELP[joined.role]}</p>
-          <p className="hint">Los equipos y partidos guardados en este dispositivo no han cambiado.</p>
+          {preparing && (
+            <p className="hint" role="status">
+              Preparando el equipo en este dispositivo…
+            </p>
+          )}
+          {prepared && 'message' in prepared && (
+            <p className="notice" role="status">
+              {prepared.message}
+            </p>
+          )}
+          {prepared && 'localTeamId' in prepared && (
+            <p className="hint" role="status">
+              El equipo está listo en este dispositivo.
+            </p>
+          )}
+          <p className="hint">Los demás equipos y partidos guardados en este dispositivo no han cambiado.</p>
         </div>
       </Sheet>
     );

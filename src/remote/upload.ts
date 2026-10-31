@@ -108,6 +108,23 @@ export const pendingTotal = (p: PendingChanges) => p.players + p.matches + p.eve
 
 // --- Bloqueo -------------------------------------------------------------------
 
+/**
+ * Como `withLock`, pero espera (con un límite) a que termine el envío o la
+ * recepción en curso: para operaciones que no se pueden saltar, como quitar
+ * una copia o resolver un conflicto.
+ */
+export async function waitForLock<T>(name: string, fn: () => Promise<T>, timeoutMs = 30_000): Promise<T> {
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      return await withLock(name, fn);
+    } catch (e) {
+      if (!(e instanceof UploadBusyError) || Date.now() > until) throw e;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+}
+
 const running = new Set<string>();
 
 export class UploadBusyError extends Error {
@@ -117,8 +134,11 @@ export class UploadBusyError extends Error {
   }
 }
 
-/** Un solo envío a la vez por equipo del club (también entre pestañas, si el navegador lo permite). */
-async function withLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
+/**
+ * Un solo envío (o recepción de cambios) a la vez por equipo del club, también
+ * entre pestañas si el navegador lo permite.
+ */
+export async function withLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
   if (running.has(name)) throw new UploadBusyError();
   running.add(name);
   try {
@@ -262,19 +282,30 @@ export async function runUpload(plan: UploadPlan, deps: UploadDeps): Promise<Upl
     }
 
     if (deps.verify === false) return { status: 'sent', sent, unchanged, differences: [] };
-    deps.onProgress?.({ phase: 'verify', done: 0, total: 1 });
-    let snapshot: TeamSnapshot;
-    try {
-      snapshot = await deps.api.snapshot(deps.token, remoteTeamId);
-    } catch (e) {
-      const stop = stopFor(e, 'Comprobación');
-      return { status: 'stopped', sent, unchanged, stop: { reason: stop.reason, message: stop.message, record: stop.record }, differences: [] };
-    }
-    const metas = new Map((await deps.store.listMeta(remoteTeamId)).map((m) => [m.key, m.version]));
-    const differences = compareWithServer(plan, snapshot, metas);
-    deps.onProgress?.({ phase: 'verify', done: 1, total: 1 });
-    return { status: differences.length === 0 ? 'verified' : 'differences', sent, unchanged, differences };
+    return { ...(await verifyUpload(plan, deps)), sent, unchanged };
   });
+}
+
+/**
+ * Comprueba con el servidor que lo de este dispositivo coincide con lo que hay
+ * allí (después de enviar y, si existe, de recibir los cambios del club).
+ */
+export async function verifyUpload(
+  plan: UploadPlan,
+  deps: Pick<UploadDeps, 'api' | 'store' | 'token' | 'onProgress'>,
+): Promise<Pick<UploadOutcome, 'status' | 'stop' | 'differences'>> {
+  deps.onProgress?.({ phase: 'verify', done: 0, total: 1 });
+  let snapshot: TeamSnapshot;
+  try {
+    snapshot = await deps.api.snapshot(deps.token, plan.link.remoteTeamId);
+  } catch (e) {
+    const stop = stopFor(e, 'Comprobación');
+    return { status: 'stopped', stop: { reason: stop.reason, message: stop.message, record: stop.record }, differences: [] };
+  }
+  const metas = new Map((await deps.store.listMeta(plan.link.remoteTeamId)).map((m) => [m.key, m.version]));
+  const differences = compareWithServer(plan, snapshot, metas);
+  deps.onProgress?.({ phase: 'verify', done: 1, total: 1 });
+  return { status: differences.length === 0 ? 'verified' : 'differences', differences };
 }
 
 // --- Comprobación ----------------------------------------------------------------
@@ -290,6 +321,14 @@ const statsJson = (s: ReturnType<typeof computeSeasonStats>) =>
 export function compareWithServer(plan: UploadPlan, snapshot: TeamSnapshot, versions: ReadonlyMap<string, number>): string[] {
   const out: string[] = [];
   const remoteTeamId = plan.link.remoteTeamId;
+  // Lo apartado por conflicto no se compara: se sabe que es distinto y espera a que el usuario elija.
+  const aside = new Set(plan.setAside ?? []);
+  snapshot = {
+    ...snapshot,
+    players: snapshot.players.filter((p) => !aside.has(`player:${p.player.id}`)),
+    matches: snapshot.matches.filter((m) => !aside.has(`match:${m.match.id}`)),
+    events: snapshot.events.filter((e) => !aside.has(`event:${e.event.id}`) && !aside.has(`match:${e.event.matchId}`)),
+  };
   const version = (entity: SyncEntity, id: string, server: number, label: string) => {
     if (versions.get(metaKey(entity, id)) !== server) out.push(`${label}: la versión del servidor no coincide con la confirmada.`);
   };

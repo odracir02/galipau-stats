@@ -1,7 +1,8 @@
 import { ChartColumn, List, Lock, SquarePen } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { errorMessage } from '../../app/errors';
-import { clubSync } from '../../app/remote';
+import { clubSync, teamPuller } from '../../app/remote';
+import { useRemoteRevision, useTeamLink } from '../../app/useTeamSync';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
 import { showToast } from '../../app/toast';
@@ -29,14 +30,18 @@ import { StatsView } from '../stats/StatsView';
 import { TopBar } from '../components/TopBar';
 
 export function MatchScreen({ matchId }: { matchId: Id }) {
+  // Cambia cuando llegan cambios del club a ESTE partido: se vuelve a leer.
+  const revision = useRemoteRevision(undefined, matchId);
   const data = useLoad(async () => {
     const match = await repo.getMatch(matchId);
     if (!match || match.deletedAt) return null;
     const [team, events] = await Promise.all([repo.getTeam(match.teamId), repo.listEvents(match.id)]);
     return { match, team, events };
-  }, [matchId]);
-  // Partido de una copia del club de solo lectura: solo sus estadísticas.
-  const readOnly = useReadOnlyTeam(data.data?.match.teamId ?? '');
+  }, [matchId, revision]);
+  const loadedTeamId = data.data?.match.teamId;
+  // Equipo bloqueado en este dispositivo (sin permiso, preparándose): solo sus estadísticas.
+  const readOnly = useReadOnlyTeam(loadedTeamId ?? '');
+  const link = useTeamLink(loadedTeamId);
 
   if (data.error) return <p className="form-error">{data.error}</p>;
   if (data.data === undefined) return <div className="screen" />;
@@ -50,20 +55,47 @@ export function MatchScreen({ matchId }: { matchId: Id }) {
       </div>
     );
   }
-  if (readOnly) return <ReadOnlyMatch match={data.data.match} events={data.data.events} team={data.data.team} />;
-  return <MatchLive key={matchId} initialMatch={data.data.match} initialEvents={data.data.events} team={data.data.team} />;
+  const { match, events, team } = data.data;
+  if (readOnly) {
+    return <ReadOnlyMatch match={match} events={events} team={team} notice="Este equipo está bloqueado en este dispositivo: aquí no se registra ni se corrige nada." />;
+  }
+  // Partido en curso que registra otro dispositivo: se sigue en directo, sin escrituras que choquen.
+  const active = match.status === 'in_progress' || match.status === 'halftime';
+  if (active && link?.controlledElsewhere?.includes(match.id)) {
+    return (
+      <ReadOnlyMatch
+        match={match}
+        events={events}
+        team={team}
+        live
+        notice="Este partido lo está registrando otro dispositivo del equipo. Solo ese dispositivo puede continuarlo; aquí lo ves al día. (Pasar el registro a este dispositivo llegará en una próxima versión.)"
+      />
+    );
+  }
+  return <MatchLive key={`${matchId}-${revision}`} initialMatch={match} initialEvents={events} team={team} />;
 }
 
-/** Partido de una copia del club de solo lectura: estadísticas, sin registro ni correcciones. */
-function ReadOnlyMatch({ match, events, team }: { match: Match; events: MatchEvent[]; team: Team }) {
+/**
+ * Partido solo para consultar: estadísticas, sin registro ni correcciones. Con
+ * `live`, recibe los cambios del club cada 5 s mientras está a la vista.
+ */
+function ReadOnlyMatch({ match, events, team, notice, live = false }: { match: Match; events: MatchEvent[]; team: Team; notice: string; live?: boolean }) {
   const stats = useMemo(() => computeMatchStats(match, events), [match, events]);
+  useEffect(() => {
+    if (!live || !teamPuller) return;
+    const tick = () => {
+      if (document.visibilityState === 'visible') void teamPuller?.pull(team.id);
+    };
+    const timer = setInterval(tick, 5_000);
+    return () => clearInterval(timer);
+  }, [live, team.id]);
   return (
     <div className="screen">
       <TopBar title={opponentLabel(match.opponent)} subtitle={`${formatDate(match.date)} · ${team.name}`} back={() => navigate({ name: 'team', teamId: team.id })} />
       <main className="content">
         <p className="notice">
           <Icon as={Lock} size={18} />
-          Copia del club de solo lectura: aquí no se registra ni se corrige nada.
+          {notice}
         </p>
         <StatsView
           mode="match"

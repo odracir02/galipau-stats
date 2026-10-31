@@ -5,9 +5,22 @@ import type { Repository } from '../data/repository';
 import { RemoteError, type Api, type RemoteTeam } from './api';
 import { buildPlan, type UploadPlan } from './plan';
 import type { AccountStore, TeamLink, UploadRecord } from './store';
-import { pendingChanges, runUpload, type PendingChanges, type UploadDeps, type UploadOutcome, type UploadProgress } from './upload';
+import { pendingChanges, runUpload, verifyUpload, type PendingChanges, type UploadDeps, type UploadOutcome, type UploadProgress } from './upload';
+
+/** Recepción de cambios del club (pull.ts): antes de comprobar un envío, se incorpora lo de los demás. */
+export interface Receiver {
+  pull(localTeamId: string): Promise<unknown>;
+}
 
 export class ClubSync {
+  private receiver: Receiver | null = null;
+
+  /** Con recepción de cambios: un envío manual recibe lo del club antes de comprobar. */
+  receiveWith(receiver: Receiver): this {
+    this.receiver = receiver;
+    return this;
+  }
+
   constructor(
     private readonly repo: Repository,
     private readonly store: AccountStore,
@@ -80,7 +93,22 @@ export class ClubSync {
     const team = await this.repo.getTeam(localTeamId);
     if (!team) throw new RemoteError('not_found', 'El equipo local no existe.');
     const sentMatches = new Set((await this.store.listMeta(link.remoteTeamId)).filter((m) => m.entity === 'match').map((m) => m.entityId));
-    return buildPlan(await this.repo.readAll(), team, link, sentMatches);
+    const plan = buildPlan(await this.repo.readAll(), team, link, sentMatches);
+    // Los registros en conflicto con el club se apartan (y las acciones de un
+    // partido en conflicto): esperan a que el usuario elija; lo demás se envía.
+    const conflicted = new Set((link.conflicts ?? []).map((c) => c.key));
+    if (conflicted.size === 0) return plan;
+    const matchOut = (id: string) => conflicted.has(`match:${id}`);
+    const setAside = [...conflicted];
+    const events = plan.events.filter((e) => !conflicted.has(`event:${e.id}`) && !matchOut(e.matchId));
+    for (const e of plan.events) if (!events.includes(e)) setAside.push(`event:${e.id}`);
+    return {
+      ...plan,
+      players: plan.players.filter((p) => !conflicted.has(`player:${p.id}`)),
+      matches: plan.matches.filter((m) => !matchOut(m.id)),
+      events,
+      setAside: [...new Set(setAside)],
+    };
   }
 
   /** ¿Está este partido en el servidor del club (enviado y confirmado alguna vez)? */
@@ -124,15 +152,17 @@ export class ClubSync {
     await this.store.saveUpload(record);
     let outcome: UploadOutcome;
     try {
-      outcome = await runUpload(plan, {
-        api: this.api,
-        store: this.store,
-        token: device.token,
-        deviceId: device.deviceId,
-        onProgress,
-        now: this.now,
-        ...this.retry,
-      });
+      const deps = { api: this.api, store: this.store, token: device.token, deviceId: device.deviceId, onProgress, now: this.now, ...this.retry };
+      if (this.receiver) {
+        // En los dos sentidos: enviar, recibir lo de los demás y comprobar que todo coincide.
+        outcome = await runUpload(plan, { ...deps, verify: false });
+        if (outcome.status === 'sent') {
+          await this.receiver.pull(localTeamId);
+          outcome = { ...outcome, ...(await verifyUpload(await this.preview(localTeamId), deps)) };
+        }
+      } else {
+        outcome = await runUpload(plan, deps);
+      }
     } catch (e) {
       await this.store.saveUpload({ ...record, finishedAt: this.now().toISOString(), status: 'interrupted', message: e instanceof Error ? e.message : 'Error' });
       throw e;
@@ -145,9 +175,11 @@ export class ClubSync {
       skipped: outcome.unchanged,
       message: outcome.stop?.message ?? (outcome.differences.length ? `${outcome.differences.length} diferencias` : null),
     });
-    // Un envío manual completo y comprobado vuelve a activar el envío automático detenido.
-    if (outcome.status === 'verified' && plan.link.autoBlocked) {
-      await this.store.updateLink({ ...plan.link, autoBlocked: null });
+    // Un envío manual completo y comprobado vuelve a activar el envío automático detenido
+    // (se relee el vínculo: la recepción puede haberlo actualizado).
+    const fresh = await this.store.getLink(localTeamId);
+    if (outcome.status === 'verified' && fresh?.autoBlocked) {
+      await this.store.updateLink({ ...fresh, autoBlocked: null });
     }
     return outcome;
   }

@@ -63,6 +63,26 @@ export interface TeamDataStore {
   readTeamData(teamId: Id): Promise<TeamData | null>;
   /** Borra un equipo y todos sus registros. */
   removeTeamData(teamId: Id): Promise<void>;
+  /**
+   * Guarda cambios recibidos del club, todos en una transacción. Antes de
+   * escribir cada registro se comprueba, dentro de la misma transacción, que
+   * el que hay guardado sigue siendo el esperado: si alguien lo ha cambiado
+   * entretanto, no se escribe nada (ConcurrentChangeError).
+   */
+  applyRecords(changes: readonly RecordChange[]): Promise<void>;
+}
+
+export type RecordChange =
+  | { store: 'players'; record: Player; expect: (current: Player | undefined) => boolean }
+  | { store: 'matches'; record: Match; expect: (current: Match | undefined) => boolean }
+  | { store: 'events'; record: MatchEvent; expect: (current: MatchEvent | undefined) => boolean };
+
+/** Un registro cambió en el dispositivo mientras se aplicaban cambios del club: no se ha escrito nada. */
+export class ConcurrentChangeError extends Error {
+  override name = 'ConcurrentChangeError';
+  constructor() {
+    super('Un dato cambió en este dispositivo mientras se recibían los cambios del club.');
+  }
 }
 
 /** Algún registro que se iba a añadir ya existe en el dispositivo: no se ha escrito nada. */
