@@ -19,6 +19,7 @@ import type { UploadPlan } from './plan';
 import { toRemoteMatch, toRemotePlayer } from './plan';
 import type { AccountStore, SyncEntity } from './store';
 import { metaKey } from './store';
+import { rosterLabel } from '../domain/officials';
 
 // --- Huellas y operaciones ---------------------------------------------------
 
@@ -269,7 +270,7 @@ export async function runUpload(plan: UploadPlan, deps: UploadDeps): Promise<Upl
       const pPlayers = total('players', plan.players.length);
       for (const [i, p] of plan.players.entries()) {
         const record = toRemotePlayer(p, remoteTeamId);
-        await send('player', p.id, `Jugador ${p.number} · ${p.name}`, record, playerContent(record), (op) => deps.api.syncPlayer(deps.token, op));
+        await send('player', p.id, rosterLabel(p), record, playerContent(record), (op) => deps.api.syncPlayer(deps.token, op));
         pPlayers(i + 1);
       }
       const pMatches = total('matches', plan.matches.length);
@@ -344,7 +345,7 @@ export function compareWithServer(plan: UploadPlan, snapshot: TeamSnapshot, vers
   const rPlayers = new Map(snapshot.players.map((p) => [p.player.id, p]));
   for (const p of plan.players) {
     const r = rPlayers.get(p.id);
-    const label = `Jugador ${p.number} · ${p.name}`;
+    const label = rosterLabel(p);
     if (!r) out.push(`${label}: no está en el servidor.`);
     else {
       if (stableJson(playerContent(r.player)) !== stableJson(playerContent(toRemotePlayer(p, remoteTeamId)))) out.push(`${label}: datos distintos en el servidor.`);

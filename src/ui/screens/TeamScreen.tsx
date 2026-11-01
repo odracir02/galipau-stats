@@ -8,6 +8,7 @@ import { remote, teamPuller } from '../../app/remote';
 import { useRemoteRevision } from '../../app/useTeamSync';
 import { useLoad } from '../../app/useLoad';
 import { isOfficial } from '../../domain/catalog';
+import { fixedSlotOf } from '../../domain/officials';
 import { formatDate, opponentLabel } from '../../domain/format';
 import type { Id, Player, Team } from '../../domain/types';
 import { loadSeasonItems } from '../../services/statsService';
@@ -162,7 +163,9 @@ function Roster({ team, readOnly }: { team: Team; readOnly: boolean }) {
   const [editing, setEditing] = useState<{ player?: Player; official?: boolean; key: number } | null>(null);
   const list = players.data ?? [];
   const squad = list.filter((p) => !isOfficial(p));
-  const staff = list.filter(isOfficial).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  // Cuerpo técnico: los puestos fijos (Entrenador…) no se muestran ni se editan
+  // aquí; solo los oficiales que se dieron de alta a mano antes, si los hay.
+  const staff = list.filter((p) => isOfficial(p) && fixedSlotOf(p.id) === null).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   const groups: [string, Player[]][] = [
     ['Jugadores de campo', squad.filter((p) => p.position === 'field')],
     ['Porteros', squad.filter((p) => p.position === 'goalkeeper')],
@@ -204,40 +207,35 @@ function Roster({ team, readOnly }: { team: Team; readOnly: boolean }) {
           </ul>
         </section>
       ))}
-      {/* Cuerpo técnico: sin dorsal; solo para registrar sus sanciones. */}
-      <section className="staff">
-        <h3 className="section-title">
-          Cuerpo técnico <span className="muted">({staff.filter((p) => p.active).length})</span>
-        </h3>
-        {staff.length === 0 && <p className="empty">Ninguno.</p>}
-        <ul className="list">
-          {staff.map((p) => (
-            <li key={p.id}>
-              <button
-                type="button"
-                className={`list-item ${p.active ? '' : 'inactive'}`}
-                onClick={() => setEditing({ player: p, key: Date.now() })}
-                disabled={readOnly}
-              >
-                <span className="dorsal dorsal-lg dorsal-staff" aria-hidden="true">
-                  <Icon as={Clipboard} size={18} />
-                </span>
-                <span className="list-main">
-                  <strong>{p.name}</strong>
-                  {!p.active && <span className="muted">Inactivo</span>}
-                </span>
-                {!readOnly && <Icon as={ChevronRight} className="chevron" />}
-              </button>
-            </li>
-          ))}
-        </ul>
-        {!readOnly && (
-          <button type="button" className="btn btn-block" onClick={() => setEditing({ official: true, key: Date.now() })}>
-            <Icon as={Plus} />
-            Añadir al cuerpo técnico
-          </button>
-        )}
-      </section>
+      {/* Cuerpo técnico dado de alta a mano antes: sin dorsal; solo para sus sanciones. */}
+      {staff.length > 0 && (
+        <section className="staff">
+          <h3 className="section-title">
+            Cuerpo técnico <span className="muted">({staff.filter((p) => p.active).length})</span>
+          </h3>
+          <ul className="list">
+            {staff.map((p) => (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  className={`list-item ${p.active ? '' : 'inactive'}`}
+                  onClick={() => setEditing({ player: p, key: Date.now() })}
+                  disabled={readOnly}
+                >
+                  <span className="dorsal dorsal-lg dorsal-staff" aria-hidden="true">
+                    <Icon as={Clipboard} size={18} />
+                  </span>
+                  <span className="list-main">
+                    <strong>{p.name}</strong>
+                    {!p.active && <span className="muted">Inactivo</span>}
+                  </span>
+                  {!readOnly && <Icon as={ChevronRight} className="chevron" />}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {editing && (
         <PlayerFormSheet
           key={editing.key}

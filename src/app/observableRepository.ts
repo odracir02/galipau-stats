@@ -6,7 +6,7 @@
 // También impide escribir en los equipos de solo lectura (copias de equipos del
 // club que aún no se pueden editar en este dispositivo): la escritura se
 // rechaza antes de guardar nada, venga de la pantalla que venga.
-import type { LocalSnapshot, Repository } from '../data/repository';
+import type { LocalSnapshot, Repository, SavedTogether } from '../data/repository';
 import type { Id, Match, MatchEvent, Player, Team } from '../domain/types';
 import { ValidationError } from '../domain/validation';
 
@@ -120,6 +120,22 @@ export class ObservableRepository implements Repository {
       (m) => this.emit({ entity: 'event', teamId: m?.teamId ?? null }),
       () => this.emit({ entity: 'event', teamId: null }),
     );
+  }
+
+  async saveTogether(records: SavedTogether): Promise<void> {
+    const teams = new Set<Id>([...(records.players ?? []).map((p) => p.teamId), ...(records.matches ?? []).map((m) => m.teamId)]);
+    for (const e of records.events ?? []) {
+      const teamId = (records.matches ?? []).find((m) => m.id === e.matchId)?.teamId ?? (await this.inner.getMatch(e.matchId))?.teamId;
+      if (teamId) teams.add(teamId);
+    }
+    for (const teamId of teams) await this.guard(teamId);
+    for (const m of records.matches ?? []) await this.guard(async () => (await this.inner.getMatch(m.id))?.teamId);
+    await this.inner.saveTogether(records);
+    for (const teamId of teams) {
+      if (records.players?.some((p) => p.teamId === teamId)) this.emit({ entity: 'player', teamId });
+      if (records.matches?.some((m) => m.teamId === teamId)) this.emit({ entity: 'match', teamId });
+      if (records.events?.length) this.emit({ entity: 'event', teamId });
+    }
   }
 
   readAll(): Promise<LocalSnapshot> {

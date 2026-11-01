@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   canReceive,
   isOfficial,
+  OFFICIAL_KINDS,
   FIELD_SHOT_RESULT_LABEL,
   FIELD_SHOT_RESULTS,
   FIELD_SHOT_TYPE_SHORT,
@@ -19,6 +20,7 @@ import {
   TURNOVER_TYPES,
 } from '../../domain/catalog';
 import type { EventTiming } from '../../domain/events';
+import { officialLabel, staffOptions, type FixedOfficialSlot } from '../../domain/officials';
 import { formatClock, parseClock } from '../../domain/format';
 import type {
   EventKind,
@@ -40,6 +42,8 @@ const KINDS: readonly EventKind[] = ['shot', 'gk_shot', 'turnover', ...SIMPLE_KI
 
 interface Props {
   squad: readonly SquadEntry[];
+  /** Puestos fijos del cuerpo técnico aún sin convocar: se ofrecen en las sanciones. */
+  fixed: readonly { slot: FixedOfficialSlot; name: string }[];
   /** Descalificados: se pueden elegir (acciones olvidadas anteriores), pero se señalan. */
   disqualified: ReadonlySet<Id>;
   /** Evento a corregir; si no se da, se crea una acción olvidada. */
@@ -83,6 +87,7 @@ function Chips<T extends string | number>({
 
 export function EventEditorSheet({
   squad,
+  fixed,
   disqualified,
   event,
   defaultTiming,
@@ -118,10 +123,13 @@ export function EventEditorSheet({
   const team = isTeamKind(kind);
   // Acción de equipo: sin jugador. Solo un golpe franco antiguo conserva el que ya tenía.
   const legacyOwner = team && event?.kind === kind ? event.playerId : null;
-  // El cuerpo técnico solo en amarillas, exclusiones y rojas, al final y por nombre.
-  const candidates = squad
-    .filter((s) => (team ? s.playerId === legacyOwner : canReceive(s, kind)))
-    .sort((a, b) => Number(isOfficial(a)) - Number(isOfficial(b)) || (isOfficial(a) ? a.name.localeCompare(b.name, 'es') : a.number - b.number));
+  // El cuerpo técnico solo en amarillas, exclusiones y rojas, al final; los tres
+  // puestos fijos siempre, aunque aún no estén convocados.
+  const eligible = squad.filter((s) => (team ? s.playerId === legacyOwner : canReceive(s, kind)));
+  const candidates = [
+    ...eligible.filter((s) => !isOfficial(s)).sort((a, b) => a.number - b.number),
+    ...(team || !OFFICIAL_KINDS.includes(kind) ? eligible.filter(isOfficial) : staffOptions(eligible.filter(isOfficial), fixed)),
+  ];
   // Si el tipo de acción ya no admite al jugador elegido, queda sin asignar (nunca se reasigna a otro).
   const effectivePlayer = candidates.some((c) => c.playerId === playerId) ? playerId : null;
 
@@ -258,7 +266,7 @@ export function EventEditorSheet({
             <option value="">{team ? 'Equipo (sin jugador)' : 'Sin asignar (pendiente)'}</option>
             {candidates.map((c) => (
               <option key={c.playerId} value={c.playerId}>
-                {isOfficial(c) ? `${c.name} (cuerpo técnico)` : `${c.number} · ${c.name}`}
+                {isOfficial(c) ? officialLabel(c) : `${c.number} · ${c.name}`}
                 {disqualified.has(c.playerId) ? ' (descalificado)' : ''}
               </option>
             ))}

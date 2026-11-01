@@ -8,6 +8,7 @@ import {
   type LocalSnapshot,
   type RecordChange,
   type Repository,
+  type SavedTogether,
   type TeamData,
   type TeamDataStore,
 } from './repository';
@@ -118,6 +119,37 @@ export class IndexedDbRepository implements Repository, TeamDataStore {
   }
   saveEvent(event: MatchEvent) {
     return this.put('events', event, 'guardar la acción');
+  }
+
+  /** Todo o nada: las copias se preparan antes y cualquier fallo anula la transacción. */
+  async saveTogether(records: SavedTogether): Promise<void> {
+    const players = (records.players ?? []).map(clone);
+    const matches = (records.matches ?? []).map(clone);
+    const events = (records.events ?? []).map(clone);
+    return this.run('guardar los cambios', async (db) => {
+      const tx = db.transaction(['players', 'matches', 'events'], 'readwrite', { durability: 'strict' });
+      // Si una escritura falla, las demás se anulan con la transacción: su
+      // rechazo ya está contado (el error que se informa es el primero).
+      const pending: Promise<unknown>[] = [];
+      const track = <T>(p: Promise<T>) => {
+        p.catch(() => undefined);
+        pending.push(p);
+      };
+      track(tx.done);
+      try {
+        for (const p of players) track(tx.objectStore('players').put(p));
+        for (const m of matches) track(tx.objectStore('matches').put(m));
+        for (const e of events) track(tx.objectStore('events').put(e));
+        await Promise.all(pending);
+      } catch (e) {
+        try {
+          tx.abort();
+        } catch {
+          // Ya anulada por el propio fallo.
+        }
+        throw e;
+      }
+    });
   }
 
   // --- Equipos completos (una transacción por operación) -------------------------

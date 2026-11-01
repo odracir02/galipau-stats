@@ -1,4 +1,5 @@
 import { isTeamKind, MATCH_STATUS_LABEL } from '../../domain/catalog';
+import { officialLabel } from '../../domain/officials';
 import type { EventKind, MatchStatus, SquadEntry } from '../../domain/types';
 import { matchResult, type MatchResult, type Score } from '../../stats/engine';
 import { REDUCTION_MS, type ActiveReduction } from '../../stats/exclusions';
@@ -8,8 +9,8 @@ export function playerLabel(squad: readonly SquadEntry[], playerId: string | nul
   if (playerId === null) return kind && isTeamKind(kind) ? 'Equipo' : 'Sin asignar';
   const s = squad.find((x) => x.playerId === playerId);
   if (!s) return 'Jugador desconocido';
-  // El cuerpo técnico no tiene dorsal.
-  return s.role === 'official' ? `${s.name} · cuerpo técnico` : `${s.number} · ${s.name}`;
+  // El cuerpo técnico no tiene dorsal (los puestos fijos ya dicen qué son).
+  return s.role === 'official' ? officialLabel(s) : `${s.number} · ${s.name}`;
 }
 
 export interface StatusBadge {

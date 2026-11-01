@@ -13,6 +13,7 @@ import { useWakeLock } from '../../app/useWakeLock';
 import { describePayload } from '../../domain/catalog';
 import { buildEvent, lastRecorded, type EventTiming } from '../../domain/events';
 import { formatClock, formatDate, opponentLabel, publicTeamName } from '../../domain/format';
+import { FIXED_OFFICIALS, fixedSlotOf, pickedSlot } from '../../domain/officials';
 import type { EventPayload, Id, Match, MatchEvent, ScoreAdjustment, Team } from '../../domain/types';
 import * as svc from '../../services/matchService';
 import { actionAfterDisqualification, disqualifications, officialIds, redCards } from '../../stats/discipline';
@@ -247,12 +248,30 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
 
   const getTiming = useCallback(() => svc.currentTiming(matchRef.current), []);
 
-  const record = (payload: EventPayload, playerId: Id | null, timing: EventTiming) =>
+  // Puestos fijos del cuerpo técnico que aún no están convocados en este partido:
+  // se ofrecen igual y se convocan al guardar la sanción.
+  const fixed = useMemo(() => FIXED_OFFICIALS.filter((f) => !squad.some((s) => fixedSlotOf(s.playerId) === f.slot)), [squad]);
+
+  /**
+   * Quién recibe la acción. Un puesto fijo sin convocar se prepara (oficial y
+   * convocatoria) con el equipo del club leído ahora, no con un estado de la
+   * pantalla que podría estar cargando; se guarda junto con la acción.
+   */
+  async function resolvePick(pick: Id | null): Promise<{ playerId: Id | null; match: Match; join?: svc.OfficialJoin }> {
+    const slot = pickedSlot(pick);
+    if (!slot) return { playerId: pick, match: matchRef.current };
+    const link = clubSync ? await clubSync.getLink(team.id) : null;
+    return svc.prepareFixedOfficial(repo, matchRef.current, slot, link?.remoteTeamId ?? team.id);
+  }
+
+  const record = (payload: EventPayload, pick: Id | null, timing: EventTiming) =>
     attempt(async () => {
-      const e = await svc.recordEvent(repo, matchRef.current, payload, playerId, timing);
+      const { playerId, match: target, join } = await resolvePick(pick);
+      const e = await svc.recordEvent(repo, target, payload, playerId, timing, undefined, join);
+      if (join?.match) setMatch(join.match);
       setEvents((prev) => upsert(prev, e));
-      const card = e.playerId === null ? undefined : disqualifications(upsert(events, e), officials).get(e.playerId);
-      const label = `${describePayload(e)} · ${playerLabel(squad, e.playerId, e.kind)}`;
+      const card = e.playerId === null ? undefined : disqualifications(upsert(events, e), officialIds(target.squad)).get(e.playerId);
+      const label = `${describePayload(e)} · ${playerLabel(target.squad, e.playerId, e.kind)}`;
       if (card?.triggerEventId === e.id && card.type === 'accumulated') {
         showToast(`${label} · 3.ª exclusión: roja por acumulación`, 'info');
       } else {
@@ -280,9 +299,11 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
       showToast(`Deshecho: ${describePayload(undone)} · ${playerLabel(squad, undone.playerId, undone.kind)}`, 'info');
     });
 
-  const saveEdit = (event: MatchEvent, payload: EventPayload, playerId: Id | null, timing: EventTiming) =>
+  const saveEdit = (event: MatchEvent, payload: EventPayload, pick: Id | null, timing: EventTiming) =>
     attempt(async () => {
-      const e = await svc.updateEvent(repo, matchRef.current, event, { payload, playerId, ...timing });
+      const { playerId, match: target, join } = await resolvePick(pick);
+      const e = await svc.updateEvent(repo, target, event, { payload, playerId, ...timing }, join);
+      if (join?.match) setMatch(join.match);
       setEvents((prev) => upsert(prev, e));
       showToast('Acción corregida');
     });
@@ -359,7 +380,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
                   setTab('timeline');
                 }}
               />
-              <RecordPanel squad={available} unavailable={unavailable} getTiming={getTiming} onRecord={record} />
+              <RecordPanel squad={available} unavailable={unavailable} fixed={fixed} getTiming={getTiming} onRecord={record} />
             </>
           ))}
         {tab === 'timeline' && (
@@ -540,6 +561,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
       {overlay?.name === 'edit' && (
         <EventEditorSheet
           squad={squad}
+          fixed={fixed}
           disqualified={disqualified}
           event={overlay.event}
           defaultTiming={overlay.event}
@@ -569,6 +591,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
       {overlay?.name === 'add' && (
         <EventEditorSheet
           squad={squad}
+          fixed={fixed}
           disqualified={disqualified}
           defaultTiming={overlay.timing}
           onSave={record}

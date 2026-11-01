@@ -9,6 +9,7 @@ import { formatClock, formatDate } from '../domain/format';
 import type { Match, MatchEvent, Player, Team } from '../domain/types';
 import { assertValidEvent, assertValidPlayerFields, ValidationError } from '../domain/validation';
 import type { TeamLink } from './store';
+import { rosterLabel } from '../domain/officials';
 
 export interface UploadPlan {
   localTeam: Team;
@@ -157,7 +158,7 @@ export function buildPlan(
     try {
       assertValidPlayerFields(p);
     } catch (err) {
-      if (err instanceof ValidationError) problems.push(`Jugador ${p.number} · ${p.name}: ${err.message}`);
+      if (err instanceof ValidationError) problems.push(`${rosterLabel(p)}: ${err.message}`);
       else throw err;
     }
     // El cuerpo técnico no tiene dorsal: no cuenta para los repetidos.

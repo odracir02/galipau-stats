@@ -6,6 +6,7 @@ import type { Repository } from '../data/repository';
 import { isLegacyKind, isOfficial, isTeamKind } from '../domain/catalog';
 import { buildEvent, lastRecorded, type EventTiming } from '../domain/events';
 import { monotonicIsoNow, newId } from '../domain/ids';
+import { FIXED_OFFICIAL_SINCE, fixedOfficialId, fixedOfficialName, fixedSlotOf, type FixedOfficialSlot } from '../domain/officials';
 import type {
   EventPayload,
   Id,
@@ -196,11 +197,65 @@ export function currentTiming(match: Match, now = Date.now()): EventTiming {
   return { period: match.clock.period, matchTimeMs: Math.floor(clock.elapsedMs(match.clock, now)) };
 }
 
+// --- Cuerpo técnico automático ------------------------------------------------
+
+/**
+ * Lo que hay que guardar junto con una sanción a un puesto fijo del cuerpo
+ * técnico: su oficial (si aún no existe) y el partido con él convocado (si aún
+ * no lo está). Se guarda en la misma transacción que la sanción.
+ */
+export interface OfficialJoin {
+  player: Player | null;
+  match: Match | null;
+}
+
+/**
+ * Prepara un puesto fijo para recibir una sanción en un partido, sin guardar
+ * nada. `teamKey`: el equipo del club si está vinculado; si no, el local. Si el
+ * oficial ya existe y está convocado, no hay nada que añadir.
+ */
+export async function prepareFixedOfficial(
+  repo: Repository,
+  match: Match,
+  slot: FixedOfficialSlot,
+  teamKey: Id,
+): Promise<{ playerId: Id; match: Match; join: OfficialJoin }> {
+  const playerId = fixedOfficialId(slot, teamKey);
+  const existing = await repo.getPlayer(playerId);
+  if (existing && existing.teamId !== match.teamId) throw new ValidationError('Este puesto del cuerpo técnico es de otro equipo.');
+  const player: Player | null = existing
+    ? null
+    : {
+        id: playerId,
+        teamId: match.teamId,
+        name: fixedOfficialName(slot),
+        number: 0,
+        position: 'field',
+        active: true,
+        role: 'official',
+        createdAt: FIXED_OFFICIAL_SINCE,
+        updatedAt: FIXED_OFFICIAL_SINCE,
+      };
+  const name = existing?.name ?? fixedOfficialName(slot);
+  // Ya convocado (también otro oficial del mismo puesto, de un vínculo anterior): no se añade otro.
+  const convoked = match.squad.find((s) => s.playerId === playerId) ?? match.squad.find((s) => fixedSlotOf(s.playerId) === slot);
+  if (convoked) return { playerId: convoked.playerId, match, join: { player: convoked.playerId === playerId ? player : null, match: null } };
+  const joined = withChanges(match, { squad: [...match.squad, { playerId, name, number: 0, position: 'field', role: 'official' }] });
+  return { playerId, match: joined, join: { player, match: joined } };
+}
+
+/** Guarda una acción y, en la misma transacción, lo que necesite (oficial, convocatoria). */
+async function saveEventWith(repo: Repository, event: MatchEvent, join?: OfficialJoin): Promise<void> {
+  if (!join || (!join.player && !join.match)) return repo.saveEvent(event);
+  await repo.saveTogether({ players: join.player ? [join.player] : [], matches: join.match ? [join.match] : [], events: [event] });
+}
+
 // --- Eventos -----------------------------------------------------------------
 
 /**
  * Registra una acción. Se guarda en el dispositivo antes de devolverse. Con el
- * mismo `id`, repetir la llamada no duplica el evento.
+ * mismo `id`, repetir la llamada no duplica el evento. `join`: el oficial y la
+ * convocatoria de un puesto fijo, que se guardan con ella (o nada).
  */
 export async function recordEvent(
   repo: Repository,
@@ -209,6 +264,7 @@ export async function recordEvent(
   playerId: Id | null,
   timing: EventTiming,
   id: Id = newId(),
+  join?: OfficialJoin,
 ): Promise<MatchEvent> {
   const existing = await repo.getEvent(id);
   if (existing) return existing;
@@ -217,7 +273,7 @@ export async function recordEvent(
     throw new ValidationError('El golpe franco es del equipo: no se asigna a ningún jugador.');
   const event = buildEvent({ id, matchId: match.id, payload, playerId, timing, nowIso: isoNow() });
   assertValidEvent(match, event);
-  await repo.saveEvent(event);
+  await saveEventWith(repo, event, join);
   return event;
 }
 
@@ -237,6 +293,7 @@ export async function updateEvent(
   match: Match,
   event: MatchEvent,
   changes: EventChanges,
+  join?: OfficialJoin,
 ): Promise<MatchEvent> {
   // Un evento histórico puede conservar su categoría; ninguno puede pasar a ella.
   if (changes.payload && isLegacyKind(changes.payload.kind) && changes.payload.kind !== event.kind)
@@ -264,7 +321,7 @@ export async function updateEvent(
   if (event.addsToPrevious && isSanction(updated.kind) && updated.playerId === event.playerId)
     updated.addsToPrevious = true;
   assertValidEvent(match, updated);
-  await repo.saveEvent(updated);
+  await saveEventWith(repo, updated, join);
   return updated;
 }
 

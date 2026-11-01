@@ -8,6 +8,7 @@ import {
   DEFENSE_KINDS,
   describePayload,
   isOfficial,
+  OFFICIAL_KINDS,
   FIELD_SHOT_RESULT_LABEL,
   FIELD_SHOT_RESULTS,
   FIELD_SHOT_TYPE_LABEL,
@@ -21,6 +22,7 @@ import {
   TURNOVER_TYPES,
 } from '../../domain/catalog';
 import type { EventTiming } from '../../domain/events';
+import { staffOptions, type FixedOfficialSlot } from '../../domain/officials';
 import type { EventPayload, Id, SimpleEventKind, SquadEntry } from '../../domain/types';
 import { Icon } from '../components/Icon';
 import { ACTION_ICON } from '../components/icons';
@@ -38,6 +40,8 @@ interface Props {
   squad: readonly SquadEntry[];
   /** Convocados descalificados: no se pueden elegir aquí, solo desde el editor. */
   unavailable: readonly SquadEntry[];
+  /** Puestos fijos del cuerpo técnico aún sin convocar: se ofrecen en las sanciones. */
+  fixed: readonly { slot: FixedOfficialSlot; name: string }[];
   /** Momento de partido actual; se toma en la primera pulsación de la acción. */
   getTiming: () => EventTiming;
   /** Guarda la acción; resuelve a true si quedó guardada en el dispositivo. */
@@ -49,7 +53,7 @@ const CARD_MARK: Partial<Record<SimpleEventKind, string>> = {
   red: 'card-mark card-mark-red',
 };
 
-export function RecordPanel({ squad, unavailable, getTiming, onRecord }: Props) {
+export function RecordPanel({ squad, unavailable, fixed, getTiming, onRecord }: Props) {
   const [step, setStep] = useState<Step>({ name: 'home' });
   const [saving, setSaving] = useState(false);
   // Bloqueo síncrono: dos toques casi simultáneos no deben guardar dos acciones.
@@ -222,8 +226,9 @@ export function RecordPanel({ squad, unavailable, getTiming, onRecord }: Props) 
       const eligible = squad.filter((s) => canReceive(s, kind));
       const field = eligible.filter((s) => !isOfficial(s) && s.position === 'field').sort(byNumber);
       const gks = eligible.filter((s) => !isOfficial(s) && s.position === 'goalkeeper').sort(byNumber);
-      // Cuerpo técnico: solo en amarillas, exclusiones y rojas, aparte y por nombre.
-      const staff = eligible.filter(isOfficial).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+      // Cuerpo técnico: solo en amarillas, exclusiones y rojas, aparte. Los tres
+      // puestos fijos están siempre, aunque nadie los haya dado de alta.
+      const staff = OFFICIAL_KINDS.includes(kind) ? staffOptions(eligible.filter(isOfficial), fixed) : [];
       // En lanzamientos los porteros van al final, marcados «POR»: es la excepción (portería vacía).
       const total = field.length + gks.length;
       const tile = (s: SquadEntry) => (

@@ -26,6 +26,7 @@ import type { Id, Match, MatchEvent, Player } from '../domain/types';
 import { RemoteError, type Api, type RemoteTeam, type TeamSnapshot } from './api';
 import { metaKey, type AccountStore, type SyncEntity, type SyncMeta, type TeamLink } from './store';
 import { eventContent, matchContent, playerContent, sha256, stableJson, UploadBusyError, waitForLock, withLock } from './upload';
+import { rosterLabel } from '../domain/officials';
 
 /** Aviso de versiones anteriores (los conflictos ya no detienen el envío automático): se retira al recibir. */
 export const CONFLICT_BLOCK = 'Hay cambios hechos aquí y en el club a la vez: elige cuál conservar antes de seguir enviando.';
@@ -383,7 +384,7 @@ export class TeamPuller {
 function labelOf(inc: Incoming, opponents: ReadonlyMap<string, string>): string {
   if (inc.entity === 'player') {
     const p = inc.record as Player;
-    return `Jugador ${p.number} · ${p.name}`;
+    return rosterLabel(p);
   }
   if (inc.entity === 'match') {
     const m = inc.record as Match;

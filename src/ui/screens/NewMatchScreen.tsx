@@ -5,6 +5,7 @@ import { navigate } from '../../app/router';
 import { errorMessage } from '../../app/errors';
 import { useLoad } from '../../app/useLoad';
 import { IHF_MAX_OFFICIALS, isOfficial } from '../../domain/catalog';
+import { fixedSlotOf } from '../../domain/officials';
 import { todayLocal } from '../../domain/format';
 import { newId } from '../../domain/ids';
 import type { Id, Player, Team, Venue } from '../../domain/types';
@@ -20,7 +21,8 @@ export function NewMatchScreen({ teamId }: { teamId: Id }) {
       repo.listPlayers(teamId),
       previousSquadIds(repo, teamId),
     ]);
-    return { team, players: players.filter((p) => p.active), previous };
+    // Los puestos fijos del cuerpo técnico se convocan solos al sancionarlos.
+    return { team, players: players.filter((p) => p.active && fixedSlotOf(p.id) === null), previous };
   }, [teamId]);
 
   if (data.error) return <p className="form-error">{data.error}</p>;

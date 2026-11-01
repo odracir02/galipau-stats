@@ -26,12 +26,23 @@ export interface Repository {
   listEvents(matchId: Id): Promise<MatchEvent[]>;
   getEvent(id: Id): Promise<MatchEvent | undefined>;
   saveEvent(event: MatchEvent): Promise<void>;
+  /**
+   * Guarda varios registros juntos, en una sola transacción: o todos o ninguno
+   * (p. ej. un oficial, su convocatoria y su sanción).
+   */
+  saveTogether(records: SavedTogether): Promise<void>;
 
   /**
    * Todo lo guardado, incluidos partidos y acciones eliminados lógicamente,
    * leído en una sola transacción de lectura (copia coherente). Solo lectura.
    */
   readAll(): Promise<LocalSnapshot>;
+}
+
+export interface SavedTogether {
+  players?: readonly Player[];
+  matches?: readonly Match[];
+  events?: readonly MatchEvent[];
 }
 
 export interface LocalSnapshot {

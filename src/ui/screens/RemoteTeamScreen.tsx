@@ -11,6 +11,7 @@ import { navigate } from '../../app/router';
 import { showToast } from '../../app/toast';
 import { useRemoteTeamData } from '../../app/useRemoteTeamData';
 import { isOfficial } from '../../domain/catalog';
+import { fixedSlotOf } from '../../domain/officials';
 import { formatDate, opponentLabel } from '../../domain/format';
 import { formatChecked, ROLE_LABEL } from '../../remote/session';
 import { seasonItems, type TeamView } from '../../remote/viewer';
@@ -242,11 +243,12 @@ function RemotePlayers({ snapshot }: { snapshot: NonNullable<TeamView['cached']>
   const groups: [string, typeof players][] = [
     ['Jugadores de campo', squad.filter((p) => p.position === 'field')],
     ['Porteros', squad.filter((p) => p.position === 'goalkeeper')],
-    ['Cuerpo técnico', players.filter(isOfficial).sort((a, b) => a.name.localeCompare(b.name, 'es'))],
+    // Los puestos fijos (Entrenador…) no son parte de la plantilla que se consulta.
+    ['Cuerpo técnico', players.filter((p) => isOfficial(p) && fixedSlotOf(p.id) === null).sort((a, b) => a.name.localeCompare(b.name, 'es'))],
   ];
   return (
     <>
-      {groups.map(([title, group]) => (
+      {groups.filter(([title, group]) => title !== 'Cuerpo técnico' || group.length > 0).map(([title, group]) => (
         <section key={title}>
           <h3 className="section-title">
             {title} <span className="muted">({group.filter((p) => p.active).length})</span>
