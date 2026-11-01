@@ -3,13 +3,14 @@
 // SOLO LECTURA para cualquier rol (también entrenador): aquí no se registra,
 // corrige, finaliza ni elimina nada. Los datos descargados son independientes
 // de los equipos guardados en el dispositivo.
-import { ChevronRight, CloudOff, Radio, RefreshCw, Trophy } from 'lucide-react';
+import { ChevronRight, Clipboard, CloudOff, Radio, RefreshCw, Trophy } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { errorMessage } from '../../app/errors';
 import { clubViewer, liveFeed, remote } from '../../app/remote';
 import { navigate } from '../../app/router';
 import { showToast } from '../../app/toast';
 import { useRemoteTeamData } from '../../app/useRemoteTeamData';
+import { isOfficial } from '../../domain/catalog';
 import { formatDate, opponentLabel } from '../../domain/format';
 import { formatChecked, ROLE_LABEL } from '../../remote/session';
 import { seasonItems, type TeamView } from '../../remote/viewer';
@@ -237,9 +238,11 @@ function RemoteMatchList({ teamId, snapshot }: { teamId: string; snapshot: NonNu
 
 function RemotePlayers({ snapshot }: { snapshot: NonNullable<TeamView['cached']>['snapshot'] }) {
   const players = [...snapshot.players.map((p) => p.player)].sort((a, b) => a.number - b.number);
+  const squad = players.filter((p) => !isOfficial(p));
   const groups: [string, typeof players][] = [
-    ['Jugadores de campo', players.filter((p) => p.position === 'field')],
-    ['Porteros', players.filter((p) => p.position === 'goalkeeper')],
+    ['Jugadores de campo', squad.filter((p) => p.position === 'field')],
+    ['Porteros', squad.filter((p) => p.position === 'goalkeeper')],
+    ['Cuerpo técnico', players.filter(isOfficial).sort((a, b) => a.name.localeCompare(b.name, 'es'))],
   ];
   return (
     <>
@@ -253,7 +256,13 @@ function RemotePlayers({ snapshot }: { snapshot: NonNullable<TeamView['cached']>
             {group.map((p) => (
               <li key={p.id}>
                 <div className={`list-item ${p.active ? '' : 'inactive'}`}>
-                  <span className="dorsal dorsal-lg">{p.number}</span>
+                  {isOfficial(p) ? (
+                    <span className="dorsal dorsal-lg dorsal-staff" aria-hidden="true">
+                      <Icon as={Clipboard} size={18} />
+                    </span>
+                  ) : (
+                    <span className="dorsal dorsal-lg">{p.number}</span>
+                  )}
                   <span className="list-main">
                     <strong>{p.name}</strong>
                     {!p.active && <span className="muted">Inactivo</span>}

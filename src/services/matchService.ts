@@ -3,7 +3,7 @@
 // se persiste antes de devolverse.
 import * as clock from '../clock/clock';
 import type { Repository } from '../data/repository';
-import { isLegacyKind, isTeamKind } from '../domain/catalog';
+import { isLegacyKind, isOfficial, isTeamKind } from '../domain/catalog';
 import { buildEvent, lastRecorded, type EventTiming } from '../domain/events';
 import { monotonicIsoNow, newId } from '../domain/ids';
 import type {
@@ -35,15 +35,17 @@ export interface NewMatchInput {
   halfMinutes?: number;
 }
 
-/** Convocatoria ordenada: porteros al final, cada grupo por dorsal. */
+/**
+ * Convocatoria ordenada: jugadores de campo, porteros y, al final, el cuerpo
+ * técnico; los jugadores por dorsal y los oficiales por nombre.
+ */
 export function buildSquad(players: readonly Player[], playerIds: readonly Id[]): SquadEntry[] {
   const selected = new Set(playerIds);
+  const group = (s: SquadEntry) => (isOfficial(s) ? 2 : s.position === 'goalkeeper' ? 1 : 0);
   return players
     .filter((p) => selected.has(p.id))
-    .map((p) => ({ playerId: p.id, name: p.name, number: p.number, position: p.position }))
-    .sort((a, b) =>
-      a.position === b.position ? a.number - b.number : a.position === 'goalkeeper' ? 1 : -1,
-    );
+    .map((p): SquadEntry => ({ playerId: p.id, name: p.name, number: p.number, position: p.position, ...(isOfficial(p) && { role: 'official' as const }) }))
+    .sort((a, b) => group(a) - group(b) || (isOfficial(a) ? a.name.localeCompare(b.name, 'es') : a.number - b.number));
 }
 
 /**
@@ -63,10 +65,12 @@ export async function createMatch(repo: Repository, input: NewMatchInput, id: Id
 
   const players = await repo.listPlayers(input.teamId);
   const squad = buildSquad(players, input.playerIds);
-  if (squad.length === 0) throw new ValidationError('Selecciona al menos un convocado.');
-  if (squad.length > team.maxSquad)
-    throw new ValidationError(`Máximo ${team.maxSquad} convocados (hay ${squad.length}).`);
-  if (new Set(squad.map((s) => s.number)).size !== squad.length)
+  // El cuerpo técnico no cuenta para el máximo de convocados ni tiene dorsal.
+  const squadPlayers = squad.filter((s) => !isOfficial(s));
+  if (squadPlayers.length === 0) throw new ValidationError('Selecciona al menos un convocado.');
+  if (squadPlayers.length > team.maxSquad)
+    throw new ValidationError(`Máximo ${team.maxSquad} convocados (hay ${squadPlayers.length}).`);
+  if (new Set(squadPlayers.map((s) => s.number)).size !== squadPlayers.length)
     throw new ValidationError('Hay dorsales repetidos en la convocatoria.');
 
   const halfMinutes = input.halfMinutes ?? DEFAULT_HALF_MINUTES;

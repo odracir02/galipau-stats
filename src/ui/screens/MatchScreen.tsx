@@ -15,7 +15,7 @@ import { buildEvent, lastRecorded, type EventTiming } from '../../domain/events'
 import { formatClock, formatDate, opponentLabel, publicTeamName } from '../../domain/format';
 import type { EventPayload, Id, Match, MatchEvent, ScoreAdjustment, Team } from '../../domain/types';
 import * as svc from '../../services/matchService';
-import { actionAfterDisqualification, disqualifications, redCards } from '../../stats/discipline';
+import { actionAfterDisqualification, disqualifications, officialIds, redCards } from '../../stats/discipline';
 import { computeMatchStats } from '../../stats/engine';
 import { ConfirmSheet } from '../components/Sheet';
 import { Icon } from '../components/Icon';
@@ -27,6 +27,7 @@ import { ClockAdjustSheet, MatchMenuSheet, ScoreSheet } from '../match/MatchShee
 import { RecordPanel } from '../match/RecordPanel';
 import { ReductionSheet } from '../match/ReductionSheet';
 import { Timeline } from '../match/Timeline';
+import { playerRows, staffOfMatch } from '../stats/staff';
 import { StatsView } from '../stats/StatsView';
 import { TopBar } from '../components/TopBar';
 
@@ -149,9 +150,10 @@ function ReadOnlyMatch({
         <StatsView
           mode="match"
           context={`${opponentLabel(match.opponent)} · ${formatDate(match.date)}`}
-          redCards={disqualifications(events)}
+          redCards={disqualifications(events, officialIds(match.squad))}
           team={stats.team}
-          rows={match.squad.map((s) => ({ ...s, counters: stats.players.get(s.playerId)! }))}
+          rows={playerRows(match.squad, stats.players)}
+          staff={staffOfMatch(match.squad, stats.officials)}
           intervals={stats.intervals}
           pendingCount={stats.pendingCount}
           summary={<MatchSummaryCard match={match} teamName={publicTeamName(team)} stats={stats} />}
@@ -225,8 +227,10 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
   const last = useMemo(() => lastRecorded(events), [events]);
   const squad = match.squad;
   // Descalificaciones derivadas de los eventos: se recalculan solas al corregir o borrar.
-  const cards = useMemo(() => redCards(events), [events]);
-  const disqualified = useMemo(() => new Set(disqualifications(events).keys()), [events]);
+  // Cuerpo técnico: sin roja por acumulación de exclusiones.
+  const officials = useMemo(() => officialIds(squad), [squad]);
+  const cards = useMemo(() => redCards(events, officials), [events, officials]);
+  const disqualified = useMemo(() => new Set(disqualifications(events, officials).keys()), [events, officials]);
   const available = useMemo(() => squad.filter((s) => !disqualified.has(s.playerId)), [squad, disqualified]);
   const unavailable = useMemo(() => squad.filter((s) => disqualified.has(s.playerId)), [squad, disqualified]);
 
@@ -247,7 +251,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
     attempt(async () => {
       const e = await svc.recordEvent(repo, matchRef.current, payload, playerId, timing);
       setEvents((prev) => upsert(prev, e));
-      const card = e.playerId === null ? undefined : disqualifications(upsert(events, e)).get(e.playerId);
+      const card = e.playerId === null ? undefined : disqualifications(upsert(events, e), officials).get(e.playerId);
       const label = `${describePayload(e)} · ${playerLabel(squad, e.playerId, e.kind)}`;
       if (card?.triggerEventId === e.id && card.type === 'accumulated') {
         showToast(`${label} · 3.ª exclusión: roja por acumulación`, 'info');
@@ -298,7 +302,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
         timing,
         nowIso: existing?.createdAt ?? new Date().toISOString(),
       });
-      const card = actionAfterDisqualification(events, candidate);
+      const card = actionAfterDisqualification(events, candidate, officials);
       if (!card) return null;
       const who = squad.find((s) => s.playerId === playerId);
       const origin = card.type === 'direct' ? 'roja directa' : 'roja por acumulación';
@@ -376,9 +380,10 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
             <StatsView
               mode="match"
               context={`${opponentLabel(match.opponent)} · ${formatDate(match.date)}`}
-              redCards={disqualifications(events)}
+              redCards={disqualifications(events, officials)}
               team={stats.team}
-              rows={squad.map((s) => ({ ...s, counters: stats.players.get(s.playerId)! }))}
+              rows={playerRows(squad, stats.players)}
+              staff={staffOfMatch(squad, stats.officials)}
               intervals={stats.intervals}
               pendingCount={pending}
               summary={<MatchSummaryCard match={match} teamName={publicTeamName(team)} stats={stats} />}

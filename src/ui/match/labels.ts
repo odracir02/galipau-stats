@@ -7,7 +7,9 @@ import { REDUCTION_MS, type ActiveReduction } from '../../stats/exclusions';
 export function playerLabel(squad: readonly SquadEntry[], playerId: string | null, kind?: EventKind): string {
   if (playerId === null) return kind && isTeamKind(kind) ? 'Equipo' : 'Sin asignar';
   const s = squad.find((x) => x.playerId === playerId);
-  return s ? `${s.number} · ${s.name}` : 'Jugador desconocido';
+  if (!s) return 'Jugador desconocido';
+  // El cuerpo técnico no tiene dorsal.
+  return s.role === 'official' ? `${s.name} · cuerpo técnico` : `${s.number} · ${s.name}`;
 }
 
 export interface StatusBadge {

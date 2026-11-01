@@ -47,7 +47,7 @@ async function call(path: string, { token = coach, body, nueva = false }: { toke
   return { status: res.status, body: (await res.json()) as Record<string, unknown>, headers: res.headers };
 }
 
-const player = (id: string, number: number, extra: Partial<Player> & { role?: string } = {}, teamId = T) => ({
+const player = (id: string, number: number, extra: Omit<Partial<Player>, 'role'> & { role?: string } = {}, teamId = T) => ({
   id,
   teamId,
   name: `Persona ${id}`,
@@ -175,7 +175,7 @@ describe('convocatorias con oficiales', () => {
   it('el rol de cada convocado lo fija la plantilla del servidor, con el dorsal técnico 0', async () => {
     await roster();
     // El cliente manda el oficial con otro dorsal y un jugador marcado como oficial: el servidor no se fía.
-    const squad = squadOf(true).map((s) => (s.playerId === 'o1' ? { ...s, number: 33 } : s.playerId === 'p7' ? { ...s, role: 'official' } : s));
+    const squad = squadOf(true).map((s) => (s.playerId === 'o1' ? { ...s, number: 33 } : s.playerId === 'p7' ? { ...s, role: 'official' as const } : s));
     const m = makeMatch({ id: 'm1', teamId: T, status: 'ready', squad });
     expect((await putMatch(m, { nueva: true })).status).toBe(200);
     expect(db.sqlite.prepare("SELECT player_id, number, role FROM match_squad WHERE match_id = 'm1' ORDER BY sort_order").all()).toEqual([

@@ -2,6 +2,8 @@ import {
   LEGACY_KINDS,
   SIMPLE_KINDS,
   eligiblePositions,
+  isOfficial,
+  OFFICIAL_KINDS,
   FIELD_SHOT_RESULTS,
   FIELD_SHOT_TYPES,
   GK_SHOT_RESULTS,
@@ -43,6 +45,12 @@ export function assertEligiblePlayer(match: Pick<Match, 'squad'>, kind: MatchEve
   if (playerId === null) return;
   const entry = match.squad.find((s) => s.playerId === playerId);
   if (!entry) throw new ValidationError('El jugador no está convocado en este partido.');
+  if (isOfficial(entry)) {
+    if (!OFFICIAL_KINDS.includes(kind)) {
+      throw new ValidationError('A un miembro del cuerpo técnico solo se le pueden registrar amarillas, exclusiones o rojas.');
+    }
+    return;
+  }
   if (!eligiblePositions(kind).includes(entry.position)) {
     throw new ValidationError('Los lanzamientos recibidos solo pueden asignarse a porteros.');
   }
@@ -66,18 +74,27 @@ export function assertValidTeamCode(code: string): void {
   }
 }
 
-/** Dorsales únicos dentro de la plantilla vigente (jugadores activos). */
+/**
+ * Dorsales únicos dentro de la plantilla vigente (jugadores activos). El cuerpo
+ * técnico no tiene dorsal: ni se comprueba ni ocupa ninguno.
+ */
 export function assertUniqueNumber(
-  players: readonly Pick<Player, 'id' | 'number' | 'active' | 'name'>[],
-  candidate: { id: Id; number: number; active: boolean },
+  players: readonly Pick<Player, 'id' | 'number' | 'active' | 'name' | 'role'>[],
+  candidate: { id: Id; number: number; active: boolean; role?: Player['role'] },
 ): void {
-  if (!candidate.active) return;
-  const clash = players.find((p) => p.active && p.id !== candidate.id && p.number === candidate.number);
+  if (!candidate.active || isOfficial(candidate)) return;
+  const clash = players.find((p) => p.active && !isOfficial(p) && p.id !== candidate.id && p.number === candidate.number);
   if (clash) throw new ValidationError(`El dorsal ${candidate.number} ya lo tiene ${clash.name}.`);
 }
 
-export function assertValidPlayerFields(p: { name: string; number: number; position: Position }): void {
+export function assertValidPlayerFields(p: { name: string; number: number; position: Position; role?: Player['role'] }): void {
   if (!p.name.trim()) throw new ValidationError('El nombre es obligatorio.');
+  // Sin rol (o 'player', que es lo mismo) es un jugador; cualquier otro valor no es válido.
+  const role = p.role as string | undefined;
+  if (role !== undefined && role !== 'player' && role !== 'official') throw new ValidationError('Rol no válido.');
+  if (isOfficial(p) && (p.number !== 0 || p.position !== 'field')) {
+    throw new ValidationError('Un miembro del cuerpo técnico no tiene dorsal.');
+  }
   if (!Number.isInteger(p.number) || p.number < 0 || p.number > 99)
     throw new ValidationError('El dorsal debe ser un número entre 0 y 99.');
   if (p.position !== 'field' && p.position !== 'goalkeeper') throw new ValidationError('Posición no válida.');

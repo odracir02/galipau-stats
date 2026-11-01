@@ -4,7 +4,7 @@
 import { FIELD_SHOT_TYPES, GK_SHOT_TYPES } from '../domain/catalog';
 import { MINUTE_MS, periodEndMs, periodStartMs } from '../clock/clock';
 import { isPending } from '../domain/events';
-import { redCards, type RedCard } from './discipline';
+import { officialIds, redCards, type RedCard } from './discipline';
 import type {
   FieldShotType,
   GkShotType,
@@ -253,13 +253,58 @@ export interface IntervalStats {
   counters: Counters;
 }
 
+/** Sanciones de un miembro del cuerpo técnico, o de todos juntos. */
+export interface SanctionLine {
+  yellows: number;
+  exclusions: number;
+  reds: number;
+}
+
+/**
+ * Sanciones del cuerpo técnico, aparte: no cuentan en las cifras del equipo ni
+ * de los jugadores (ni como acciones sin asignar).
+ */
+export interface OfficialSanctions extends SanctionLine {
+  byOfficial: Map<Id, SanctionLine>;
+}
+
 export interface MatchStats {
+  /** Equipo: acciones de los jugadores y sin asignar (sin el cuerpo técnico). */
   team: Counters;
-  /** Contadores por jugador convocado (solo eventos atribuidos). */
+  /** Contadores por jugador convocado (solo eventos atribuidos; sin el cuerpo técnico). */
   players: Map<Id, Counters>;
   pendingCount: number;
   score: Score;
   intervals: IntervalStats[];
+  officials: OfficialSanctions;
+}
+
+const emptySanctions = (): SanctionLine => ({ yellows: 0, exclusions: 0, reds: 0 });
+
+function officialSanctions(events: readonly MatchEvent[], officials: ReadonlySet<Id>): OfficialSanctions {
+  const total = { ...emptySanctions(), byOfficial: new Map<Id, SanctionLine>() };
+  const line = (id: Id) => {
+    let l = total.byOfficial.get(id);
+    if (!l) total.byOfficial.set(id, (l = emptySanctions()));
+    return l;
+  };
+  for (const e of events) {
+    if (e.playerId === null || !officials.has(e.playerId)) continue;
+    if (e.kind === 'yellow') {
+      total.yellows++;
+      line(e.playerId).yellows++;
+    } else if (e.kind === 'exclusion') {
+      total.exclusions++;
+      line(e.playerId).exclusions++;
+    }
+  }
+  // Rojas: solo directas (sin acumulación) y una por oficial.
+  for (const card of redCards(events.filter((e) => e.playerId !== null && officials.has(e.playerId)), officials)) {
+    if (card.playerId === null) continue;
+    total.reds++;
+    line(card.playerId).reds++;
+  }
+  return total;
 }
 
 export const INTERVAL_MINUTES = 5;
@@ -331,11 +376,14 @@ export function computeMatchStats(
   match: Pick<Match, 'squad' | 'scoreAdjustment' | 'halfMinutes'>,
   events: readonly MatchEvent[],
 ): MatchStats {
-  const live = events.filter((e) => e.deletedAt === null);
+  const all = events.filter((e) => e.deletedAt === null);
+  // El cuerpo técnico, aparte: el resto de cifras son las de siempre.
+  const officials = officialIds(match.squad);
+  const live = officials.size === 0 ? all : all.filter((e) => e.playerId === null || !officials.has(e.playerId));
   const team = countEvents(live);
 
   const players = new Map<Id, Counters>();
-  for (const entry of match.squad) players.set(entry.playerId, emptyCounters());
+  for (const entry of match.squad) if (!officials.has(entry.playerId)) players.set(entry.playerId, emptyCounters());
   let pendingCount = 0;
   for (const e of live) {
     if (e.playerId === null) {
@@ -362,6 +410,7 @@ export function computeMatchStats(
     pendingCount,
     score: computeScore(match, team),
     intervals: computeIntervals(match, live),
+    officials: officialSanctions(all, officials),
   };
 }
 
@@ -385,6 +434,8 @@ export interface SeasonStats {
   players: Map<Id, SeasonPlayer>;
   /** Intervalos acumulados; null si los partidos tienen duraciones distintas. */
   intervals: IntervalStats[] | null;
+  /** Sanciones del cuerpo técnico en la temporada, aparte. */
+  officials: SanctionLine;
 }
 
 export interface MatchWithEvents {
@@ -407,6 +458,7 @@ export function computeSeasonStats(items: readonly MatchWithEvents[]): SeasonSta
   let goalsFor = 0;
   let goalsAgainst = 0;
   let pendingCount = 0;
+  const officials = emptySanctions();
   const players = new Map<Id, SeasonPlayer>();
   const sameDuration = new Set(sorted.map((i) => i.match.halfMinutes)).size <= 1;
   let intervals: IntervalStats[] | null = null;
@@ -422,8 +474,12 @@ export function computeSeasonStats(items: readonly MatchWithEvents[]): SeasonSta
     goalsFor += stats.score.own;
     goalsAgainst += stats.score.opponent;
     pendingCount += stats.pendingCount;
+    officials.yellows += stats.officials.yellows;
+    officials.exclusions += stats.officials.exclusions;
+    officials.reds += stats.officials.reds;
 
     for (const entry of match.squad) {
+      if (entry.role === 'official') continue;
       const prev = players.get(entry.playerId);
       const counters = stats.players.get(entry.playerId) ?? emptyCounters();
       players.set(entry.playerId, {
@@ -435,7 +491,7 @@ export function computeSeasonStats(items: readonly MatchWithEvents[]): SeasonSta
     }
   }
 
-  return { matches: sorted.length, team, goalsFor, goalsAgainst, pendingCount, players, intervals };
+  return { matches: sorted.length, team, goalsFor, goalsAgainst, pendingCount, players, intervals, officials };
 }
 
 /** Media por partido, o null si no hay partidos. */

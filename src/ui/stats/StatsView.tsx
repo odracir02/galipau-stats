@@ -6,11 +6,20 @@ import { useState, type ReactNode } from 'react';
 import { formatPct } from '../../domain/format';
 import type { Id } from '../../domain/types';
 import type { RedCard } from '../../stats/discipline';
-import { efficiency, onTarget, sanctions, savePct, type Counters, type IntervalStats } from '../../stats/engine';
+import {
+  efficiency,
+  onTarget,
+  sanctions,
+  savePct,
+  type Counters,
+  type IntervalStats,
+  type SanctionLine,
+} from '../../stats/engine';
 import { Icon } from '../components/Icon';
 import { Segmented } from '../components/Segmented';
 import { IntervalChart, Meter, Ring } from './charts';
 import { PlayerCard } from './PlayerCard';
+import type { StaffSanctions } from './staff';
 import {
   BallBlock,
   DisciplineBlock,
@@ -33,11 +42,13 @@ interface Props {
   context: string;
   /** Descalificaciones del partido (solo en vista de partido), para indicar su momento. */
   redCards?: ReadonlyMap<Id, RedCard>;
+  /** Sanciones del cuerpo técnico, aparte de las del equipo y los jugadores. */
+  staff?: StaffSanctions;
 }
 
 type Tab = 'team' | 'players' | 'goalkeepers';
 
-export function StatsView({ team, rows, intervals, summary, pendingCount, mode, context, redCards }: Props) {
+export function StatsView({ team, rows, intervals, summary, pendingCount, mode, context, redCards, staff }: Props) {
   const [tab, setTab] = useState<Tab>('team');
   // Se guarda el jugador, no su fila: si llegan datos nuevos, la ficha abierta los muestra.
   const [openId, setOpenId] = useState<Id | null>(null);
@@ -64,7 +75,7 @@ export function StatsView({ team, rows, intervals, summary, pendingCount, mode, 
           equipo, pero en ningún jugador.
         </p>
       )}
-      {tab === 'team' && <TeamStats team={team} intervals={intervals} summary={summary} />}
+      {tab === 'team' && <TeamStats team={team} intervals={intervals} summary={summary} staff={staff} />}
       {tab === 'players' && <PlayerList rows={fieldRows} mode={mode} onOpen={setOpen} />}
       {tab === 'goalkeepers' && <GoalkeeperList rows={gkRows} mode={mode} onOpen={setOpen} />}
       {open && (
@@ -93,10 +104,12 @@ function TeamStats({
   team,
   intervals,
   summary,
+  staff,
 }: {
   team: Counters;
   intervals: IntervalStats[] | null;
   summary: ReactNode;
+  staff?: StaffSanctions;
 }) {
   const s = team.shots;
   const g = team.gk;
@@ -164,6 +177,22 @@ function TeamStats({
         <DisciplineBlock counters={team} team />
       </Section>
 
+      {staff && sanctionCount(staff.total) > 0 && (
+        <Section title="Cuerpo técnico">
+          <p className="staff-line">{sanctionText(staff.total)}</p>
+          {staff.people.length > 0 && (
+            <ul className="staff-list">
+              {staff.people.map((p) => (
+                <li key={p.playerId}>
+                  <strong>{p.name}</strong> <span className="muted">{sanctionText(p.line)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="hint">Aparte de las sanciones de los jugadores: no cuentan en sus cifras ni en las del equipo.</p>
+        </Section>
+      )}
+
       {intervals && (
         <Section title="Evolución por intervalos de 5 minutos">
           {hasIntervalData ? (
@@ -179,6 +208,13 @@ function TeamStats({
       )}
     </>
   );
+}
+
+const sanctionCount = (l: SanctionLine) => l.yellows + l.exclusions + l.reds;
+
+function sanctionText(l: SanctionLine): string {
+  const part = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  return [part(l.yellows, 'amarilla', 'amarillas'), part(l.exclusions, 'exclusión', 'exclusiones'), part(l.reds, 'roja', 'rojas')].join(' · ');
 }
 
 function IntervalTable({ intervals }: { intervals: IntervalStats[] }) {

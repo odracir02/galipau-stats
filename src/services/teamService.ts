@@ -69,6 +69,8 @@ export interface PlayerInput {
   number: number;
   position: Position;
   active: boolean;
+  /** Solo al dar de alta: miembro del cuerpo técnico (sin dorsal). Después no cambia. */
+  role?: 'official';
 }
 
 /**
@@ -83,14 +85,23 @@ export async function savePlayer(
   existing?: Player,
   newPlayerId: Id = newId(),
 ): Promise<Player> {
-  const fields = { ...input, name: input.name.trim() };
-  assertValidPlayerFields(fields);
+  // El rol lo fija el alta. Un oficial se guarda con el dorsal técnico 0 y la
+  // posición de campo, que nunca se muestran.
+  const role = existing ? existing.role : input.role;
+  const official = role === 'official';
+  const fields = {
+    name: input.name.trim(),
+    number: official ? 0 : input.number,
+    position: official ? ('field' as const) : input.position,
+    active: input.active,
+  };
+  assertValidPlayerFields({ ...fields, role });
   const id = existing?.id ?? newPlayerId;
-  assertUniqueNumber(await repo.listPlayers(teamId), { id, number: fields.number, active: fields.active });
+  assertUniqueNumber(await repo.listPlayers(teamId), { id, number: fields.number, active: fields.active, role });
   const now = new Date().toISOString();
   const player: Player = existing
     ? { ...existing, ...fields, updatedAt: now }
-    : { id, teamId, ...fields, createdAt: now, updatedAt: now };
+    : { id, teamId, ...fields, ...(official && { role }), createdAt: now, updatedAt: now };
   await repo.savePlayer(player);
   return player;
 }

@@ -99,9 +99,11 @@ function matchProblems(m: Match, playerIds: ReadonlySet<string>): string[] {
     if (!s.name?.trim() || !isInt(s.number, 0, 99) || (s.position !== 'field' && s.position !== 'goalkeeper')) {
       out.push(`${at}: convocado ${s.number} no válido.`);
     }
-    if (ids.has(s.playerId) || numbers.has(s.number)) out.push(`${at}: convocado o dorsal repetido (${s.number}).`);
+    // El cuerpo técnico no tiene dorsal: no cuenta para los repetidos.
+    const official = s.role === 'official';
+    if (ids.has(s.playerId) || (!official && numbers.has(s.number))) out.push(`${at}: convocado o dorsal repetido (${s.number}).`);
     ids.add(s.playerId);
-    numbers.add(s.number);
+    if (!official) numbers.add(s.number);
   }
   return out;
 }
@@ -158,7 +160,8 @@ export function buildPlan(
       if (err instanceof ValidationError) problems.push(`Jugador ${p.number} · ${p.name}: ${err.message}`);
       else throw err;
     }
-    if (p.active) {
+    // El cuerpo técnico no tiene dorsal: no cuenta para los repetidos.
+    if (p.active && p.role !== 'official') {
       const clash = active.get(p.number);
       if (clash) problems.push(`Dorsal ${p.number} repetido entre jugadores activos (${clash.name} y ${p.name}).`);
       active.set(p.number, p);

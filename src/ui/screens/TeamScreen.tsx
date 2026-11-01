@@ -1,4 +1,4 @@
-import { ChevronRight, Pencil, Plus, Trophy } from 'lucide-react';
+import { ChevronRight, Clipboard, Pencil, Plus, Trophy } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
@@ -7,6 +7,7 @@ import { useReadOnlyTeam } from '../../app/useImportedTeam';
 import { remote, teamPuller } from '../../app/remote';
 import { useRemoteRevision } from '../../app/useTeamSync';
 import { useLoad } from '../../app/useLoad';
+import { isOfficial } from '../../domain/catalog';
 import { formatDate, opponentLabel } from '../../domain/format';
 import type { Id, Player, Team } from '../../domain/types';
 import { loadSeasonItems } from '../../services/statsService';
@@ -158,11 +159,13 @@ function MatchList({ team, readOnly }: { team: Team; readOnly: boolean }) {
 
 function Roster({ team, readOnly }: { team: Team; readOnly: boolean }) {
   const players = useLoad(() => repo.listPlayers(team.id), [team.id]);
-  const [editing, setEditing] = useState<{ player?: Player; key: number } | null>(null);
+  const [editing, setEditing] = useState<{ player?: Player; official?: boolean; key: number } | null>(null);
   const list = players.data ?? [];
+  const squad = list.filter((p) => !isOfficial(p));
+  const staff = list.filter(isOfficial).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   const groups: [string, Player[]][] = [
-    ['Jugadores de campo', list.filter((p) => p.position === 'field')],
-    ['Porteros', list.filter((p) => p.position === 'goalkeeper')],
+    ['Jugadores de campo', squad.filter((p) => p.position === 'field')],
+    ['Porteros', squad.filter((p) => p.position === 'goalkeeper')],
   ];
 
   return (
@@ -201,16 +204,51 @@ function Roster({ team, readOnly }: { team: Team; readOnly: boolean }) {
           </ul>
         </section>
       ))}
+      {/* Cuerpo técnico: sin dorsal; solo para registrar sus sanciones. */}
+      <section className="staff">
+        <h3 className="section-title">
+          Cuerpo técnico <span className="muted">({staff.filter((p) => p.active).length})</span>
+        </h3>
+        {staff.length === 0 && <p className="empty">Ninguno.</p>}
+        <ul className="list">
+          {staff.map((p) => (
+            <li key={p.id}>
+              <button
+                type="button"
+                className={`list-item ${p.active ? '' : 'inactive'}`}
+                onClick={() => setEditing({ player: p, key: Date.now() })}
+                disabled={readOnly}
+              >
+                <span className="dorsal dorsal-lg dorsal-staff" aria-hidden="true">
+                  <Icon as={Clipboard} size={18} />
+                </span>
+                <span className="list-main">
+                  <strong>{p.name}</strong>
+                  {!p.active && <span className="muted">Inactivo</span>}
+                </span>
+                {!readOnly && <Icon as={ChevronRight} className="chevron" />}
+              </button>
+            </li>
+          ))}
+        </ul>
+        {!readOnly && (
+          <button type="button" className="btn btn-block" onClick={() => setEditing({ official: true, key: Date.now() })}>
+            <Icon as={Plus} />
+            Añadir al cuerpo técnico
+          </button>
+        )}
+      </section>
       {editing && (
         <PlayerFormSheet
           key={editing.key}
           teamId={team.id}
           player={editing.player}
+          official={editing.official}
           onClose={() => setEditing(null)}
           onSaved={(p, addAnother) => {
             players.reload();
-            showToast(`${p.number} · ${p.name} guardado`);
-            setEditing(addAnother ? { key: Date.now() } : null);
+            showToast(isOfficial(p) ? `${p.name} guardado` : `${p.number} · ${p.name} guardado`);
+            setEditing(addAnother ? { official: isOfficial(p), key: Date.now() } : null);
           }}
         />
       )}

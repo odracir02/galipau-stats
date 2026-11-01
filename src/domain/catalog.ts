@@ -124,6 +124,21 @@ export const MATCH_STATUS_LABEL: Record<MatchStatus, string> = {
   finished: 'Finalizado',
 };
 
+/** ¿Es un miembro del cuerpo técnico (en la plantilla o en la convocatoria)? */
+export const isOfficial = (p: { role?: string }): boolean => p.role === 'official';
+
+/** Lo único que se registra a un miembro del cuerpo técnico. */
+export const OFFICIAL_KINDS: readonly EventKind[] = ['yellow', 'exclusion', 'red'];
+
+/** Oficiales por partido según las reglas IHF (desde julio de 2025): solo se avisa. */
+export const IHF_MAX_OFFICIALS = 5;
+
+/** ¿Puede este convocado recibir este tipo de acción? Los oficiales, solo sanciones. */
+export function canReceive(entry: { role?: string; position: Position }, kind: EventKind): boolean {
+  if (isOfficial(entry)) return OFFICIAL_KINDS.includes(kind);
+  return eligiblePositions(kind).includes(entry.position);
+}
+
 /**
  * Qué jugadores convocados pueden recibir cada tipo de acción. Un portero puede
  * lanzar (p. ej. a portería vacía); solo los porteros reciben lanzamientos.

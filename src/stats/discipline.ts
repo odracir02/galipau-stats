@@ -4,6 +4,9 @@
 // Un jugador solo puede ser descalificado una vez por partido; la causa es la que
 // ocurre primero en el tiempo de partido. Una roja registrada cuando ya estaba
 // descalificado no suma otra (evita duplicar la roja automática).
+// El cuerpo técnico no tiene roja por acumulación (la 3.ª exclusión es una regla
+// de jugadores): sus exclusiones no cuentan para ella; su roja directa sí vale.
+import { isOfficial } from '../domain/catalog';
 import { compareEvents } from '../domain/events';
 import type { Id, MatchEvent, Period, SquadEntry } from '../domain/types';
 
@@ -29,8 +32,15 @@ const cardFrom = (e: MatchEvent, type: RedCardType): RedCard => ({
   matchTimeMs: e.matchTimeMs,
 });
 
-/** Todas las tarjetas rojas del partido, en orden cronológico. */
-export function redCards(events: readonly MatchEvent[]): RedCard[] {
+const NONE: ReadonlySet<Id> = new Set();
+
+/** Miembros del cuerpo técnico de una convocatoria. */
+export function officialIds(squad: readonly SquadEntry[]): ReadonlySet<Id> {
+  return new Set(squad.filter(isOfficial).map((s) => s.playerId));
+}
+
+/** Todas las tarjetas rojas del partido, en orden cronológico. `officials`: sin acumulación. */
+export function redCards(events: readonly MatchEvent[], officials: ReadonlySet<Id> = NONE): RedCard[] {
   const live = events.filter((e) => e.deletedAt === null).sort(compareEvents);
   const exclusions = new Map<Id, number>();
   const disqualified = new Set<Id>();
@@ -43,7 +53,7 @@ export function redCards(events: readonly MatchEvent[]): RedCard[] {
         disqualified.add(e.playerId);
         cards.push(cardFrom(e, 'direct'));
       }
-    } else if (e.kind === 'exclusion' && e.playerId !== null) {
+    } else if (e.kind === 'exclusion' && e.playerId !== null && !officials.has(e.playerId)) {
       const n = (exclusions.get(e.playerId) ?? 0) + 1;
       exclusions.set(e.playerId, n);
       if (n === EXCLUSIONS_FOR_DISQUALIFICATION && !disqualified.has(e.playerId)) {
@@ -55,10 +65,10 @@ export function redCards(events: readonly MatchEvent[]): RedCard[] {
   return cards;
 }
 
-/** Descalificación de cada jugador (como mucho una por partido). */
-export function disqualifications(events: readonly MatchEvent[]): Map<Id, RedCard> {
+/** Descalificación de cada jugador u oficial (como mucho una por partido). */
+export function disqualifications(events: readonly MatchEvent[], officials: ReadonlySet<Id> = NONE): Map<Id, RedCard> {
   const map = new Map<Id, RedCard>();
-  for (const card of redCards(events)) if (card.playerId !== null) map.set(card.playerId, card);
+  for (const card of redCards(events, officials)) if (card.playerId !== null) map.set(card.playerId, card);
   return map;
 }
 
@@ -69,7 +79,7 @@ export function disqualifications(events: readonly MatchEvent[]): Map<Id, RedCar
  * el editor.
  */
 export function availableForNewActions(squad: readonly SquadEntry[], events: readonly MatchEvent[]): SquadEntry[] {
-  const out = disqualifications(events);
+  const out = disqualifications(events, officialIds(squad));
   return squad.filter((s) => !out.has(s.playerId));
 }
 
@@ -85,10 +95,14 @@ function compareTiming(a: Pick<RedCard, 'period' | 'matchTimeMs'>, b: Pick<RedCa
  * anterior), de modo que corregir la propia 3.ª exclusión o la roja se evalúa
  * con la situación resultante. Solo informa: no bloquea ni cambia estadísticas.
  */
-export function actionAfterDisqualification(events: readonly MatchEvent[], candidate: MatchEvent): RedCard | null {
+export function actionAfterDisqualification(
+  events: readonly MatchEvent[],
+  candidate: MatchEvent,
+  officials: ReadonlySet<Id> = NONE,
+): RedCard | null {
   if (candidate.playerId === null || candidate.deletedAt !== null) return null;
   const others = events.filter((e) => e.id !== candidate.id);
-  const card = disqualifications([...others, candidate]).get(candidate.playerId);
+  const card = disqualifications([...others, candidate], officials).get(candidate.playerId);
   if (!card || card.triggerEventId === candidate.id) return null;
   return compareTiming(candidate, card) > 0 ? card : null;
 }

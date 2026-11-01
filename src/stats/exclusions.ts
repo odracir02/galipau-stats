@@ -21,7 +21,7 @@
 import { elapsedMs, periodEndMs, periodStartMs } from '../clock/clock';
 import { compareEvents } from '../domain/events';
 import type { Id, Match, MatchEvent, Period } from '../domain/types';
-import { redCards } from './discipline';
+import { officialIds, redCards } from './discipline';
 
 /** Inferioridad por cada sanción (y lo que suma una sanción adicional). */
 export const REDUCTION_MS = 2 * 60_000;
@@ -74,10 +74,13 @@ interface Reduction extends Omit<ActiveReduction, 'remainingMs'> {
   start: MatchEvent;
 }
 
-/** Todas las inferioridades del partido (activas o no), en orden cronológico. */
-export function teamReductions(events: readonly MatchEvent[]): Reduction[] {
+/**
+ * Todas las inferioridades del partido (activas o no), en orden cronológico. Las
+ * sanciones del cuerpo técnico también dejan al equipo con uno menos.
+ */
+export function teamReductions(events: readonly MatchEvent[], officials: ReadonlySet<Id> = new Set()): Reduction[] {
   const live = events.filter((e) => e.deletedAt === null).sort(compareEvents);
-  const cards = new Map(redCards(live).map((c) => [c.triggerEventId, c.type]));
+  const cards = new Map(redCards(live, officials).map((c) => [c.triggerEventId, c.type]));
   const reductions: Reduction[] = [];
   for (const e of live) {
     if (e.kind !== 'exclusion' && e.kind !== 'red') continue;
@@ -107,14 +110,14 @@ export function teamReductions(events: readonly MatchEvent[]): Reduction[] {
  * reloj, p. ej. de un partido ya jugado) o finalizado no hay cuenta atrás.
  */
 export function activeReductions(
-  match: Pick<Match, 'status' | 'clock' | 'halfMinutes'>,
+  match: Pick<Match, 'status' | 'clock' | 'halfMinutes'> & Partial<Pick<Match, 'squad'>>,
   events: readonly MatchEvent[],
   nowWall: number,
 ): ActiveReduction[] {
   if (match.status !== 'in_progress' && match.status !== 'halftime') return [];
   const now: MatchMoment = { period: match.clock.period, timeMs: elapsedMs(match.clock, nowWall) };
   const active: ActiveReduction[] = [];
-  for (const { start, ...r } of teamReductions(events)) {
+  for (const { start, ...r } of teamReductions(events, officialIds(match.squad ?? []))) {
     const served = servedMs(start, now, match);
     if (served < 0 || served >= r.durationMs) continue;
     active.push({ ...r, remainingMs: r.durationMs - served });

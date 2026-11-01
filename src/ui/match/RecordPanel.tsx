@@ -4,9 +4,10 @@
 import { ChevronLeft } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import {
+  canReceive,
   DEFENSE_KINDS,
   describePayload,
-  eligiblePositions,
+  isOfficial,
   FIELD_SHOT_RESULT_LABEL,
   FIELD_SHOT_RESULTS,
   FIELD_SHOT_TYPE_LABEL,
@@ -216,22 +217,25 @@ export function RecordPanel({ squad, unavailable, getTiming, onRecord }: Props) 
       );
 
     case 'player': {
-      const allowed = eligiblePositions(step.payload.kind);
+      const kind = step.payload.kind;
       const byNumber = (a: SquadEntry, b: SquadEntry) => a.number - b.number;
-      const field = squad.filter((s) => s.position === 'field' && allowed.includes('field')).sort(byNumber);
-      const gks = squad.filter((s) => s.position === 'goalkeeper' && allowed.includes('goalkeeper')).sort(byNumber);
+      const eligible = squad.filter((s) => canReceive(s, kind));
+      const field = eligible.filter((s) => !isOfficial(s) && s.position === 'field').sort(byNumber);
+      const gks = eligible.filter((s) => !isOfficial(s) && s.position === 'goalkeeper').sort(byNumber);
+      // Cuerpo técnico: solo en amarillas, exclusiones y rojas, aparte y por nombre.
+      const staff = eligible.filter(isOfficial).sort((a, b) => a.name.localeCompare(b.name, 'es'));
       // En lanzamientos los porteros van al final, marcados «POR»: es la excepción (portería vacía).
       const total = field.length + gks.length;
       const tile = (s: SquadEntry) => (
         <button
           key={s.playerId}
           type="button"
-          className="player"
+          className={`player ${isOfficial(s) ? 'player-staff' : ''}`}
           disabled={saving}
           onClick={() => void pickPlayer(s.playerId)}
         >
-          {s.position === 'goalkeeper' && <span className="tag-gk">POR</span>}
-          <span className="player-num">{s.number}</span>
+          {s.position === 'goalkeeper' && !isOfficial(s) && <span className="tag-gk">POR</span>}
+          {isOfficial(s) ? <span className="tag-gk tag-staff">OFICIAL</span> : <span className="player-num">{s.number}</span>}
           <span className="player-name">{s.name}</span>
         </button>
       );
@@ -241,6 +245,12 @@ export function RecordPanel({ squad, unavailable, getTiming, onRecord }: Props) 
             {field.map(tile)}
             {gks.map(tile)}
           </div>
+          {staff.length > 0 && (
+            <>
+              <p className="section-title">Cuerpo técnico</p>
+              <div className="players players-staff">{staff.map(tile)}</div>
+            </>
+          )}
           <button
             type="button"
             className="btn btn-block btn-pending"
@@ -252,7 +262,7 @@ export function RecordPanel({ squad, unavailable, getTiming, onRecord }: Props) 
           {unavailable.length > 0 && (
             <p className="hint">
               Descalificados (no disponibles):{' '}
-              {unavailable.map((s) => `${s.number} · ${s.name}`).join(', ')}. Sus acciones anteriores se pueden
+              {unavailable.map((s) => (isOfficial(s) ? s.name : `${s.number} · ${s.name}`)).join(', ')}. Sus acciones anteriores se pueden
               añadir desde la cronología.
             </p>
           )}

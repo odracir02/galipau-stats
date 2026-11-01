@@ -61,7 +61,8 @@ export function matchContent(m: Match): Record<string, unknown> {
   const { period, running, baseMs, anchorWallMs, firstHalfEndMs } = m.clock;
   return {
     ...m,
-    squad: m.squad.map(({ playerId, name, number, position }) => ({ playerId, name, number, position })),
+    // El rol solo aparece en los oficiales: las huellas de siempre no cambian.
+    squad: m.squad.map(({ playerId, name, number, position, role }) => ({ playerId, name, number, position, ...(role === 'official' && { role }) })),
     clock: { period, running, baseMs, anchorWallMs, firstHalfEndMs },
     scoreAdjustment: { own: m.scoreAdjustment.own, opponent: m.scoreAdjustment.opponent },
   };
@@ -69,8 +70,9 @@ export function matchContent(m: Match): Record<string, unknown> {
 
 /** Lo que el servidor guarda de un jugador. */
 export function playerContent(p: Player): Record<string, unknown> {
-  const { id, teamId, name, number, position, active, createdAt, updatedAt } = p;
-  return { id, teamId, name, number, position, active, createdAt, updatedAt };
+  const { id, teamId, name, number, position, active, createdAt, updatedAt, role } = p;
+  // El rol solo aparece en los oficiales: las huellas de los jugadores no cambian.
+  return { id, teamId, name, number, position, active, createdAt, updatedAt, ...(role === 'official' && { role }) };
 }
 
 // --- Pendientes ------------------------------------------------------------------

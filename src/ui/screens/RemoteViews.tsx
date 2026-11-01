@@ -7,10 +7,11 @@ import { navigate } from '../../app/router';
 import { useRemoteTeamData } from '../../app/useRemoteTeamData';
 import { formatDate, opponentLabel } from '../../domain/format';
 import { seasonItems, type ViewProblem } from '../../remote/viewer';
-import { disqualifications } from '../../stats/discipline';
+import { disqualifications, officialIds } from '../../stats/discipline';
 import { computeMatchStats } from '../../stats/engine';
 import { Icon } from '../components/Icon';
 import { TopBar } from '../components/TopBar';
+import { playerRows, staffOfMatch } from '../stats/staff';
 import { StatsView } from '../stats/StatsView';
 import { MatchSummaryCard } from './MatchScreen';
 import { RankingsView } from './RankingsScreen';
@@ -51,9 +52,10 @@ export function RemoteMatchScreen({ teamId, matchId }: { teamId: string; matchId
         <StatsView
           mode="match"
           context={`${opponentLabel(match.opponent)} · ${formatDate(match.date)}`}
-          redCards={disqualifications(events)}
+          redCards={disqualifications(events, officialIds(match.squad))}
           team={stats.team}
-          rows={match.squad.map((s) => ({ ...s, counters: stats.players.get(s.playerId)! }))}
+          rows={playerRows(match.squad, stats.players)}
+          staff={staffOfMatch(match.squad, stats.officials)}
           intervals={stats.intervals}
           pendingCount={stats.pendingCount}
           summary={<MatchSummaryCard match={match} teamName={snapshot.club.name} stats={stats} />}

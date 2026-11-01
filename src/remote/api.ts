@@ -167,7 +167,9 @@ export function createApi({ baseUrl, fetch: doFetch = globalThis.fetch.bind(glob
   const base = baseUrl.replace(/\/+$/, '');
 
   async function call<T>(method: 'GET' | 'POST', path: string, token: string | null, body?: unknown): Promise<T> {
-    const headers: Record<string, string> = {};
+    // Esta versión conoce el cuerpo técnico: el servidor le deja usar los equipos
+    // que lo tienen (no autoriza nada; los permisos son los del token).
+    const headers: Record<string, string> = { 'X-GalipauStats-Features': 'officials' };
     if (token) headers.Authorization = `Bearer ${token}`;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const controller = new AbortController();

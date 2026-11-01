@@ -1,4 +1,4 @@
-import { ChevronLeft, EllipsisVertical, Pause, Pencil, Play } from 'lucide-react';
+import { ChevronLeft, Clipboard, EllipsisVertical, Pause, Pencil, Play } from 'lucide-react';
 import { countdownMs, elapsedMs } from '../../clock/clock';
 import { useNow } from '../../app/useNow';
 import { formatClock } from '../../domain/format';
@@ -141,6 +141,8 @@ function ReductionStrip({
       {reductions.map((x) => {
         const who = squad.find((s) => s.playerId === x.playerId);
         const name = who ? who.name : 'Sin asignar';
+        // El cuerpo técnico no tiene dorsal: un icono en su lugar.
+        const staff = who?.role === 'official';
         const tag = reductionTag(x);
         return (
           <li key={x.eventId}>
@@ -148,9 +150,9 @@ function ReductionStrip({
               type="button"
               className={`mh-excl-item ${x.kind === 'exclusion' ? '' : 'is-red'}`}
               onClick={() => onOpen(x)}
-              aria-label={`Inferioridad${tag ? ` (${tag})` : ''}: ${who ? `${who.number} ${who.name}` : name}, quedan ${formatClock(x.remainingMs)}`}
+              aria-label={`Inferioridad${tag ? ` (${tag})` : ''}: ${who ? (staff ? `${who.name}, cuerpo técnico` : `${who.number} ${who.name}`) : name}, quedan ${formatClock(x.remainingMs)}`}
             >
-              <span className="mh-excl-num">{who ? who.number : '?'}</span>
+              <span className="mh-excl-num">{staff ? <Icon as={Clipboard} size={14} /> : who ? who.number : '?'}</span>
               <span className="mh-excl-name">{name}</span>
               {tag && <span className="mh-excl-tag">{tag}</span>}
               <span className="mh-excl-time">{formatClock(x.remainingMs)}</span>

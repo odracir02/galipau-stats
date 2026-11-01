@@ -77,6 +77,7 @@ export function SeasonView({
           rows={rows}
           intervals={stats.intervals}
           pendingCount={stats.pendingCount}
+          staff={{ total: stats.officials, people: [] }}
           summary={
             <>
               <div className="tiles tiles-3">

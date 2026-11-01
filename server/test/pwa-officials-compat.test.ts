@@ -32,7 +32,7 @@ const autos: AutoSync[] = [];
 
 const remoteTeam: RemoteTeam = { teamId: REMOTE, role: 'coach', status: 'active', name: 'Senior Masculino A', code: 'SMA2627', season: '2026/27', clubId: 'A', clubName: 'Club A' };
 
-/** Dispositivo con la PWA actual; `nueva` añade la cabecera de la versión que conoce los oficiales. */
+/** Dispositivo con la PWA; sin `nueva` se comporta como la versión publicada (sin la cabecera de los oficiales). */
 async function device(name: string, token: string, { nueva = false, storeName = `cuenta-${n}-${name}`, localName = `local-${n}-${name}` } = {}) {
   const local = new IndexedDbRepository(localName);
   const repo = new ObservableRepository(local);
@@ -43,7 +43,10 @@ async function device(name: string, token: string, { nueva = false, storeName = 
     baseUrl: 'https://api.example',
     fetch: async (input, init) => {
       net.requests.push(Date.now());
-      const headers = { ...(init?.headers as Record<string, string>), ...(nueva && { 'X-GalipauStats-Features': 'officials' }) };
+      // La versión publicada no declara la cabecera; la nueva, sí.
+      const headers = { ...(init?.headers as Record<string, string>) };
+      if (!nueva) delete headers['X-GalipauStats-Features'];
+      else headers['X-GalipauStats-Features'] = 'officials';
       return worker.fetch(new Request(input as string, { ...init, headers }), env);
     },
   });

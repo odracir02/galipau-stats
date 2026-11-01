@@ -30,6 +30,13 @@ export interface Team {
   updatedAt: IsoDateTime;
 }
 
+/**
+ * Miembro del cuerpo técnico (entrenador, segundo entrenador, delegado…): no
+ * tiene dorsal (se guarda el 0 técnico, que nunca se muestra) y solo puede
+ * recibir sanciones. Sin el campo es un jugador, como todos los anteriores.
+ */
+export type PlayerRole = 'official';
+
 export interface Player {
   id: Id;
   teamId: Id;
@@ -39,6 +46,7 @@ export interface Player {
   active: boolean;
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
+  role?: PlayerRole;
 }
 
 /**
@@ -50,6 +58,8 @@ export interface SquadEntry {
   name: string;
   number: number;
   position: Position;
+  /** Solo en los miembros del cuerpo técnico convocados. */
+  role?: PlayerRole;
 }
 
 export type Period = 1 | 2;

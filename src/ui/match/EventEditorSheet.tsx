@@ -1,7 +1,8 @@
 import { TriangleAlert } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import {
-  eligiblePositions,
+  canReceive,
+  isOfficial,
   FIELD_SHOT_RESULT_LABEL,
   FIELD_SHOT_RESULTS,
   FIELD_SHOT_TYPE_SHORT,
@@ -114,13 +115,13 @@ export function EventEditorSheet({
   // Un evento histórico de una categoría retirada (golpe franco) conserva su opción solo al editarlo.
   const kindOptions = event && isLegacyKind(event.kind) ? [...KINDS, event.kind] : KINDS;
 
-  const allowed = eligiblePositions(kind);
   const team = isTeamKind(kind);
   // Acción de equipo: sin jugador. Solo un golpe franco antiguo conserva el que ya tenía.
   const legacyOwner = team && event?.kind === kind ? event.playerId : null;
+  // El cuerpo técnico solo en amarillas, exclusiones y rojas, al final y por nombre.
   const candidates = squad
-    .filter((s) => (team ? s.playerId === legacyOwner : allowed.includes(s.position)))
-    .sort((a, b) => a.number - b.number);
+    .filter((s) => (team ? s.playerId === legacyOwner : canReceive(s, kind)))
+    .sort((a, b) => Number(isOfficial(a)) - Number(isOfficial(b)) || (isOfficial(a) ? a.name.localeCompare(b.name, 'es') : a.number - b.number));
   // Si el tipo de acción ya no admite al jugador elegido, queda sin asignar (nunca se reasigna a otro).
   const effectivePlayer = candidates.some((c) => c.playerId === playerId) ? playerId : null;
 
@@ -257,7 +258,7 @@ export function EventEditorSheet({
             <option value="">{team ? 'Equipo (sin jugador)' : 'Sin asignar (pendiente)'}</option>
             {candidates.map((c) => (
               <option key={c.playerId} value={c.playerId}>
-                {c.number} · {c.name}
+                {isOfficial(c) ? `${c.name} (cuerpo técnico)` : `${c.number} · ${c.name}`}
                 {disqualified.has(c.playerId) ? ' (descalificado)' : ''}
               </option>
             ))}

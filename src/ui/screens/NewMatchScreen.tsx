@@ -1,9 +1,10 @@
-import { Check } from 'lucide-react';
+import { Check, Clipboard } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
 import { errorMessage } from '../../app/errors';
 import { useLoad } from '../../app/useLoad';
+import { IHF_MAX_OFFICIALS, isOfficial } from '../../domain/catalog';
 import { todayLocal } from '../../domain/format';
 import { newId } from '../../domain/ids';
 import type { Id, Player, Team, Venue } from '../../domain/types';
@@ -46,10 +47,13 @@ function NewMatchForm({ team, players, proposal }: { team: Team; players: Player
   const [matchId] = useState(newId);
 
   const max = team.maxSquad;
-  const field = players.filter((p) => p.position === 'field');
-  const gks = players.filter((p) => p.position === 'goalkeeper');
+  // El cuerpo técnico va aparte y no cuenta para el máximo de convocados.
+  const field = players.filter((p) => !isOfficial(p) && p.position === 'field');
+  const gks = players.filter((p) => !isOfficial(p) && p.position === 'goalkeeper');
+  const staff = players.filter(isOfficial).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   const nField = field.filter((p) => selected.has(p.id)).length;
   const nGk = gks.filter((p) => selected.has(p.id)).length;
+  const nStaff = staff.filter((p) => selected.has(p.id)).length;
   const total = nField + nGk;
 
   const toggle = (id: Id) =>
@@ -91,7 +95,13 @@ function NewMatchForm({ team, players, proposal }: { team: Team; players: Player
             aria-pressed={selected.has(p.id)}
             onClick={() => toggle(p.id)}
           >
-            <span className="dorsal">{p.number}</span>
+            {isOfficial(p) ? (
+              <span className="dorsal dorsal-staff" aria-hidden="true">
+                <Icon as={Clipboard} size={16} />
+              </span>
+            ) : (
+              <span className="dorsal">{p.number}</span>
+            )}
             <span className="squad-name">{p.name}</span>
             {selected.has(p.id) && <Icon as={Check} size={18} className="squad-check" />}
           </button>
@@ -149,6 +159,13 @@ function NewMatchForm({ team, players, proposal }: { team: Team; players: Player
         )}
         {renderGroup('Porteros', gks)}
         {renderGroup('Jugadores de campo', field)}
+        {staff.length > 0 && renderGroup('Cuerpo técnico', staff)}
+        {nStaff > IHF_MAX_OFFICIALS && (
+          <p className="notice" role="status">
+            Hay {nStaff} miembros del cuerpo técnico. Las reglas IHF admiten hasta {IHF_MAX_OFFICIALS} oficiales por partido:
+            revisa la normativa de tu competición.
+          </p>
+        )}
 
         {error && <p className="form-error">{error}</p>}
         <div className="sticky-foot">
