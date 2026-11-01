@@ -319,6 +319,8 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
         squad={squad}
         onReduction={(r) => setOverlay({ name: 'reduction', eventId: r.eventId, playerId: r.playerId })}
         onToggle={toggleClock}
+        onBack={() => navigate({ name: 'team', teamId: match.teamId })}
+        onClock={() => setOverlay({ name: 'clock' })}
         onMenu={() => setOverlay({ name: 'menu' })}
         onScore={() => setOverlay({ name: 'score' })}
       />

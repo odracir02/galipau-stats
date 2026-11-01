@@ -1,4 +1,4 @@
-import { EllipsisVertical, Pause, Play } from 'lucide-react';
+import { ChevronLeft, EllipsisVertical, Pause, Pencil, Play } from 'lucide-react';
 import { countdownMs, elapsedMs } from '../../clock/clock';
 import { useNow } from '../../app/useNow';
 import { formatClock } from '../../domain/format';
@@ -18,6 +18,10 @@ interface Props {
   events: readonly MatchEvent[];
   squad: readonly SquadEntry[];
   onToggle: () => void;
+  /** Volver al equipo (como «Volver al equipo» del menú): no cambia nada del partido. */
+  onBack: () => void;
+  /** Tocar el tiempo: abre el ajuste del cronómetro (no en partidos finalizados). */
+  onClock: () => void;
   onMenu: () => void;
   onScore: () => void;
   /** Tocar una inferioridad: opción secundaria de sanción adicional. */
@@ -25,7 +29,7 @@ interface Props {
 }
 
 /** Cabecera compacta y fija: marcador, cronómetro y botón de pausa/reanudación. */
-export function ClockHeader({ match, teamName, score, events, squad, onToggle, onMenu, onScore, onReduction }: Props) {
+export function ClockHeader({ match, teamName, score, events, squad, onToggle, onBack, onClock, onMenu, onScore, onReduction }: Props) {
   const now = useNow(match.clock.running);
   const t = elapsedMs(match.clock, now);
   const reductions = activeReductions(match, events, now);
@@ -51,9 +55,34 @@ export function ClockHeader({ match, teamName, score, events, squad, onToggle, o
           ? 'En marcha'
           : 'Parado';
 
+  const clock = (
+    <>
+      <span className="mh-clock">
+        {formatClock(t)}
+        {match.status !== 'finished' && <Icon as={Pencil} size={16} className="mh-clock-hint" />}
+      </span>
+      <span className="mh-meta">
+        <span className="mh-dot" />
+        {match.clock.period === 1 ? '1.ª parte' : '2.ª parte'} ·{' '}
+        {/* En los últimos minutos la cuenta atrás ocupa el lugar del estado (que ya indican el
+            punto y el botón): misma línea, nada se desplaza y cabe en pantallas estrechas. */}
+        {remaining === null ? (
+          state
+        ) : (
+          <span className="mh-countdown" aria-label={`${state}. Quedan ${formatClock(remaining)}`}>
+            quedan {formatClock(remaining)}
+          </span>
+        )}
+      </span>
+    </>
+  );
+
   return (
     <header className={`match-head ${match.clock.running ? 'is-running' : 'is-stopped'}`}>
       <div className="mh-top">
+        <button type="button" className="icon-btn mh-back" onClick={onBack} aria-label="Volver al equipo">
+          <Icon as={ChevronLeft} />
+        </button>
         <button type="button" className="mh-score" onClick={onScore} aria-label="Marcador. Pulsa para corregirlo">
           <span className="mh-team mh-team-own">{teamName}</span>
           <span className="mh-goals">
@@ -69,20 +98,15 @@ export function ClockHeader({ match, teamName, score, events, squad, onToggle, o
       </div>
       <div className="mh-main">
         <div className="mh-clock-block">
-          <span className="mh-clock">{formatClock(t)}</span>
-          <span className="mh-meta">
-            <span className="mh-dot" />
-            {match.clock.period === 1 ? '1.ª parte' : '2.ª parte'} ·{' '}
-            {/* En los últimos minutos la cuenta atrás ocupa el lugar del estado (que ya indican el
-                punto y el botón): misma línea, nada se desplaza y cabe en pantallas estrechas. */}
-            {remaining === null ? (
-              state
-            ) : (
-              <span className="mh-countdown" aria-label={`${state}. Quedan ${formatClock(remaining)}`}>
-                quedan {formatClock(remaining)}
-              </span>
-            )}
-          </span>
+          {match.status === 'finished' ? (
+            clock
+          ) : (
+            // Tocar el tiempo abre el ajuste del cronómetro (como en el menú). Solo ocupa
+            // el tiempo y su línea, no el hueco hasta el botón de pausa.
+            <button type="button" className="mh-clock-edit" onClick={onClock} aria-label="Cronómetro. Pulsa para ajustarlo">
+              {clock}
+            </button>
+          )}
         </div>
         {button ? (
           <button type="button" className={`clock-btn ${button.cls}`} onClick={onToggle}>

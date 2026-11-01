@@ -1342,6 +1342,38 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
   color: var(--c-on-header-2);
 }
 
+/* El tiempo es pulsable: abre el ajuste del cronómetro. Solo ocupa el tiempo y su
+   línea (no el hueco hasta el botón de pausa) y un lápiz discreto lo indica. */
+.mh-clock-edit {
+  align-self: flex-start;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 100%;
+  margin: -2px 0 -2px calc(-1 * var(--s-1));
+  padding: 2px var(--s-2) 2px var(--s-1);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.mh-clock-edit:active {
+  background: var(--c-header-2);
+}
+
+.mh-clock-hint {
+  margin-left: 6px;
+  vertical-align: top;
+  opacity: 0.55;
+}
+
+.mh-back {
+  flex: none;
+  margin-left: calc(-1 * var(--s-2));
+}
+
 .mh-meta {
   display: flex;
   align-items: center;
@@ -2534,6 +2566,14 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
   .countbar {
     grid-template-columns: 6.5rem 1fr 2ch;
   }
+  /* Partido: la flecha atrás deja algo más de sitio al marcador. */
+  .mh-back {
+    min-width: 36px;
+  }
+  .mh-score {
+    gap: var(--s-2);
+    padding: 0 var(--s-2);
+  }
 }
 
 .exact {
@@ -3023,4 +3063,133 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
   margin: var(--s-1) 0 var(--s-2);
   width: 100%;
   justify-content: flex-start;
+}
+
+/* ---------------------------------------------------------------------------
+   Tablets (desde 768 px de ancho): la misma interfaz con una columna más ancha,
+   barras de lado a lado y, en el partido, controles más grandes para registrar
+   cómodamente. El móvil no cambia.
+   --------------------------------------------------------------------------- */
+@media (min-width: 768px) {
+  .screen {
+    max-width: 760px;
+  }
+
+  /* La barra superior ocupa todo el ancho aunque el contenido vaya centrado. */
+  .topbar {
+    box-shadow: 0 0 0 100vmax var(--c-header);
+    clip-path: inset(0 -100vmax);
+  }
+
+  .sheet {
+    max-width: 720px;
+  }
+
+  /* Partido: cabecera, cuerpo y pestañas de lado a lado, con el contenido centrado. */
+  .match-screen {
+    --side: max(0px, calc((100vw - 960px) / 2));
+    max-width: none;
+  }
+
+  .match-head {
+    padding-left: calc(var(--side) + var(--s-3));
+    padding-right: calc(var(--side) + var(--s-3));
+  }
+
+  .match-body,
+  .tabbar {
+    padding-left: var(--side);
+    padding-right: var(--side);
+  }
+
+  /* La última acción, como tarjeta alineada con los botones de registro. */
+  .last-bar {
+    margin: var(--s-3) var(--s-4) 0;
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-md);
+  }
+
+  .mh-clock {
+    font-size: 3.5rem;
+  }
+
+  .mh-goals {
+    font-size: 2rem;
+  }
+
+  .mh-team {
+    font-size: var(--fs-md);
+  }
+
+  .clock-btn {
+    max-width: 280px;
+    min-height: 68px;
+    font-size: var(--fs-lg);
+  }
+}
+
+/* Botones de registro más grandes, solo si la tablet tiene altura para ellos. */
+@media (min-width: 768px) and (min-height: 700px) {
+  .rec-grid {
+    gap: var(--s-3);
+    padding: var(--s-4);
+  }
+
+  .act {
+    min-height: 120px;
+    padding: var(--s-4);
+  }
+
+  .act-wide,
+  .act-compact {
+    min-height: 88px;
+  }
+
+  .act-icon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .act-title {
+    font-size: var(--fs-xl);
+  }
+
+  .act-sub {
+    font-size: var(--fs-sm);
+  }
+
+  .matrix {
+    gap: var(--s-2);
+  }
+
+  .cell {
+    min-height: 72px;
+    font-size: var(--fs-md);
+  }
+
+  .opt {
+    min-height: 80px;
+    font-size: var(--fs-md);
+  }
+
+  .players {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: var(--s-2);
+  }
+
+  .players-few {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .player {
+    min-height: 84px;
+  }
+
+  .player-num {
+    font-size: 1.75rem;
+  }
+
+  .player-name {
+    font-size: 0.8125rem;
+  }
 }
