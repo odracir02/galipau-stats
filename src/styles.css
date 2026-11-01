@@ -2022,6 +2022,49 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
   gap: var(--s-2);
 }
 
+/* Tiempo exacto: «Minutos» : «Segundos» y «Fijar» en una fila. */
+.adjust-exact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--s-2);
+}
+
+.adjust-exact-title {
+  grid-column: 1 / -1;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.adjust-exact label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--c-text-2);
+}
+
+.adjust-exact input {
+  width: 100%;
+  min-height: var(--tap);
+  color: var(--c-text);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.adjust-exact-sep {
+  padding-bottom: var(--s-2);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+}
+
+.adjust-exact .btn {
+  min-height: var(--tap);
+}
+
 .score-adj-row {
   display: flex;
   align-items: center;

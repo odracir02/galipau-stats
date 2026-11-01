@@ -333,6 +333,66 @@ describe('cronómetro persistente y recuperación', () => {
     expect(elapsedMs(match.clock, T0 + 46 * MINUTE_MS)).toBe(31 * MINUTE_MS);
   });
 
+  describe('ajuste exacto del tiempo', () => {
+    const T = (m: number, s: number) => (m * 60 + s) * 1000;
+
+    it('parado: queda exactamente en 20:55 y sigue parado, también tras reabrir', async () => {
+      let match = await toggleClock(repo, await newMatch(), T0);
+      match = await toggleClock(repo, match, T0 + 12 * MINUTE_MS);
+      match = await adjustClock(repo, match, T(20, 55), T0 + 13 * MINUTE_MS);
+      expect(match.clock.running).toBe(false);
+      expect(elapsedMs(match.clock, T0 + 40 * MINUTE_MS)).toBe(T(20, 55));
+      const reloaded = (await new IndexedDbRepository(dbName).getMatch(match.id))!;
+      expect(reloaded.clock).toEqual(match.clock);
+      expect(elapsedMs(reloaded.clock, T0 + 50 * MINUTE_MS)).toBe(T(20, 55));
+    });
+
+    it('en marcha: sigue en marcha desde el valor fijado, sin saltos, también tras reabrir', async () => {
+      let match = await toggleClock(repo, await newMatch(), T0);
+      const at = T0 + 7 * MINUTE_MS + 321;
+      match = await adjustClock(repo, match, T(20, 55), at);
+      expect(match.clock.running).toBe(true);
+      expect(elapsedMs(match.clock, at)).toBe(T(20, 55));
+      expect(elapsedMs(match.clock, at + 5_000)).toBe(T(21, 0));
+      const reloaded = (await new IndexedDbRepository(dbName).getMatch(match.id))!;
+      expect(elapsedMs(reloaded.clock, at + 65_000)).toBe(T(22, 0));
+    });
+
+    it('00:00 y un tiempo próximo al final de la parte (29:59 con partes de 30)', async () => {
+      let match = await toggleClock(repo, await newMatch(), T0);
+      match = await adjustClock(repo, match, 0, T0 + MINUTE_MS);
+      expect(elapsedMs(match.clock, T0 + MINUTE_MS)).toBe(0);
+      match = await adjustClock(repo, match, T(29, 59), T0 + 2 * MINUTE_MS);
+      expect(elapsedMs(match.clock, T0 + 2 * MINUTE_MS)).toBe(T(29, 59));
+      expect(match.clock.period).toBe(1);
+      expect(elapsedMs(match.clock, T0 + 2 * MINUTE_MS + 1_000)).toBe(T(30, 0));
+    });
+
+    it('varios ajustes seguidos no acumulan desfases', async () => {
+      let match = await toggleClock(repo, await newMatch(), T0);
+      for (let i = 1; i <= 5; i++) {
+        const at = T0 + i * 37_123;
+        match = await adjustClock(repo, match, T(20, 55), at);
+        expect(elapsedMs(match.clock, at)).toBe(T(20, 55));
+      }
+      // Repetir el mismo ajuste dos veces en el mismo instante no lo aplica dos veces.
+      const at = T0 + 10 * MINUTE_MS;
+      match = await adjustClock(repo, match, T(10, 0), at);
+      match = await adjustClock(repo, match, T(10, 0), at);
+      expect(elapsedMs(match.clock, at)).toBe(T(10, 0));
+    });
+
+    it('la acción siguiente usa el tiempo nuevo; las anteriores no cambian', async () => {
+      let match = await toggleClock(repo, await newMatch(), T0);
+      const before = await recordEvent(repo, match, { kind: 'recovery' }, id('p7'), currentTiming(match, T0 + 3 * MINUTE_MS));
+      match = await adjustClock(repo, match, T(20, 55), T0 + 4 * MINUTE_MS);
+      const after = await recordEvent(repo, match, { kind: 'recovery' }, id('p14'), currentTiming(match, T0 + 4 * MINUTE_MS + 10_000));
+      expect(after.matchTimeMs).toBe(T(21, 5));
+      expect(after.period).toBe(1);
+      expect(await repo.getEvent(before.id)).toEqual(before);
+    });
+  });
+
   it('ajustar el reloj no modifica los tiempos de eventos ya registrados', async () => {
     const match = await toggleClock(repo, await newMatch(), T0);
     const e = await recordEvent(repo, match, { kind: 'recovery' }, id('p7'), currentTiming(match, T0 + 3 * MINUTE_MS));

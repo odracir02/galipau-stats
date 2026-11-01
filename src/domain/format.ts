@@ -31,6 +31,21 @@ export function parseClock(text: string): number | null {
   return (minutes * 60 + seconds) * 1000;
 }
 
+/**
+ * Tiempo de dos campos separados, «Minutos» y «Segundos» (teclado numérico):
+ * solo cifras, segundos de 0 a 59; un campo vacío cuenta como 0, pero no los
+ * dos. Devuelve milisegundos, o null si no es válido.
+ */
+export function clockFromParts(minutes: string, seconds: string): number | null {
+  const m = minutes.trim();
+  const s = seconds.trim();
+  if (m === '' && s === '') return null;
+  if (!/^\d{0,3}$/.test(m) || !/^\d{0,2}$/.test(s)) return null;
+  const secs = s === '' ? 0 : Number(s);
+  if (secs > 59) return null;
+  return ((m === '' ? 0 : Number(m)) * 60 + secs) * 1000;
+}
+
 /** Porcentaje con un decimal, o «—» si no hay datos. */
 export function formatPct(value: number | null): string {
   if (value === null) return '—';

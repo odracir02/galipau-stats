@@ -1,15 +1,20 @@
 import { ArrowLeft, Coffee, Flag, Minus, Plus, RotateCcw, Scale, Timer, Trash2, type LucideIcon } from 'lucide-react';
-import { useState } from 'react';
-import { elapsedMs, MINUTE_MS } from '../../clock/clock';
+import { useState, type FormEvent } from 'react';
+import { elapsedMs, MINUTE_MS, periodStartMs } from '../../clock/clock';
 import { useNow } from '../../app/useNow';
-import { formatClock, parseClock } from '../../domain/format';
+import { clockFromParts, formatClock } from '../../domain/format';
 import type { Match, ScoreAdjustment } from '../../domain/types';
 import type { Score } from '../../stats/engine';
 import { Icon } from '../components/Icon';
 import { Sheet } from '../components/Sheet';
 import { SyncIndicator } from './SyncIndicator';
 
-/** Ajuste manual del cronómetro: botones rápidos o un tiempo exacto. */
+/**
+ * Ajuste manual del cronómetro: botones rápidos o un tiempo exacto en dos campos
+ * numéricos (minutos y segundos), sin separadores que el teclado del móvil pueda
+ * cambiar. Mientras no se toquen, los campos siguen al cronómetro: «Fijar» sin
+ * cambiarlos no hace retroceder un reloj en marcha. Cerrar no cambia nada.
+ */
 export function ClockAdjustSheet({
   match,
   onShift,
@@ -23,8 +28,12 @@ export function ClockAdjustSheet({
 }) {
   const now = useNow(match.clock.running);
   const current = elapsedMs(match.clock, now);
-  const [text, setText] = useState(formatClock(current));
+  /** null: sin editar (muestran el tiempo actual). */
+  const [fields, setFields] = useState<{ minutes: string; seconds: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const total = Math.floor(current / 1000);
+  const shown = fields ?? { minutes: String(Math.floor(total / 60)).padStart(2, '0'), seconds: String(total % 60).padStart(2, '0') };
   const steps = [
     { label: '−1 min', d: -MINUTE_MS },
     { label: '−10 s', d: -10_000 },
@@ -34,13 +43,23 @@ export function ClockAdjustSheet({
     { label: '+1 min', d: MINUTE_MS },
   ];
 
-  async function apply() {
-    const ms = parseClock(text);
+  const edit = (key: 'minutes' | 'seconds', value: string) => {
+    setError(null);
+    setFields({ ...shown, [key]: value.replace(/\D/g, '') });
+  };
+
+  async function apply(e: FormEvent) {
+    e.preventDefault();
+    if (busy) return;
+    const ms = clockFromParts(shown.minutes, shown.seconds);
     if (ms === null) {
-      setError('Tiempo no válido. Usa mm:ss, por ejemplo 23:45.');
+      setError('Tiempo no válido: los minutos son un número y los segundos van de 00 a 59.');
       return;
     }
-    if (await onSet(ms)) onClose();
+    setBusy(true);
+    const ok = await onSet(ms);
+    setBusy(false);
+    if (ok) onClose();
   }
 
   return (
@@ -50,22 +69,54 @@ export function ClockAdjustSheet({
       </p>
       <div className="adjust-steps">
         {steps.map((s) => (
-          <button key={s.label} type="button" className="btn" onClick={() => onShift(s.d)}>
+          <button key={s.label} type="button" className="btn" onClick={() => onShift(s.d)} disabled={busy}>
             {s.label}
           </button>
         ))}
       </div>
-      <div className="form-row form-row-action">
+      <form className="adjust-exact" onSubmit={(e) => void apply(e)} noValidate>
+        <span className="adjust-exact-title">Fijar tiempo exacto</span>
         <label>
-          Fijar tiempo exacto (mm:ss)
-          <input value={text} onChange={(e) => setText(e.target.value)} inputMode="decimal" />
+          Minutos
+          <input
+            value={shown.minutes}
+            onChange={(e) => edit('minutes', e.target.value)}
+            onFocus={(e) => e.target.select()}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={3}
+            autoComplete="off"
+          />
         </label>
-        <button type="button" className="btn btn-primary" onClick={() => void apply()}>
-          Fijar
+        <span className="adjust-exact-sep" aria-hidden="true">
+          :
+        </span>
+        <label>
+          Segundos
+          <input
+            value={shown.seconds}
+            onChange={(e) => edit('seconds', e.target.value)}
+            onFocus={(e) => e.target.select()}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={2}
+            autoComplete="off"
+          />
+        </label>
+        <button type="submit" className="btn btn-primary" disabled={busy}>
+          {busy ? 'Fijando…' : 'Fijar'}
         </button>
-      </div>
-      {error && <p className="form-error">{error}</p>}
-      <p className="hint">Ajustar el reloj no cambia el minuto de las acciones ya registradas.</p>
+      </form>
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      <p className="hint">
+        Es el tiempo total del partido
+        {match.clock.period === 2 ? ` (la 2.ª parte empieza en ${formatClock(periodStartMs(2, match.halfMinutes))})` : ''}. Ajustar el
+        reloj no cambia el minuto de las acciones ya registradas.
+      </p>
     </Sheet>
   );
 }

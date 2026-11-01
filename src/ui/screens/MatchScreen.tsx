@@ -256,6 +256,15 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
       }
     });
 
+  // Los ajustes del cronómetro se aplican uno detrás de otro, cada uno sobre el
+  // resultado del anterior: pulsaciones rápidas no se pisan ni se pierden.
+  const clockQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const clockOp = (op: (m: Match) => Promise<Match>): Promise<boolean> => {
+    const run = clockQueue.current.then(() => attempt(async () => setMatch(await op(matchRef.current))));
+    clockQueue.current = run;
+    return run;
+  };
+
   const toggleClock = () =>
     void attempt(async () => setMatch(await svc.toggleClock(repo, matchRef.current)));
 
@@ -428,8 +437,8 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
         <ClockAdjustSheet
           match={match}
           onClose={() => setOverlay(null)}
-          onShift={(d) => void attempt(async () => setMatch(await svc.shiftClock(repo, matchRef.current, d)))}
-          onSet={(ms) => attempt(async () => setMatch(await svc.adjustClock(repo, matchRef.current, ms)))}
+          onShift={(d) => void clockOp((m) => svc.shiftClock(repo, m, d))}
+          onSet={(ms) => clockOp((m) => svc.adjustClock(repo, m, ms))}
         />
       )}
       {overlay?.name === 'score' && (
