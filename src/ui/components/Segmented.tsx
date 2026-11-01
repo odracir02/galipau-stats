@@ -3,13 +3,11 @@ interface SegmentedProps<T extends string | number> {
   options: readonly { value: T; label: string; badge?: number }[];
   onChange: (value: T) => void;
   ariaLabel: string;
-  /** Clase adicional (ajustes de una pantalla concreta). */
-  className?: string;
 }
 
-export function Segmented<T extends string | number>({ value, options, onChange, ariaLabel, className }: SegmentedProps<T>) {
+export function Segmented<T extends string | number>({ value, options, onChange, ariaLabel }: SegmentedProps<T>) {
   return (
-    <div className={className ? `segmented ${className}` : 'segmented'} role="tablist" aria-label={ariaLabel}>
+    <div className="segmented" role="tablist" aria-label={ariaLabel}>
       {options.map((o) => (
         <button
           key={String(o.value)}

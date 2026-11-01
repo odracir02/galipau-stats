@@ -3440,16 +3440,6 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
   vertical-align: -2px;
 }
 
-/* Cuatro pestañas de consulta en móviles estrechos: en una línea y sin salirse. */
-@media (max-width: 374px) {
-  .segmented-four button {
-    min-width: 0;
-    padding: 0 2px;
-    font-size: var(--fs-xs);
-    white-space: nowrap;
-  }
-}
-
 /* Partido en juego (toda la tarjeta lleva al partido). */
 .myplayer-live-card {
   display: flex;

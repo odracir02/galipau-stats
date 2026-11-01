@@ -3,8 +3,10 @@
 // de equipos del club.
 import { ChevronRight, Trophy } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import type { Player } from '../../domain/types';
 import { computeSeasonStats, perMatch, type MatchWithEvents } from '../../stats/engine';
 import { Icon } from '../components/Icon';
+import { seasonRows } from './seasonRows';
 import { StatsView } from './StatsView';
 import { Tile } from './StatTables';
 
@@ -16,10 +18,16 @@ export function SeasonView({
   items: all,
   defaultSeason,
   onRankings,
+  roster,
 }: {
   items: readonly MatchWithEvents[];
   defaultSeason: string;
   onRankings: () => void;
+  /**
+   * Plantilla actual (consulta): en la temporada del equipo, los jugadores
+   * activos sin ninguna convocatoria también aparecen, sin estadísticas.
+   */
+  roster?: readonly Player[];
 }) {
   const seasons = useMemo(() => {
     const set = new Set(all.map((i) => i.match.season));
@@ -34,9 +42,8 @@ export function SeasonView({
     [all, season, onlyFinished],
   );
   const stats = useMemo(() => computeSeasonStats(items), [items]);
-  const rows = [...stats.players.values()]
-    .map((p) => ({ ...p.latest, matches: p.matches, counters: p.counters }))
-    .sort((a, b) => a.number - b.number);
+  // La plantilla actual solo en la temporada del equipo (en las anteriores, solo quien jugó).
+  const rows = seasonRows(stats, all.filter((i) => i.match.season === season), season === defaultSeason ? roster : undefined);
   const avg = (v: number | null) => (v === null ? '—' : v.toLocaleString('es-ES', { maximumFractionDigits: 1 }));
 
   return (

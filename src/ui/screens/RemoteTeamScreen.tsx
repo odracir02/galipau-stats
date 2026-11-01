@@ -4,7 +4,7 @@
 // corrige, finaliza ni elimina nada. Los datos descargados son independientes
 // de los equipos guardados en el dispositivo.
 import { ChevronRight, Clipboard, CloudOff, Radio, RefreshCw, Trophy } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { errorMessage } from '../../app/errors';
 import { clubViewer, liveFeed, remote } from '../../app/remote';
 import { navigate, openFromTeam, rememberTab, type RemoteTab } from '../../app/router';
@@ -96,6 +96,12 @@ export function RemoteTeamScreen({ teamId, tab: routeTab }: { teamId: string; ta
   const [coachTab, setCoachTab] = useState<RemoteTab>(routeTab && routeTab !== 'me' ? routeTab : 'matches');
   const [leaving, setLeaving] = useState(false);
   const back = () => navigate({ name: 'teams' });
+  // Consulta: la antigua pestaña «Jugadores» está dentro de «Temporada». Una
+  // dirección antigua se sustituye (sin añadir otra entrada al historial).
+  const viewerTeam = team?.role === 'viewer';
+  useEffect(() => {
+    if (viewerTeam && routeTab === 'players') navigate({ name: 'remoteTeam', teamId, tab: 'season' }, { replace: true });
+  }, [viewerTeam, routeTab, teamId]);
   const snapshot = view.cached?.snapshot;
   const items = useMemo(() => (snapshot ? seasonItems(snapshot) : []), [snapshot]);
 
@@ -112,7 +118,7 @@ export function RemoteTeamScreen({ teamId, tab: routeTab }: { teamId: string; ta
   if (!team) return <div className="screen" />;
   // Consulta: «Mi jugador» primero y por defecto; la pestaña va en la dirección.
   const viewer = team.role === 'viewer';
-  const tab: RemoteTab = viewer ? (routeTab ?? 'me') : coachTab;
+  const tab: RemoteTab = viewer ? (routeTab === 'players' ? 'season' : (routeTab ?? 'me')) : coachTab;
   const setTab = (next: RemoteTab) => {
     if (!viewer) return setCoachTab(next);
     rememberTab(teamId, next);
@@ -149,21 +155,27 @@ export function RemoteTeamScreen({ teamId, tab: routeTab }: { teamId: string; ta
           <>
             <Segmented
               ariaLabel="Secciones del equipo del club"
-              className={viewer ? 'segmented-four' : undefined}
               value={tab}
               onChange={setTab}
               options={[
                 ...(viewer ? [{ value: 'me' as const, label: 'Mi jugador' }] : []),
                 { value: 'matches', label: 'Partidos' },
-                { value: 'players', label: 'Jugadores' },
+                // Consulta: los jugadores, en «Temporada» (con sus fichas); el entrenador conserva su pestaña.
+                ...(viewer ? [] : [{ value: 'players' as const, label: 'Jugadores' }]),
                 { value: 'season', label: 'Temporada' },
               ]}
             />
             {tab === 'me' && viewer && <MyPlayerTab teamId={teamId} snapshot={snapshot} season={team.season} />}
             {tab === 'matches' && <RemoteMatchList teamId={teamId} snapshot={snapshot} />}
-            {tab === 'players' && <RemotePlayers snapshot={snapshot} />}
+            {tab === 'players' && !viewer && <RemotePlayers snapshot={snapshot} />}
             {tab === 'season' && (
-              <SeasonView items={items} defaultSeason={team.season} onRankings={() => openFromTeam(teamId, { name: 'remoteRankings', teamId })} />
+              <SeasonView
+                items={items}
+                defaultSeason={team.season}
+                onRankings={() => openFromTeam(teamId, { name: 'remoteRankings', teamId })}
+                // Consulta: también los jugadores aún sin estadísticas (el entrenador, como siempre).
+                roster={viewer ? snapshot.players.map((p) => p.player) : undefined}
+              />
             )}
           </>
         )}

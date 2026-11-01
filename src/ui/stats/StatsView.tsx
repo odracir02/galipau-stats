@@ -264,6 +264,23 @@ function RowHead({ r, mode }: { r: StatRow; mode: 'match' | 'season' }) {
   );
 }
 
+/** Jugador de la plantilla sin convocatorias en la temporada: sin cifras. */
+const noStats = (r: StatRow, mode: 'match' | 'season') => mode === 'season' && r.matches === 0;
+
+function EmptyRow({ r, mode, onOpen }: { r: StatRow; mode: 'match' | 'season'; onOpen: (row: StatRow) => void }) {
+  return (
+    <li>
+      <button type="button" className="prow" onClick={() => onOpen(r)}>
+        <span className="prow-top">
+          <RowHead r={r} mode={mode} />
+          <Icon as={ChevronRight} size={18} className="chevron" />
+        </span>
+        <span className="prow-foot">Sin estadísticas esta temporada</span>
+      </button>
+    </li>
+  );
+}
+
 /** Jugadores de campo: una fila por jugador con su eficacia y su balance básico. */
 function PlayerList({ rows, mode, onOpen }: ListProps) {
   if (rows.length === 0) return <p className="empty">Sin jugadores de campo.</p>;
@@ -271,6 +288,7 @@ function PlayerList({ rows, mode, onOpen }: ListProps) {
     <>
       <ul className="plist">
         {rows.map((r) => {
+          if (noStats(r, mode)) return <EmptyRow key={r.playerId} r={r} mode={mode} onOpen={onOpen} />;
           const c = r.counters;
           return (
             <li key={r.playerId}>
@@ -305,6 +323,7 @@ function GoalkeeperList({ rows, mode, onOpen }: ListProps) {
     <>
       <ul className="plist">
         {rows.map((r) => {
+          if (noStats(r, mode)) return <EmptyRow key={r.playerId} r={r} mode={mode} onOpen={onOpen} />;
           const c = r.counters;
           return (
             <li key={r.playerId}>

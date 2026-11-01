@@ -24,19 +24,36 @@ export function PlayerCard({ row, mode, context, card, onClose }: Props) {
   const isGk = row.position === 'goalkeeper';
   const matches = row.matches ?? 0;
   const s = c.shots;
+  const title = isGk ? 'Ficha del portero' : 'Ficha del jugador';
+  const head = (
+    <header className="pcard-head">
+      <span className="pcard-num">{row.number}</span>
+      <div>
+        <strong>{row.name}</strong>
+        <span className="muted">
+          {isGk ? 'Portero' : 'Jugador de campo'} · {context}
+          {mode === 'season' && ` · ${matches} ${matches === 1 ? 'partido' : 'partidos'}`}
+        </span>
+      </div>
+    </header>
+  );
+
+  // Sin convocatorias en la temporada: nada que mostrar (ni cifras a cero).
+  if (mode === 'season' && matches === 0) {
+    return (
+      <Sheet title={title} onClose={onClose}>
+        {head}
+        <div className="empty-card">
+          <strong>Sin estadísticas esta temporada</strong>
+          <span>Aparecerán cuando figure en la convocatoria de algún partido.</span>
+        </div>
+      </Sheet>
+    );
+  }
 
   return (
-    <Sheet title={isGk ? 'Ficha del portero' : 'Ficha del jugador'} onClose={onClose}>
-      <header className="pcard-head">
-        <span className="pcard-num">{row.number}</span>
-        <div>
-          <strong>{row.name}</strong>
-          <span className="muted">
-            {isGk ? 'Portero' : 'Jugador de campo'} · {context}
-            {mode === 'season' && ` · ${matches} ${matches === 1 ? 'partido' : 'partidos'}`}
-          </span>
-        </div>
-      </header>
+    <Sheet title={title} onClose={onClose}>
+      {head}
 
       {isGk ? (
         <>
