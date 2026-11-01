@@ -2,8 +2,8 @@
 // consulta: sin registro, cronología editable, corrección ni finalización.
 import { Trophy } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { liveFeed } from '../../app/remote';
-import { navigate } from '../../app/router';
+import { liveFeed, myPlayer } from '../../app/remote';
+import { backToTeam, navigate } from '../../app/router';
 import { useRemoteTeamData } from '../../app/useRemoteTeamData';
 import { formatDate, opponentLabel } from '../../domain/format';
 import { seasonItems, type ViewProblem } from '../../remote/viewer';
@@ -26,7 +26,8 @@ export function RemoteMatchScreen({ teamId, matchId }: { teamId: string; matchId
   const match = snapshot?.matches.find((m) => m.match.id === matchId && m.match.deletedAt === null)?.match;
   const events = useMemo(() => snapshot?.events.map((e) => e.event).filter((e) => e.matchId === matchId) ?? [], [snapshot, matchId]);
   const stats = useMemo(() => (match ? computeMatchStats(match, events) : null), [match, events]);
-  const back = () => navigate({ name: 'remoteTeam', teamId });
+  // Consulta: vuelve a la pestaña de la que venía; el entrenador, como siempre.
+  const back = () => (team?.role === 'viewer' ? backToTeam(teamId) : navigate({ name: 'remoteTeam', teamId }));
 
   if (!match || !stats || !snapshot) {
     return (
@@ -73,6 +74,9 @@ export function RemoteRankingsScreen({ teamId }: { teamId: string }) {
   const seasons = useMemo(() => [...new Set([...items.map((i) => i.match.season), defaultSeason])].sort().reverse(), [items, defaultSeason]);
   const [season, setSeason] = useState<string | null>(null);
   const active = season ?? defaultSeason;
+  // Consulta: «Mi jugador» se resalta si está en el Top 10 (preferencia local).
+  const mine = team?.role === 'viewer' ? myPlayer.get(teamId) : null;
+  const highlight = mine && 'playerId' in mine ? mine.playerId : undefined;
 
   return (
     <div className="screen">
@@ -84,12 +88,12 @@ export function RemoteRankingsScreen({ teamId }: { teamId: string }) {
           </span>
         }
         subtitle={`${team?.name ?? snapshot?.team.name ?? ''} · Temporada ${active}`}
-        back={() => navigate({ name: 'remoteTeam', teamId })}
+        back={() => (team?.role === 'viewer' ? backToTeam(teamId) : navigate({ name: 'remoteTeam', teamId }))}
       />
       <main className="content">
         <FreshnessBar view={view} onRefresh={null} onResume={() => liveFeed?.resume(teamId)} />
         {snapshot ? (
-          <RankingsView items={items} seasons={seasons} season={active} onSeason={setSeason} />
+          <RankingsView items={items} seasons={seasons} season={active} onSeason={setSeason} highlight={highlight} />
         ) : (
           <p className="empty">
             {lostAccess(view.problem)

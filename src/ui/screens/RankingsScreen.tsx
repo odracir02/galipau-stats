@@ -1,17 +1,6 @@
 // Rankings del equipo: clasificaciones de la temporada calculadas con el motor
 // estadístico (ver src/stats/rankings.ts). Solo lectura.
-import {
-  Crosshair,
-  Crown,
-  Gift,
-  HandGrab,
-  Shield,
-  Target,
-  Timer,
-  Trophy,
-  Zap,
-  type LucideIcon,
-} from 'lucide-react';
+import { Crown, Trophy } from 'lucide-react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
@@ -33,16 +22,8 @@ import {
 } from '../../stats/rankings';
 import { Icon } from '../components/Icon';
 import { TopBar } from '../components/TopBar';
+import { RANKING_ICON } from '../stats/rankingIcons';
 
-const RANKING_ICON: Record<RankingId, LucideIcon> = {
-  top_scorer: Target,
-  sharpshooter: Crosshair,
-  wall: Shield,
-  thief: HandGrab,
-  repeat_offender: Timer,
-  generous: Gift,
-  shots: Zap,
-};
 
 function formatValue(def: RankingDefinition, e: RankedEntry): string {
   return def.format === 'pct' ? formatPct(e.value) : String(e.value);
@@ -106,11 +87,14 @@ export function RankingsView({
   seasons,
   season: activeSeason,
   onSeason: setSeason,
+  highlight,
 }: {
   items: readonly MatchWithEvents[];
   seasons: readonly string[];
   season: string;
   onSeason: (season: string) => void;
+  /** Jugador que se resalta si está en el Top 10 («Mi jugador» de la consulta). */
+  highlight?: Id;
 }) {
   const [rankingId, setRankingId] = useState<RankingId>('top_scorer');
   const def = rankingById(rankingId);
@@ -154,7 +138,7 @@ export function RankingsView({
           text={def.minimum ? `Ningún jugador alcanza el mínimo. ${def.minimum}` : 'Nadie suma todavía en esta estadística.'}
         />
       ) : (
-        <RankingTable def={def} ranked={ranked} matches={stats.matches} season={activeSeason} />
+        <RankingTable def={def} ranked={ranked} matches={stats.matches} season={activeSeason} highlight={highlight} />
       )}
     </>
   );
@@ -200,11 +184,13 @@ function RankingTable({
   ranked,
   matches,
   season,
+  highlight,
 }: {
   def: RankingDefinition;
   ranked: RankedEntry[];
   matches: number;
   season: string;
+  highlight?: Id;
 }) {
   // El líder (o los empatados en cabeza) solo aparece en la tarjeta; la lista sigue
   // con el segundo clasificado. Entre ambas, como máximo el Top 10.
@@ -214,7 +200,7 @@ function RankingTable({
 
   return (
     <>
-      <section className="rank-leader" aria-label="Líder">
+      <section className={`rank-leader${leaders.some((e) => e.player.playerId === highlight) ? ' rank-me' : ''}`} aria-label="Líder">
         <Icon as={Crown} size={28} className="rank-crown" />
         <div className="rank-leader-who">
           <span className="rank-leader-label">{leaders.length > 1 ? 'Líderes empatados' : 'Líder'}</span>
@@ -241,7 +227,7 @@ function RankingTable({
       {rest.length > 0 && (
         <ol className="rank-list">
           {rest.map((e) => (
-            <li key={e.player.playerId}>
+            <li key={e.player.playerId} className={e.player.playerId === highlight ? 'rank-me' : undefined}>
               <span className="rank-pos">{e.position}</span>
               <span className="dorsal">{e.player.number}</span>
               <span className="rank-name">

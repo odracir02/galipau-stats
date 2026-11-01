@@ -50,7 +50,7 @@ export function App() {
       screen = <MatchScreen key={route.matchId} matchId={route.matchId} />;
       break;
     case 'remoteTeam':
-      screen = <RemoteTeamScreen key={route.teamId} teamId={route.teamId} />;
+      screen = <RemoteTeamScreen key={route.teamId} teamId={route.teamId} tab={route.tab} />;
       break;
     case 'remoteMatch':
       screen = <RemoteMatchScreen key={route.matchId} teamId={route.teamId} matchId={route.matchId} />;

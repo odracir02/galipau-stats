@@ -7,7 +7,7 @@ import { ChevronRight, Clipboard, CloudOff, Radio, RefreshCw, Trophy } from 'luc
 import { useMemo, useState } from 'react';
 import { errorMessage } from '../../app/errors';
 import { clubViewer, liveFeed, remote } from '../../app/remote';
-import { navigate } from '../../app/router';
+import { navigate, openFromTeam, rememberTab, type RemoteTab } from '../../app/router';
 import { showToast } from '../../app/toast';
 import { useRemoteTeamData } from '../../app/useRemoteTeamData';
 import { isOfficial } from '../../domain/catalog';
@@ -23,8 +23,7 @@ import { TopBar } from '../components/TopBar';
 import { statusBadge } from '../match/labels';
 import { SeasonView } from '../stats/SeasonView';
 import { KV } from '../stats/StatTables';
-
-type Tab = 'matches' | 'players' | 'season';
+import { MyPlayerTab } from './MyPlayerTab';
 
 /** Hora de los datos: con segundos si son de hoy (actualización en directo). */
 function dataTime(iso: string, now = new Date()): string {
@@ -91,9 +90,10 @@ export function FreshnessBar({
   );
 }
 
-export function RemoteTeamScreen({ teamId }: { teamId: string }) {
+export function RemoteTeamScreen({ teamId, tab: routeTab }: { teamId: string; tab?: RemoteTab }) {
   const { session, view, team } = useRemoteTeamData(teamId);
-  const [tab, setTab] = useState<Tab>('matches');
+  // Entrenador: pestañas de siempre, sin «Mi jugador» y sin guardarlas en la dirección.
+  const [coachTab, setCoachTab] = useState<RemoteTab>(routeTab && routeTab !== 'me' ? routeTab : 'matches');
   const [leaving, setLeaving] = useState(false);
   const back = () => navigate({ name: 'teams' });
   const snapshot = view.cached?.snapshot;
@@ -110,6 +110,15 @@ export function RemoteTeamScreen({ teamId }: { teamId: string }) {
     );
   }
   if (!team) return <div className="screen" />;
+  // Consulta: «Mi jugador» primero y por defecto; la pestaña va en la dirección.
+  const viewer = team.role === 'viewer';
+  const tab: RemoteTab = viewer ? (routeTab ?? 'me') : coachTab;
+  const setTab = (next: RemoteTab) => {
+    if (!viewer) return setCoachTab(next);
+    rememberTab(teamId, next);
+    navigate({ name: 'remoteTeam', teamId, tab: next }, { replace: true });
+  };
+  if (viewer) rememberTab(teamId, tab);
   const refresh = clubViewer && liveFeed && team.status === 'active' ? () => void liveFeed!.refreshNow(team.teamId) : null;
 
   return (
@@ -120,7 +129,7 @@ export function RemoteTeamScreen({ teamId }: { teamId: string }) {
         back={back}
         actions={
           snapshot ? (
-            <button type="button" className="icon-btn" onClick={() => navigate({ name: 'remoteRankings', teamId })} aria-label="Rankings">
+            <button type="button" className="icon-btn" onClick={() => openFromTeam(teamId, { name: 'remoteRankings', teamId })} aria-label="Rankings">
               <Icon as={Trophy} />
             </button>
           ) : undefined
@@ -140,18 +149,21 @@ export function RemoteTeamScreen({ teamId }: { teamId: string }) {
           <>
             <Segmented
               ariaLabel="Secciones del equipo del club"
+              className={viewer ? 'segmented-four' : undefined}
               value={tab}
               onChange={setTab}
               options={[
+                ...(viewer ? [{ value: 'me' as const, label: 'Mi jugador' }] : []),
                 { value: 'matches', label: 'Partidos' },
                 { value: 'players', label: 'Jugadores' },
                 { value: 'season', label: 'Temporada' },
               ]}
             />
+            {tab === 'me' && viewer && <MyPlayerTab teamId={teamId} snapshot={snapshot} season={team.season} />}
             {tab === 'matches' && <RemoteMatchList teamId={teamId} snapshot={snapshot} />}
             {tab === 'players' && <RemotePlayers snapshot={snapshot} />}
             {tab === 'season' && (
-              <SeasonView items={items} defaultSeason={team.season} onRankings={() => navigate({ name: 'remoteRankings', teamId })} />
+              <SeasonView items={items} defaultSeason={team.season} onRankings={() => openFromTeam(teamId, { name: 'remoteRankings', teamId })} />
             )}
           </>
         )}
@@ -216,7 +228,7 @@ function RemoteMatchList({ teamId, snapshot }: { teamId: string; snapshot: NonNu
     <ul className="list">
       {rows.map(({ match, score, badge }) => (
         <li key={match.id}>
-          <button type="button" className="list-item" onClick={() => navigate({ name: 'remoteMatch', teamId, matchId: match.id })}>
+          <button type="button" className="list-item" onClick={() => openFromTeam(teamId, { name: 'remoteMatch', teamId, matchId: match.id })}>
             <span className="list-main">
               <strong>{opponentLabel(match.opponent)}</strong>
               <span className="muted">

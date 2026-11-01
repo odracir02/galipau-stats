@@ -7,6 +7,7 @@ import { LiveFeed } from '../remote/live';
 import { RemoteSession } from '../remote/session';
 import { AccountStore } from '../remote/store';
 import { ClubViewer, ViewerStore } from '../remote/viewer';
+import { MyPlayerPreferences } from './myPlayer';
 import { localDb, repo } from './repo';
 
 /**
@@ -33,6 +34,13 @@ export const clubViewer: ClubViewer | null =
 
 // Los datos descargados siguen a la sesión: sin acceso verificado, se retiran.
 if (remote && clubViewer) clubViewer.followSession(remote);
+
+/** «Mi jugador» de cada equipo de consulta (preferencia local, nunca se envía). */
+export const myPlayer = new MyPlayerPreferences();
+
+// Se olvida al salir del equipo o cuando el servidor confirma que no hay acceso.
+if (remote) myPlayer.followSession(remote);
+if (clubViewer) myPlayer.followViewer(clubViewer);
 
 /** Copias de equipos del club en este dispositivo (entrenadores); null si esta versión no usa servidor. */
 export const teamImporter: TeamImporter | null =
