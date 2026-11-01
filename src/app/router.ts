@@ -10,7 +10,9 @@ export type Route =
   | { name: 'remoteTeam'; teamId: string }
   /** Partido y rankings de un equipo del club: solo consulta. */
   | { name: 'remoteMatch'; teamId: string; matchId: string }
-  | { name: 'remoteRankings'; teamId: string };
+  | { name: 'remoteRankings'; teamId: string }
+  /** Cómo instalar la aplicación (sin sesión ni códigos). */
+  | { name: 'install' };
 
 export function parseRoute(hash: string): Route {
   const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
@@ -19,6 +21,7 @@ export function parseRoute(hash: string): Route {
     if (parts[2] === 'rankings') return { name: 'rankings', teamId: parts[1] };
     return { name: 'team', teamId: parts[1] };
   }
+  if (parts[0] === 'instalar') return { name: 'install' };
   if (parts[0] === 'match' && parts[1]) return { name: 'match', matchId: parts[1] };
   if (parts[0] === 'club' && parts[1]) {
     if (parts[2] === 'match' && parts[3]) return { name: 'remoteMatch', teamId: parts[1], matchId: parts[3] };
@@ -46,6 +49,8 @@ export function routeHref(route: Route): string {
       return `#/club/${encodeURIComponent(route.teamId)}/match/${encodeURIComponent(route.matchId)}`;
     case 'remoteRankings':
       return `#/club/${encodeURIComponent(route.teamId)}/rankings`;
+    case 'install':
+      return '#/instalar';
   }
 }
 

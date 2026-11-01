@@ -1,9 +1,9 @@
-import { ChevronRight, DatabaseBackup, Plus } from 'lucide-react';
+import { ChevronRight, DatabaseBackup, Plus, Smartphone } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { remote, teamImporter } from '../../app/remote';
 import { repo } from '../../app/repo';
 import { useImportedTeam } from '../../app/useImportedTeam';
-import { navigate } from '../../app/router';
+import { navigate, routeHref } from '../../app/router';
 import { useLoad } from '../../app/useLoad';
 import { Icon } from '../components/Icon';
 import { Brand } from '../components/Logo';
@@ -67,6 +67,10 @@ export function TeamsScreen() {
           Nuevo equipo
         </button>
         <RemoteTeamsSection />
+        <a className="install-link" href={routeHref({ name: 'install' })}>
+          <Icon as={Smartphone} size={18} />
+          ¿Cómo instalar GalipauStats?
+        </a>
       </main>
       {backup && <BackupSheet onClose={() => setBackup(false)} />}
       {creating && (

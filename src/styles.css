@@ -3283,3 +3283,98 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
     font-size: 0.8125rem;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Cómo instalar la aplicación
+--------------------------------------------------------------------------- */
+.install-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  min-height: var(--tap);
+  margin-top: var(--s-2);
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.install-link:active {
+  color: var(--c-text);
+}
+
+.install-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.install-steps li {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+}
+
+.install-num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-pill);
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+  font-weight: 700;
+  font-size: var(--fs-sm);
+}
+
+.install-icon {
+  flex: none;
+  color: var(--c-text-2);
+}
+
+.install-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.install-text span {
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+}
+
+.install-quick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.install-done {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  border-radius: var(--r-md);
+  background: var(--c-success-soft);
+  color: var(--c-success);
+}
+
+.install-done div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.install-done span {
+  color: var(--c-text);
+  font-size: var(--fs-sm);
+}

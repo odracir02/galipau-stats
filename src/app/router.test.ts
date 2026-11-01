@@ -11,6 +11,7 @@ describe('rutas', () => {
     { name: 'remoteTeam', teamId: 'equipo-1' },
     { name: 'remoteMatch', teamId: 'equipo-1', matchId: 'partido-1' },
     { name: 'remoteRankings', teamId: 'equipo-1' },
+    { name: 'install' },
   ])('ida y vuelta %o', (route) => {
     expect(parseRoute(routeHref(route))).toEqual(route);
   });
