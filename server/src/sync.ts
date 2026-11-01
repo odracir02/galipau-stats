@@ -11,9 +11,12 @@
 //     que tiene su control, ver control.ts); los demás reciben conflicto hasta
 //     que tomen el control. Los preparados y finalizados los corrige cualquier
 //     entrenador del equipo con la versión base correcta.
+//   * A un miembro del cuerpo técnico (role: 'official', según la plantilla del
+//     servidor) solo se le registran sanciones: amarilla, exclusión o roja.
 import type { Id, MatchEvent } from '../../src/domain/types';
 import { assertValidEvent, ValidationError } from '../../src/domain/validation';
 import { authorize } from './auth';
+import { NO_FEATURES, updateRequired, type ClientFeatures } from './compat';
 import { assertMayWrite, blockedSql, controlFollowUp, controlValidColumn, controlView, recordedElsewhere, type ControlRow } from './control';
 import type { Db, Statement } from './db';
 import { HttpError, notFound } from './errors';
@@ -21,6 +24,7 @@ import {
   eventToRow,
   insertSql,
   rowsToMatch,
+  roleOf,
   rowToEvent,
   sameEventContent,
   type EventRow,
@@ -53,7 +57,22 @@ function conflict(server: (EventRow & { version: number }) | null, reason: strin
   });
 }
 
-export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now = new Date()): Promise<OpResult> {
+/** Lo único que se puede registrar a un miembro del cuerpo técnico. */
+const OFFICIAL_KINDS: readonly MatchEvent['kind'][] = ['yellow', 'exclusion', 'red'];
+
+async function isOfficial(db: Db, playerId: Id | null, teamId: Id): Promise<boolean> {
+  if (playerId === null) return false;
+  const row = await db.prepare('SELECT role FROM players WHERE id = ? AND team_id = ?').bind(playerId, teamId).first<{ role?: string }>();
+  return row !== null && roleOf(row) === 'official';
+}
+
+export async function applyEventOp(
+  db: Db,
+  auth: AuthContext,
+  op: EventOp,
+  now = new Date(),
+  features: ClientFeatures = NO_FEATURES,
+): Promise<OpResult> {
   await authorize(db, auth, op.teamId, 'match.write');
   // Las acciones las registra un dispositivo (el que lleva el partido), no una
   // sesión de administración.
@@ -102,11 +121,19 @@ export async function applyEventOp(db: Db, auth: AuthContext, op: EventOp, now =
   if (adds === true && ((op.event.kind !== 'exclusion' && op.event.kind !== 'red') || op.event.playerId === null)) {
     throw new HttpError(422, 'invalid_event', 'Solo una exclusión o roja de un jugador puede sumarse a una inferioridad anterior.');
   }
+  // Cuerpo técnico: el rol es el de la plantilla del servidor, nunca el de la petición.
+  const official = await isOfficial(db, op.event.playerId, op.teamId);
+  if (official && !features.officials) throw updateRequired();
+  if (official && !OFFICIAL_KINDS.includes(op.event.kind)) {
+    throw new HttpError(422, 'invalid_event', 'A un miembro del cuerpo técnico solo se le pueden registrar amarillas, exclusiones o rojas.');
+  }
 
   // 4. Versión.
   const incoming = eventToRow(op.event, op.teamId);
   const current = await readEvent(db, op.event.id);
   if (current && current.team_id !== op.teamId) throw notFound();
+  // Una acción de un oficial solo la cambia una versión que conoce los oficiales.
+  if (current && !features.officials && (await isOfficial(db, current.player_id, op.teamId))) throw updateRequired();
 
   const nowIso = now.toISOString();
   const writes: Statement[] = [];

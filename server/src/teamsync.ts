@@ -11,9 +11,16 @@
 //     entrenador del equipo con la versión base correcta.
 //   * Los identificadores son los del dispositivo: el mismo UUID es el mismo
 //     registro, así que subir dos veces no duplica nada.
-import type { ClockState, Id, Match, Player } from '../../src/domain/types';
+//   * Cuerpo técnico (role: 'official', migración 0006): el rol lo decide el
+//     servidor. Se fija al dar de alta el registro y no cambia después; en la
+//     convocatoria se toma de la plantilla, nunca de la petición. Un oficial se
+//     guarda con el dorsal técnico 0 y no cuenta para los dorsales repetidos.
+//     Una versión de la PWA que no conoce los oficiales no puede tocarlos
+//     (compat.ts).
+import type { ClockState, Id, Match } from '../../src/domain/types';
 import { assertValidPlayerFields, ValidationError } from '../../src/domain/validation';
 import { authorize } from './auth';
+import { NO_FEATURES, updateRequired, type ClientFeatures } from './compat';
 import { assertMayWrite, blockedSql, controlFollowUp, controlValidColumn, controlView, isActive, recordedElsewhere, type ControlRow, type ControlView } from './control';
 import type { Db, SqlValue, Statement } from './db';
 import { HttpError, notFound } from './errors';
@@ -25,11 +32,14 @@ import {
   rowToEvent,
   rowToPlayer,
   rowToTeam,
+  roleOf,
   type EventRow,
   type MatchRow,
+  type PlayerRole,
   type PlayerRow,
   type SquadRow,
   type TeamRow,
+  type WirePlayer,
 } from './mapping';
 import type { AuthContext } from './model';
 import type { OpResult } from './sync';
@@ -39,7 +49,8 @@ export interface PlayerOp {
   teamId: Id;
   /** Versión del servidor sobre la que se editó; null = jugador nuevo. */
   baseVersion: number | null;
-  player: Player;
+  /** Con role: 'official' si es del cuerpo técnico (solo PWA que lo conoce). */
+  player: WirePlayer;
 }
 
 export interface MatchOp {
@@ -142,7 +153,7 @@ async function wasRecorded(db: Db, opId: Id): Promise<boolean> {
 
 // --- Jugadores ----------------------------------------------------------------
 
-function validatePlayer(p: Player, teamId: Id): void {
+function validatePlayer(p: WirePlayer, teamId: Id): void {
   if (p.teamId !== teamId) throw invalid('El jugador no es de este equipo.');
   if (typeof p.name !== 'string' || typeof p.active !== 'boolean' || !isIso(p.createdAt) || !isIso(p.updatedAt)) {
     throw invalid('Jugador incompleto.');
@@ -158,23 +169,55 @@ function validatePlayer(p: Player, teamId: Id): void {
 const PLAYER_CONTENT: (keyof PlayerRow)[] = ['name', 'number', 'position', 'active', 'deleted_at'];
 const samePlayer = (a: PlayerRow, b: PlayerRow) => PLAYER_CONTENT.every((k) => a[k] === b[k]);
 
-export async function applyPlayerOp(db: Db, auth: AuthContext, op: PlayerOp, now = new Date()): Promise<OpResult> {
+/**
+ * Rol que pide la operación. Solo lo declara una PWA que conoce los oficiales
+ * (en ella, sin rol es un jugador); de otra versión no se acepta ninguno y se
+ * conserva el que haya en el servidor.
+ */
+function requestedRole(p: WirePlayer, features: ClientFeatures): PlayerRole | null {
+  const role = (p as { role?: unknown }).role;
+  if (role !== undefined && role !== 'official' && role !== 'player') throw invalid('Rol no válido.');
+  if (!features.officials) {
+    if (role === 'official') throw invalid('Esta versión de la aplicación no puede dar de alta miembros del cuerpo técnico.');
+    return null;
+  }
+  return role === 'official' ? 'official' : 'player';
+}
+
+export async function applyPlayerOp(
+  db: Db,
+  auth: AuthContext,
+  op: PlayerOp,
+  now = new Date(),
+  features: ClientFeatures = NO_FEATURES,
+): Promise<OpResult> {
   await authorize(db, auth, op.teamId, 'roster.write');
   const deviceId = requireDevice(auth);
   const done = await previousResult(db, op.opId, deviceId, op.player.id);
   if (done) return done;
   validatePlayer(op.player, op.teamId);
+  const requested = requestedRole(op.player, features);
 
   const incoming = playerToRow(op.player);
   const current = await db.prepare('SELECT * FROM players WHERE id = ?').bind(op.player.id).first<Versioned<PlayerRow>>();
   if (current && current.team_id !== op.teamId) throw notFound();
+  // Un oficial solo lo toca una versión que lo conoce; su rol no cambia nunca.
+  if (current && roleOf(current) === 'official' && !features.officials) throw updateRequired();
+  const role: PlayerRole = current ? roleOf(current) : (requested ?? 'player');
+  if (requested !== null && requested !== role) {
+    throw invalid('No se puede convertir un jugador en miembro del cuerpo técnico ni al revés.');
+  }
+  if (role === 'official' && (op.player.number !== 0 || op.player.position !== 'field')) {
+    throw invalid('Un miembro del cuerpo técnico no tiene dorsal: se guarda con el dorsal técnico 0.');
+  }
   const server = (row: Versioned<PlayerRow>) => ({ version: row.version, player: rowToPlayer(row) });
 
   let result: OpResult;
   let write: Statement | null = null;
   if (!current) {
     if (op.baseVersion !== null) throw conflict('player', null, 'El jugador ya no existe en el servidor.');
-    const ins = insertSql('players', { ...incoming, version: 1, updated_by_device_id: deviceId });
+    // Solo se escribe el rol si es oficial: los jugadores toman el valor por defecto.
+    const ins = insertSql('players', { ...incoming, ...(role === 'official' && { role }), version: 1, updated_by_device_id: deviceId });
     write = db.prepare(ins.sql).bind(...ins.values);
     result = { status: 'applied', entityId: op.player.id, version: 1 };
   } else if (op.baseVersion === null) {
@@ -256,14 +299,14 @@ function validateMatch(m: Match, teamId: Id): Match {
     throw invalid('Fechas del partido no válidas.');
   }
   if (!Array.isArray(m.squad) || m.squad.length === 0) throw invalid('Convocatoria vacía.');
+  // Los dorsales repetidos se comprueban después, con el rol de cada convocado
+  // según la plantilla del servidor (el dorsal técnico de los oficiales no cuenta).
   const ids = new Set<string>();
-  const numbers = new Set<number>();
   for (const s of m.squad) {
     if (typeof s?.playerId !== 'string' || typeof s.name !== 'string' || !s.name.trim()) throw invalid('Convocado incompleto.');
     if (!isInt(s.number, 0, 99) || (s.position !== 'field' && s.position !== 'goalkeeper')) throw invalid('Convocado no válido.');
-    if (ids.has(s.playerId) || numbers.has(s.number)) throw invalid('Convocado o dorsal repetido.');
+    if (ids.has(s.playerId)) throw invalid('Convocado o dorsal repetido.');
     ids.add(s.playerId);
-    numbers.add(s.number);
   }
   return {
     ...m,
@@ -287,7 +330,7 @@ const MATCH_CONTENT: (keyof MatchRow)[] = [
 ];
 
 function sameSquad(a: readonly SquadRow[], b: readonly SquadRow[]): boolean {
-  const key = (s: SquadRow) => `${s.player_id}|${s.name}|${s.number}|${s.position}|${s.sort_order}`;
+  const key = (s: SquadRow) => `${s.player_id}|${s.name}|${s.number}|${s.position}|${s.sort_order}|${roleOf(s)}`;
   const sa = a.map(key).sort();
   const sb = b.map(key).sort();
   return sa.length === sb.length && sa.every((k, i) => k === sb[i]);
@@ -307,7 +350,13 @@ const serverMatch = (m: NonNullable<Awaited<ReturnType<typeof readMatch>>>) => (
   match: rowsToMatch(m.row, m.squad),
 });
 
-export async function applyMatchOp(db: Db, auth: AuthContext, op: MatchOp, now = new Date()): Promise<OpResult> {
+export async function applyMatchOp(
+  db: Db,
+  auth: AuthContext,
+  op: MatchOp,
+  now = new Date(),
+  features: ClientFeatures = NO_FEATURES,
+): Promise<OpResult> {
   await authorize(db, auth, op.teamId, 'match.write');
   const deviceId = requireDevice(auth);
   const done = await previousResult(db, op.opId, deviceId, op.match.id);
@@ -315,14 +364,22 @@ export async function applyMatchOp(db: Db, auth: AuthContext, op: MatchOp, now =
   const match = validateMatch(op.match, op.teamId);
   const rows = matchToRows(match);
 
-  // Los convocados deben ser jugadores del equipo ya subidos.
+  // Los convocados deben ser jugadores del equipo ya subidos. Su rol es el de la
+  // plantilla del servidor: los oficiales quedan con el dorsal técnico 0.
+  const squad: SquadRow[] = [];
   for (const s of rows.squad) {
-    const p = await db.prepare('SELECT 1 AS ok FROM players WHERE id = ? AND team_id = ?').bind(s.player_id, op.teamId).first();
+    const p = await db.prepare('SELECT role FROM players WHERE id = ? AND team_id = ?').bind(s.player_id, op.teamId).first<{ role?: string }>();
     if (!p) throw new HttpError(422, 'unknown_player', 'La convocatoria incluye un jugador que no está en el servidor. Sube antes la plantilla.');
+    if (roleOf(p) === 'official' && !features.officials) throw updateRequired();
+    squad.push(roleOf(p) === 'official' ? { ...s, number: 0, position: 'field', role: 'official' } : { ...s, role: 'player' });
   }
+  const numbers = squad.filter((s) => s.role === 'player').map((s) => s.number);
+  if (new Set(numbers).size !== numbers.length) throw invalid('Convocado o dorsal repetido.');
 
   const current = await readMatch(db, match.id);
   if (current && current.row.team_id !== op.teamId) throw notFound();
+  // Una versión que no conoce los oficiales no sustituye una convocatoria que los tiene.
+  if (current && !features.officials && current.squad.some((s) => roleOf(s) === 'official')) throw updateRequired();
   // Partido activo con el control de otro dispositivo: no se toca (se vuelve a
   // comprobar dentro de la propia escritura).
   if (current) assertMayWrite(current.row, deviceId);
@@ -342,7 +399,7 @@ export async function applyMatchOp(db: Db, auth: AuthContext, op: MatchOp, now =
     squadChanged = true;
     result = { status: 'applied', entityId: match.id, version: 1 };
   } else if (op.baseVersion === null) {
-    const same = MATCH_CONTENT.every((k) => current.row[k] === rows.match[k]) && sameSquad(current.squad, rows.squad);
+    const same = MATCH_CONTENT.every((k) => current.row[k] === rows.match[k]) && sameSquad(current.squad, squad);
     if (!same) throw conflict('match', serverMatch(current), 'El partido ya existe con otros datos.');
     result = { status: 'duplicate', entityId: match.id, version: current.row.version };
   } else if (op.baseVersion !== current.row.version) {
@@ -377,7 +434,7 @@ export async function applyMatchOp(db: Db, auth: AuthContext, op: MatchOp, now =
         current.row.version,
         deviceId,
       );
-    squadChanged = !sameSquad(current.squad, rows.squad);
+    squadChanged = !sameSquad(current.squad, squad);
     result = { status: 'applied', entityId: match.id, version };
   }
 
@@ -387,13 +444,13 @@ export async function applyMatchOp(db: Db, auth: AuthContext, op: MatchOp, now =
     ...(squadChanged
       ? [
         db.prepare(`DELETE FROM match_squad WHERE match_id = ? AND ${guard}`).bind(match.id, ...guardValues),
-        ...rows.squad.map((s) =>
+        ...squad.map((s) =>
           db
             .prepare(
-              `INSERT INTO match_squad (match_id, player_id, team_id, name, number, position, sort_order)
-               SELECT ?, ?, ?, ?, ?, ?, ? WHERE ${guard}`,
+              `INSERT INTO match_squad (match_id, player_id, team_id, name, number, position, sort_order, role)
+               SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE ${guard}`,
             )
-            .bind(s.match_id, s.player_id, s.team_id, s.name, s.number, s.position, s.sort_order, ...guardValues),
+            .bind(s.match_id, s.player_id, s.team_id, s.name, s.number, s.position, s.sort_order, roleOf(s), ...guardValues),
         ),
         ]
       : []),
@@ -425,7 +482,7 @@ export interface TeamSnapshot {
   club: { id: Id; name: string };
   /** Último cambio incluido: continuar con GET /api/teams/:id/changes?since=seq. */
   seq: number;
-  players: { version: number; player: Player }[];
+  players: { version: number; player: WirePlayer }[];
   /**
    * Incluye los eliminados (con deletedAt) para que el dispositivo los retire.
    * `control`: si el partido activo lo registra este dispositivo, otro o ninguno

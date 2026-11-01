@@ -16,6 +16,10 @@
 //   POST /api/sync/matches                   escritura: entrenador (partido y convocatoria)
 //   POST /api/sync/events                    escritura: entrenador
 //   POST /api/sync/control                   tomar el control de un partido en curso (entrenador)
+// Las rutas de datos del equipo (changes, snapshot y /api/sync/*) responden 503
+// update_required a una PWA que no declara `X-GalipauStats-Features: officials`
+// si el equipo tiene cuerpo técnico (compat.ts). La sesión, el canje, salir del
+// equipo, su ficha y sus códigos no dependen de la versión.
 //
 // Administración (Cloudflare Access + roles en D1; mismo origen, sin CORS):
 //   GET    /admin, /admin/*                                 panel (archivos estáticos)
@@ -51,6 +55,7 @@ import {
 } from './admin';
 import { authenticate, authenticateAdmin, authorize, bearerToken } from './auth';
 import { codeKey } from './codecrypt';
+import { assertCompatible, clientFeatures, FEATURES_HEADER } from './compat';
 import { takeControl, type ControlOp } from './control';
 import { assertSafeAdminWrite } from './csrf';
 import type { Db } from './db';
@@ -108,7 +113,8 @@ function corsHeaders(request: Request, env: Env): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    // La PWA declara qué conoce (compat.ts); no autoriza nada.
+    'Access-Control-Allow-Headers': `Authorization, Content-Type, ${FEATURES_HEADER}`,
     'Access-Control-Max-Age': '600',
     Vary: 'Origin',
   };
@@ -202,6 +208,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
 
   const auth = await authenticate(env.DB, bearerToken(request), devicePepper(env));
+  const features = clientFeatures(request);
 
   if (parts[1] === 'session') {
     if (request.method === 'GET' && parts.length === 2) return json(await getSession(env.DB, auth));
@@ -230,10 +237,12 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === 'GET' && parts[1] === 'teams' && parts[2] && parts[3] === 'changes' && parts.length === 4) {
     const since = Number(url.searchParams.get('since') ?? 0);
     if (!Number.isInteger(since) || since < 0) throw new HttpError(400, 'bad_request', 'Parámetro since no válido.');
+    await assertCompatible(env.DB, auth, parts[2], features);
     return json(await pullChanges(env.DB, auth, parts[2], since));
   }
 
   if (request.method === 'GET' && parts[1] === 'teams' && parts[2] && parts[3] === 'snapshot' && parts.length === 4) {
+    await assertCompatible(env.DB, auth, parts[2], features);
     return json(await teamSnapshot(env.DB, auth, parts[2]));
   }
 
@@ -242,7 +251,8 @@ async function route(request: Request, env: Env): Promise<Response> {
     if (!op || typeof op.opId !== 'string' || typeof op.teamId !== 'string' || !op.player || typeof op.player.id !== 'string' || !validBase(op.baseVersion)) {
       throw new HttpError(400, 'bad_request', 'Operación incompleta.');
     }
-    return json(await applyPlayerOp(env.DB, auth, op));
+    await assertCompatible(env.DB, auth, op.teamId, features);
+    return json(await applyPlayerOp(env.DB, auth, op, undefined, features));
   }
 
   if (request.method === 'POST' && parts[1] === 'sync' && parts[2] === 'matches' && parts.length === 3) {
@@ -250,7 +260,8 @@ async function route(request: Request, env: Env): Promise<Response> {
     if (!op || typeof op.opId !== 'string' || typeof op.teamId !== 'string' || !op.match || typeof op.match.id !== 'string' || !validBase(op.baseVersion)) {
       throw new HttpError(400, 'bad_request', 'Operación incompleta.');
     }
-    return json(await applyMatchOp(env.DB, auth, op));
+    await assertCompatible(env.DB, auth, op.teamId, features);
+    return json(await applyMatchOp(env.DB, auth, op, undefined, features));
   }
 
   if (request.method === 'POST' && parts[1] === 'sync' && parts[2] === 'events' && parts.length === 3) {
@@ -258,7 +269,8 @@ async function route(request: Request, env: Env): Promise<Response> {
     if (!op || typeof op.opId !== 'string' || typeof op.teamId !== 'string' || !op.event || typeof op.event.id !== 'string') {
       throw new HttpError(400, 'bad_request', 'Operación incompleta.');
     }
-    return json(await applyEventOp(env.DB, auth, op));
+    await assertCompatible(env.DB, auth, op.teamId, features);
+    return json(await applyEventOp(env.DB, auth, op, undefined, features));
   }
 
   if (request.method === 'POST' && parts[1] === 'sync' && parts[2] === 'control' && parts.length === 3) {
@@ -274,6 +286,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     ) {
       throw new HttpError(400, 'bad_request', 'Operación incompleta.');
     }
+    await assertCompatible(env.DB, auth, op.teamId, features);
     return json(await takeControl(env.DB, auth, { opId: op.opId, teamId: op.teamId, matchId: op.matchId, expectedEpoch: op.expectedEpoch }));
   }
 

@@ -12,6 +12,18 @@ import type {
 } from '../../src/domain/types';
 import type { TeamRemoteFields } from './model';
 
+/**
+ * Rol en la plantilla y la convocatoria (migración 0006). Solo viaja en los
+ * datos cuando es 'official': los jugadores se envían y se reciben igual que
+ * antes, con las mismas huellas.
+ */
+export type PlayerRole = 'player' | 'official';
+export type WirePlayer = Player & { role?: 'official' };
+export type WireSquadEntry = SquadEntry & { role?: 'official' };
+
+/** Rol guardado en una fila (sin la columna, antes de 0006: jugador). */
+export const roleOf = (row: { role?: string | null }): PlayerRole => (row.role === 'official' ? 'official' : 'player');
+
 export interface TeamRow {
   id: string;
   club_id: string;
@@ -37,6 +49,8 @@ export interface PlayerRow {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  /** Desde 0006; las filas se escriben sin él y toman 'player' por defecto. */
+  role?: string;
 }
 
 export interface MatchRow {
@@ -65,6 +79,8 @@ export interface SquadRow {
   number: number;
   position: string;
   sort_order: number;
+  /** Desde 0006; lo fija el servidor a partir de la plantilla. */
+  role?: string;
 }
 
 export interface EventRow {
@@ -135,8 +151,8 @@ export function playerToRow(p: Player, personId: string | null = null): PlayerRo
   };
 }
 
-export function rowToPlayer(row: PlayerRow): Player {
-  return {
+export function rowToPlayer(row: PlayerRow): WirePlayer {
+  const player: WirePlayer = {
     id: row.id,
     teamId: row.team_id,
     name: row.name,
@@ -146,6 +162,8 @@ export function rowToPlayer(row: PlayerRow): Player {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+  if (roleOf(row) === 'official') player.role = 'official';
+  return player;
 }
 
 // --- Partido y convocatoria ---------------------------------------------------
@@ -193,14 +211,16 @@ export function rowsToMatch(row: MatchRow, squad: readonly SquadRow[]): Match {
     halfMinutes: row.half_minutes,
     squad: [...squad]
       .sort((a, b) => a.sort_order - b.sort_order)
-      .map(
-        (s): SquadEntry => ({
+      .map((s): WireSquadEntry => {
+        const entry: WireSquadEntry = {
           playerId: s.player_id,
           name: s.name,
           number: s.number,
           position: s.position as SquadEntry['position'],
-        }),
-      ),
+        };
+        if (roleOf(s) === 'official') entry.role = 'official';
+        return entry;
+      }),
     clock: JSON.parse(row.clock_json) as ClockState,
     scoreAdjustment: { own: row.score_adj_own, opponent: row.score_adj_opponent },
     createdAt: row.created_at,
