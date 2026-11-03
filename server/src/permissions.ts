@@ -31,7 +31,13 @@ export type ClubAction =
   /** Nombrar y retirar administradores del club. */
   | 'club.admins.manage'
   /** Suspender y reactivar el club. */
-  | 'club.status.manage';
+  | 'club.status.manage'
+  /** Personas del club (identidad común) y vínculo de sus fichas. Auditada, no crítica. */
+  | 'club.people.manage'
+  /** Participación, grupos, exclusiones y reducir la visibilidad de los rankings del club. Auditada, no crítica. */
+  | 'club.rankings.manage'
+  /** Ampliar quién ve los rankings del club (privacidad): operación crítica. */
+  | 'club.rankings.expand';
 
 /** Operaciones de toda la plataforma. */
 export type PlatformAction =
@@ -49,10 +55,10 @@ const TEAM: Record<Role, readonly Action[]> = {
 };
 
 const CLUB: Record<'superadmin' | 'club_admin', readonly ClubAction[]> = {
-  superadmin: ['club.read', 'club.manage', 'club.teams.manage', 'club.admins.manage', 'club.status.manage'],
+  superadmin: ['club.read', 'club.manage', 'club.teams.manage', 'club.admins.manage', 'club.status.manage', 'club.people.manage', 'club.rankings.manage', 'club.rankings.expand'],
   // El administrador de club no nombra a otros administradores (ni de su club):
   // eso lo hace el superadministrador.
-  club_admin: ['club.read', 'club.manage', 'club.teams.manage'],
+  club_admin: ['club.read', 'club.manage', 'club.teams.manage', 'club.people.manage', 'club.rankings.manage', 'club.rankings.expand'],
 };
 
 export function roleAllows(role: Role, action: Action): boolean {
@@ -76,5 +82,6 @@ export function isReadOnly(action: Action): boolean {
 export const CRITICAL_ACTIONS: readonly (ClubAction | PlatformAction)[] = [
   'club.admins.manage',
   'club.status.manage',
+  'club.rankings.expand',
   'platform.clubs.manage',
 ];

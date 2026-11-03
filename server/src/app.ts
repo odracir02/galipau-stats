@@ -27,6 +27,15 @@
 //   GET    /api/admin/clubs                                 clubes visibles
 //   GET    /api/admin/clubs/:clubId                         ficha del club y sus equipos
 //   GET    /api/admin/teams/:teamId/codes                   los dos códigos del equipo
+//   GET    /api/admin/clubs/:clubId/people                  personas, fichas y ajustes de rankings
+//   POST   /api/admin/clubs/:clubId/people                  crear persona
+//   PATCH  /api/admin/people/:personId                      nombre visible o exclusión (versión esperada)
+//   POST   /api/admin/people/:personId/delete               borrar persona (desvincula sus fichas)
+//   PUT    /api/admin/players/:playerId/person              vincular o desvincular (persona esperada)
+//   PUT    /api/admin/players/:playerId/ranking             exclusión de la ficha
+//   PATCH  /api/admin/teams/:teamId/rankings                participación y grupo del equipo
+//   PUT    /api/admin/clubs/:clubId/rankings                reducir la visibilidad de los rankings del club
+//     (gestión de personas y rankings: auditada, sin ventana crítica)
 // Escrituras: todas críticas (ADMIN_CRITICAL_OPS + aplicación crítica de Access):
 //   GET    /api/admin/critical/reauth?return=/admin/…       volver al panel tras verificar
 //   POST   /api/admin/critical/clubs                        crear club (superadmin)
@@ -36,6 +45,7 @@
 //   POST   /api/admin/critical/clubs/:clubId/admins         nombrar administrador (superadmin)
 //   DELETE /api/admin/critical/clubs/:clubId/admins/:id     retirar administrador (superadmin)
 //   POST   /api/admin/critical/clubs/:clubId/teams          crear equipo con sus dos códigos
+//   PUT    /api/admin/critical/clubs/:clubId/rankings       ampliar la visibilidad de los rankings del club
 //   PATCH  /api/admin/critical/teams/:teamId                editar equipo
 //   POST   /api/admin/critical/teams/:teamId/codes/:role/regenerate   regenerar un código
 //   POST   /api/admin/critical/teams/:teamId/codes/:role/revoke       revocar un código
@@ -60,9 +70,10 @@ import { takeControl, type ControlOp } from './control';
 import { assertSafeAdminWrite } from './csrf';
 import type { Db } from './db';
 import { HttpError, notFound } from './errors';
+import * as persons from './people';
 import { clientKeyFromRequest, createInvite, readTeamCodes, redeemInvite, revokeTeamCode, type InviteSecrets } from './invites';
 import { rowToTeam, type TeamRow } from './mapping';
-import { TEAM_ROLES, type TeamRole } from './model';
+import { TEAM_ROLES, type AuthContext, type TeamRole } from './model';
 import { getSession, leaveTeam, logout, teamSummary } from './session';
 import { applyEventOp, pullChanges, type EventOp } from './sync';
 import { applyMatchOp, applyPlayerOp, teamSnapshot, type MatchOp, type PlayerOp } from './teamsync';
@@ -350,6 +361,8 @@ async function adminRoute(request: Request, env: Env, path: string[]): Promise<R
   if (m === 'GET' && path.length === 3 && path[0] === 'teams' && path[2] === 'codes') {
     return json(await readTeamCodes(env.DB, auth, path[1]!, await codeKey(env.INVITE_CODE_KEY)));
   }
+  const people = await peopleRoute(request, env.DB, auth, path);
+  if (people) return people;
 
   if (path[0] !== 'critical') throw notFound();
   if (!auth.admin?.critical) throw new HttpError(401, 'reauth_required', 'Vuelve a verificar tu identidad para esta operación.');
@@ -385,6 +398,10 @@ async function adminRoute(request: Request, env: Env, path: string[]): Promise<R
       await revokeClubAdmin(env.DB, auth, { clubId, identityId });
       return json({ ok: true });
     }
+    if (m === 'PUT' && clubId && sub === 'rankings' && path.length === 4) {
+      await persons.setRankingsVisibility(env.DB, auth, clubId, (await readJson<Record<string, unknown>>(request)) ?? {}, { expand: true });
+      return json({ ok: true });
+    }
     if (m === 'POST' && clubId && sub === 'teams' && path.length === 4) {
       const body = (await readJson<Record<string, unknown>>(request)) ?? {};
       const created = await createTeam(
@@ -413,6 +430,42 @@ async function adminRoute(request: Request, env: Env, path: string[]): Promise<R
     }
   }
   throw notFound();
+}
+
+/**
+ * Personas del club y ajustes de los rankings: operaciones normales de
+ * administración (no críticas), con permiso por club y auditoría. null si la
+ * ruta no es de este grupo.
+ */
+async function peopleRoute(request: Request, db: Db, auth: AuthContext, path: string[]): Promise<Response | null> {
+  const m = request.method;
+  const [section, id, sub] = path;
+  const body = async () => (await readJson<Record<string, unknown>>(request)) ?? {};
+  if (section === 'clubs' && id && sub === 'people' && path.length === 3) {
+    if (m === 'GET') return json(await persons.listClubPeople(db, auth, id));
+    if (m === 'POST') return json(await persons.createPerson(db, auth, id, await body()), 201);
+  }
+  if (section === 'clubs' && id && sub === 'rankings' && path.length === 3 && m === 'PUT') {
+    await persons.setRankingsVisibility(db, auth, id, await body());
+    return json({ ok: true });
+  }
+  if (section === 'people' && id && path.length === 2 && m === 'PATCH') return json(await persons.updatePerson(db, auth, id, await body()));
+  if (section === 'people' && id && sub === 'delete' && path.length === 3 && m === 'POST') return json(await persons.deletePerson(db, auth, id, await body()));
+  if (section === 'players' && id && sub === 'person' && path.length === 3 && m === 'PUT') {
+    const b = await body();
+    if (b.personId === null) await persons.unlinkPlayer(db, auth, id, b);
+    else await persons.linkPlayer(db, auth, id, b);
+    return json({ ok: true });
+  }
+  if (section === 'players' && id && sub === 'ranking' && path.length === 3 && m === 'PUT') {
+    await persons.setPlayerRankingExcluded(db, auth, id, await body());
+    return json({ ok: true });
+  }
+  if (section === 'teams' && id && sub === 'rankings' && path.length === 3 && m === 'PATCH') {
+    await persons.updateTeamRankings(db, auth, id, await body());
+    return json({ ok: true });
+  }
+  return null;
 }
 
 export async function handle(request: Request, env: Env): Promise<Response> {
