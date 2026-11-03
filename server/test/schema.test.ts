@@ -27,6 +27,7 @@ describe('migraciones', () => {
       'admin_roles',
       'auth_attempts',
       'change_log',
+      'club_rankings_cache',
       'clubs',
       'd1_migrations',
       'device_tokens',

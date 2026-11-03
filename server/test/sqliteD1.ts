@@ -79,10 +79,15 @@ export class SqliteD1 implements Db {
     }
   }
 
-  /** Aplica todas las migraciones, cada una en su transacción, y las registra. */
-  migrate(): string[] {
-    const applied = migrationFiles();
+  /**
+   * Aplica las migraciones pendientes, cada una en su transacción, y las
+   * registra. Con `until`, solo hasta esa (para probar una migración sobre
+   * datos de las anteriores).
+   */
+  migrate(until?: string): string[] {
     this.sqlite.exec('CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TEXT)');
+    const done = new Set((this.sqlite.prepare('SELECT name FROM d1_migrations').all() as { name: string }[]).map((r) => r.name));
+    const applied = migrationFiles().filter((f) => !done.has(f) && (until === undefined || f <= until));
     for (const file of applied) {
       const sql = readFileSync(new URL(file, MIGRATIONS_DIR), 'utf8');
       this.sqlite.exec('BEGIN');
