@@ -16,6 +16,8 @@
 //   POST /api/sync/matches                   escritura: entrenador (partido y convocatoria)
 //   POST /api/sync/events                    escritura: entrenador
 //   POST /api/sync/control                   tomar el control de un partido en curso (entrenador)
+//   GET  /api/clubs/:clubId/rankings         grupos de rankings del club que puede consultar
+//   GET  /api/clubs/:clubId/rankings?season&gender&group[&players=a,b]   Top 10 del grupo y puestos propios
 // Las rutas de datos del equipo (changes, snapshot y /api/sync/*) responden 503
 // update_required a una PWA que no declara `X-GalipauStats-Features: officials`
 // si el equipo tiene cuerpo técnico (compat.ts). La sesión, el canje, salir del
@@ -27,6 +29,7 @@
 //   GET    /api/admin/clubs                                 clubes visibles
 //   GET    /api/admin/clubs/:clubId                         ficha del club y sus equipos
 //   GET    /api/admin/teams/:teamId/codes                   los dos códigos del equipo
+//   GET    /api/admin/clubs/:clubId/rankings?season&gender&group   clasificación completa del grupo
 //   GET    /api/admin/clubs/:clubId/people                  personas, fichas y ajustes de rankings
 //   POST   /api/admin/clubs/:clubId/people                  crear persona
 //   PATCH  /api/admin/people/:personId                      nombre visible o exclusión (versión esperada)
@@ -71,6 +74,7 @@ import { assertSafeAdminWrite } from './csrf';
 import type { Db } from './db';
 import { HttpError, notFound } from './errors';
 import * as persons from './people';
+import { adminClubRankings, deviceClubGroups, deviceClubRankings, groupFromQuery } from './clubRankings';
 import { clientKeyFromRequest, createInvite, readTeamCodes, redeemInvite, revokeTeamCode, type InviteSecrets } from './invites';
 import { rowToTeam, type TeamRow } from './mapping';
 import { TEAM_ROLES, type AuthContext, type TeamRole } from './model';
@@ -232,6 +236,14 @@ async function route(request: Request, env: Env): Promise<Response> {
       return json({ ok: true });
     }
     throw notFound();
+  }
+
+  // Rankings del club: sin grupo, los grupos que puede consultar; con grupo, su
+  // Top 10 y el puesto de las fichas propias pedidas (?players=a,b).
+  if (request.method === 'GET' && parts[1] === 'clubs' && parts[2] && parts[3] === 'rankings' && parts.length === 4) {
+    if (!url.searchParams.has('season')) return json(await deviceClubGroups(env.DB, auth, parts[2]));
+    const players = (url.searchParams.get('players') ?? '').split(',').filter(Boolean);
+    return json(await deviceClubRankings(env.DB, auth, parts[2], groupFromQuery(url.searchParams), players));
   }
 
   if (request.method === 'GET' && parts[1] === 'teams' && parts[2] && parts.length === 3) {
@@ -444,6 +456,9 @@ async function peopleRoute(request: Request, db: Db, auth: AuthContext, path: st
   if (section === 'clubs' && id && sub === 'people' && path.length === 3) {
     if (m === 'GET') return json(await persons.listClubPeople(db, auth, id));
     if (m === 'POST') return json(await persons.createPerson(db, auth, id, await body()), 201);
+  }
+  if (section === 'clubs' && id && sub === 'rankings' && path.length === 3 && m === 'GET') {
+    return json(await adminClubRankings(db, auth, id, groupFromQuery(new URL(request.url).searchParams)));
   }
   if (section === 'clubs' && id && sub === 'rankings' && path.length === 3 && m === 'PUT') {
     await persons.setRankingsVisibility(db, auth, id, await body());
