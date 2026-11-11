@@ -1,4 +1,4 @@
-import { ChevronRight, DatabaseBackup, Plus, Smartphone } from 'lucide-react';
+import { ChevronRight, DatabaseBackup, Smartphone } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { remote, teamImporter } from '../../app/remote';
 import { repo } from '../../app/repo';
@@ -11,14 +11,12 @@ import { TopBar } from '../components/TopBar';
 import { BackupSheet } from './BackupSheet';
 import { OngoingMatchBanner } from './OngoingMatchBanner';
 import { RemoteTeamsSection } from './RemoteTeamsSection';
-import { TeamFormSheet } from './TeamFormSheet';
 
 export function TeamsScreen() {
   // Cambia cuando se prepara (o se quita) un equipo del club en este dispositivo.
   const [copies, setCopies] = useState(0);
   useEffect(() => teamImporter?.subscribe(() => setCopies((v) => v + 1)), []);
   const teams = useLoad(() => repo.listTeams(), [copies]);
-  const [creating, setCreating] = useState(false);
   const [backup, setBackup] = useState(false);
 
   return (
@@ -43,7 +41,7 @@ export function TeamsScreen() {
         {teams.data?.length === 0 && (
           <div className="empty-card">
             <strong>Todavía no hay equipos en este dispositivo</strong>
-            <span>Crea tu equipo y añade su plantilla para empezar a registrar partidos.</span>
+            <span>Los equipos de tu club aparecerán aquí cuando te unas con el código que te dé el club.</span>
           </div>
         )}
         <ul className="list">
@@ -62,10 +60,7 @@ export function TeamsScreen() {
             </li>
           ))}
         </ul>
-        <button type="button" className="btn btn-primary btn-block" onClick={() => setCreating(true)}>
-          <Icon as={Plus} />
-          Nuevo equipo
-        </button>
+        {/* Sin «Nuevo equipo»: los equipos los creará el club desde su panel de administración. */}
         <RemoteTeamsSection />
         <a className="install-link" href={routeHref({ name: 'install' })}>
           <Icon as={Smartphone} size={18} />
@@ -73,15 +68,6 @@ export function TeamsScreen() {
         </a>
       </main>
       {backup && <BackupSheet onClose={() => setBackup(false)} />}
-      {creating && (
-        <TeamFormSheet
-          onClose={() => setCreating(false)}
-          onSaved={(team) => {
-            setCreating(false);
-            navigate({ name: 'team', teamId: team.id });
-          }}
-        />
-      )}
     </div>
   );
 }
