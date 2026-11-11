@@ -323,10 +323,10 @@ function ClubRankingTable({ def, data }: { def: RankingDefinition; data: ClubRan
 
   return (
     <>
-      <section className={`rank-leader${def.neutral ? ' rank-neutral' : ''}`} aria-label={leaderLabel(def, leaders.length)}>
-        {!def.neutral && <Icon as={Crown} size={28} className="rank-crown" />}
+      <section className="rank-leader" aria-label="Líder">
+        <Icon as={Crown} size={28} className="rank-crown" />
         <div className="rank-leader-who">
-          <span className="rank-leader-label">{leaderLabel(def, leaders.length)}</span>
+          <span className="rank-leader-label">{leaderLabel(leaders.length)}</span>
           {leaders.length === 1 ? (
             <>
               <strong>{lead.name}</strong>

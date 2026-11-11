@@ -114,7 +114,6 @@ Hay diez clasificaciones, las mismas en los dos ámbitos de la pantalla «Rankin
 - Los porcentajes se comparan redondeados a un decimal, como se muestran: dos «66,7 %» empatan.
 - Se muestran como máximo 10 jugadores, contando al líder. El líder (o los empatados en el primer puesto) aparece solo en la tarjeta destacada; la lista empieza por el siguiente clasificado con su puesto real. Si en el último puesto visible hay más empatados de los que caben, se indica cuántos quedan fuera.
 - Los mínimos están en `RANKING_THRESHOLDS` y se muestran en la pantalla. Los porcentajes salen siempre de los contadores totales, nunca de la media de porcentajes de cada partido. Las clasificaciones de cantidades no tienen mínimo.
-- El reincidente y el generoso se muestran de forma neutra: primer puesto sin corona ni «Líder».
 - El cuerpo técnico nunca aparece: sus acciones no entran en las cifras individuales.
 - Solo cuentan acciones atribuidas a un jugador. Los partidos eliminados y las acciones borradas no cuentan.
 - Nombre y dorsal: los de la convocatoria más reciente del jugador en esa temporada.

@@ -225,10 +225,8 @@ describe('rankings: porcentajes y mínimos', () => {
       'El velocista',
       'El cerrojo de 7 metros',
     ]);
-    // Exclusiones y pérdidas, neutras; el resto, de mérito.
-    expect(RANKINGS.filter((d) => d.neutral).map((d) => d.id)).toEqual(['repeat_offender', 'generous']);
-    expect([leaderLabel(rankingById('generous'), 1), leaderLabel(rankingById('generous'), 2)]).toEqual(['Primer puesto', 'Primeros empatados']);
-    expect([leaderLabel(rankingById('top_scorer'), 1), leaderLabel(rankingById('top_scorer'), 2)]).toEqual(['Líder', 'Líderes empatados']);
+    // La misma tarjeta del primer puesto en las diez.
+    expect([leaderLabel(1), leaderLabel(2)]).toEqual(['Líder', 'Líderes empatados']);
   });
 
   it('cada ranking de porcentaje explica su mínimo en el texto', () => {

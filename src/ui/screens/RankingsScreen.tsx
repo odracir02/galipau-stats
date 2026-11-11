@@ -232,13 +232,10 @@ function RankingTable({
 
   return (
     <>
-      <section
-        className={`rank-leader${def.neutral ? ' rank-neutral' : ''}${leaders.some((e) => e.player.playerId === highlight) ? ' rank-me' : ''}`}
-        aria-label={leaderLabel(def, leaders.length)}
-      >
-        {!def.neutral && <Icon as={Crown} size={28} className="rank-crown" />}
+      <section className={`rank-leader${leaders.some((e) => e.player.playerId === highlight) ? ' rank-me' : ''}`} aria-label="Líder">
+        <Icon as={Crown} size={28} className="rank-crown" />
         <div className="rank-leader-who">
-          <span className="rank-leader-label">{leaderLabel(def, leaders.length)}</span>
+          <span className="rank-leader-label">{leaderLabel(leaders.length)}</span>
           {leaders.length === 1 ? (
             <strong>
               <span className="dorsal">{lead.player.number}</span> {lead.player.name}

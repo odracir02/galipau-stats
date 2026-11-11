@@ -62,8 +62,6 @@ export interface RankingDefinition {
   unit?: readonly [string, string];
   /** Mínimo explicado en la interfaz (solo porcentajes). */
   minimum?: string;
-  /** Exclusiones y pérdidas: se muestran sin corona ni «Líder» (no es un mérito). */
-  neutral?: true;
   measure(c: Counters): RankingMeasure | null;
 }
 
@@ -130,7 +128,6 @@ export const RANKINGS: readonly RankingDefinition[] = [
     description: 'Exclusiones de dos minutos registradas. La roja por tercera exclusión no suma otra.',
     format: 'count',
     unit: ['exclusión', 'exclusiones'],
-    neutral: true,
     measure: (c) => count(c.exclusions),
   },
   {
@@ -140,7 +137,6 @@ export const RANKINGS: readonly RankingDefinition[] = [
     description: 'Pérdidas de balón registradas (incluye pasos, dobles y pases fallados).',
     format: 'count',
     unit: ['pérdida', 'pérdidas'],
-    neutral: true,
     measure: (c) => count(c.turnovers.total),
   },
   {
@@ -172,11 +168,8 @@ export const RANKINGS: readonly RankingDefinition[] = [
   },
 ];
 
-/** «Líder» en las clasificaciones de mérito; en las neutras (exclusiones, pérdidas), solo el puesto. */
-export function leaderLabel(def: RankingDefinition, count: number): string {
-  if (def.neutral) return count > 1 ? 'Primeros empatados' : 'Primer puesto';
-  return count > 1 ? 'Líderes empatados' : 'Líder';
-}
+/** Etiqueta de la tarjeta del primer puesto (la misma en las diez clasificaciones). */
+export const leaderLabel = (count: number): string => (count > 1 ? 'Líderes empatados' : 'Líder');
 
 export function rankingById(id: RankingId): RankingDefinition {
   return RANKINGS.find((r) => r.id === id)!;
