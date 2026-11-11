@@ -6,11 +6,13 @@ import { liveFeed, myPlayer } from '../../app/remote';
 import { backToTeam, navigate } from '../../app/router';
 import { useRemoteTeamData } from '../../app/useRemoteTeamData';
 import { formatDate, opponentLabel } from '../../domain/format';
+import { isOfficial } from '../../domain/catalog';
 import { seasonItems, type ViewProblem } from '../../remote/viewer';
 import { disqualifications, officialIds } from '../../stats/discipline';
 import { computeMatchStats } from '../../stats/engine';
 import { Icon } from '../components/Icon';
 import { TopBar } from '../components/TopBar';
+import { RankingsWithClub } from '../stats/ClubRankingsView';
 import { playerRows, staffOfMatch } from '../stats/staff';
 import { StatsView } from '../stats/StatsView';
 import { MatchSummaryCard } from './MatchScreen';
@@ -93,7 +95,19 @@ export function RemoteRankingsScreen({ teamId }: { teamId: string }) {
       <main className="content">
         <FreshnessBar view={view} onRefresh={null} onResume={() => liveFeed?.resume(teamId)} />
         {snapshot ? (
-          <RankingsView items={items} seasons={seasons} season={active} onSeason={setSeason} highlight={highlight} />
+          <RankingsWithClub
+            clubId={team?.clubId}
+            teamId={team?.teamId}
+            clubName={team?.clubName ?? ''}
+            players={snapshot.players
+              .map((p) => p.player)
+              .filter((p) => !isOfficial(p))
+              .sort((a, b) => a.number - b.number)
+              .map((p) => ({ id: p.id, name: p.name, number: p.number }))}
+            // Consulta: su «Mi jugador», preseleccionado para ver su puesto en el club.
+            defaultPlayerId={highlight}
+            team={<RankingsView items={items} seasons={seasons} season={active} onSeason={setSeason} highlight={highlight} />}
+          />
         ) : (
           <p className="empty">
             {lostAccess(view.problem)

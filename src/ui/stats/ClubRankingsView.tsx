@@ -1,6 +1,7 @@
-// Rankings del club dentro de «Temporada»: alterna entre los del equipo (los de
-// siempre) y los del club. Los del club los calcula y autoriza el servidor; aquí
-// solo se presentan, con conexión, y no se guardan en ningún sitio.
+// Rankings del club dentro de «Rankings»: alterna entre los del equipo (los de
+// siempre, con todas sus clasificaciones) y los de todo el club. Los del club los
+// calcula y autoriza el servidor; aquí solo se presentan, con conexión, y no se
+// guardan en ningún sitio.
 import { CloudOff, Crown, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useClubRankingGroups } from '../../app/useClubRankings';
@@ -9,14 +10,12 @@ import { formatPct } from '../../domain/format';
 import type { ClubRankingEntry, ClubRankingGroup, ClubRankings } from '../../remote/api';
 import { RemoteError } from '../../remote/api';
 import { groupKey, groupLabel, initialGroup, isAccessLost } from '../../remote/clubRankings';
-import { RANKING_LIMIT, rankingById, type RankingDefinition, type RankingId } from '../../stats/rankings';
+import { leaderLabel, RANKING_LIMIT, RANKINGS, rankingById, type RankingDefinition, type RankingId } from '../../stats/rankings';
 import { Icon } from '../components/Icon';
 import { Segmented } from '../components/Segmented';
 import { RankEmpty, RankingPicker } from '../screens/RankingsScreen';
 import { RANKING_ICON } from './rankingIcons';
 
-const CLUB_RANKINGS: readonly RankingId[] = ['top_scorer', 'sharpshooter', 'wall', 'thief', 'shots'];
-const CLUB_DEFS = CLUB_RANKINGS.map(rankingById);
 
 /** Jugador del propio equipo cuyo puesto se puede consultar. */
 export interface ClubRankingPlayer {
@@ -28,11 +27,12 @@ export interface ClubRankingPlayer {
 type Scope = 'team' | 'club';
 
 /**
- * «Temporada» con el selector «Mi equipo / Todo el club», siempre abierta en «Mi
- * equipo». El selector solo aparece si el servidor ofrece el club a este
- * dispositivo (con conexión); si no, `team` tal cual.
+ * «Rankings» con el selector «Mi equipo / Todo el club», siempre abierta en «Mi
+ * equipo» (`team`: los rankings del equipo, que funcionan sin conexión). El
+ * selector solo aparece si el servidor ofrece el club a este dispositivo (con
+ * conexión); si no, `team` tal cual.
  */
-export function SeasonWithClubRankings({
+export function RankingsWithClub({
   clubId,
   teamId,
   clubName,
@@ -207,7 +207,7 @@ function ClubRankingsView({
       {current.status === 'error' && <ClubRankingsError error={current.error} onRetry={() => setReload((n) => n + 1)} />}
       {data && (
         <>
-          <RankingPicker value={rankingId} onChange={setRankingId} options={CLUB_DEFS} />
+          <RankingPicker value={rankingId} onChange={setRankingId} options={RANKINGS} />
           <section className="rank-intro">
             <h2>
               <Icon as={RANKING_ICON[def.id]} size={18} />
@@ -323,10 +323,10 @@ function ClubRankingTable({ def, data }: { def: RankingDefinition; data: ClubRan
 
   return (
     <>
-      <section className="rank-leader" aria-label="Líder">
-        <Icon as={Crown} size={28} className="rank-crown" />
+      <section className={`rank-leader${def.neutral ? ' rank-neutral' : ''}`} aria-label={leaderLabel(def, leaders.length)}>
+        {!def.neutral && <Icon as={Crown} size={28} className="rank-crown" />}
         <div className="rank-leader-who">
-          <span className="rank-leader-label">{leaders.length > 1 ? 'Líderes empatados' : 'Líder'}</span>
+          <span className="rank-leader-label">{leaderLabel(def, leaders.length)}</span>
           {leaders.length === 1 ? (
             <>
               <strong>{lead.name}</strong>

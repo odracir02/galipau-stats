@@ -10,7 +10,7 @@ import { buildBootstrapSql } from '../scripts/bootstrap-superadmin.mjs';
 import { clearJwksCache } from '../src/access';
 import { countsForSeason } from '../../src/services/statsService';
 import { computeSeasonStats } from '../../src/stats/engine';
-import { RANKING_LIMIT, RANKING_THRESHOLDS } from '../../src/stats/rankings';
+import { RANKING_LIMIT, RANKING_THRESHOLDS, RANKINGS, rankPlayers, seasonCandidates } from '../../src/stats/rankings';
 import { CLUB_GROUP, CLUB_RANKINGS, CLUB_RULES_VERSION, deviceClubRankings, type ClubRankingsResponse } from '../src/clubRankings';
 import worker, { type Env } from '../src/index';
 import type { AuthContext } from '../src/model';
@@ -162,7 +162,7 @@ describe('cálculo', () => {
     expect(ranking(r, 'shots').entries[0]).toMatchObject({ name: 'Ana', value: 12 });
   });
 
-  it('Top 10 con empates: puestos compartidos, los que no caben se cuentan; solo clasificaciones positivas', async () => {
+  it('Top 10 con empates: puestos compartidos, los que no caben se cuentan; las diez clasificaciones del equipo', async () => {
     const many: Roster = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`c${i}`, [`Jugador ${i}`, 20 + i]]));
     await roster('smb', many);
     await match('smb', 'mb2', Object.keys(many).map((pid) => [pid, GOAL, 1] as [string, EventPayload, number]), { squadOf: Object.keys(many) });
@@ -174,8 +174,8 @@ describe('cálculo', () => {
     expect(top.ranked).toBe(18);
     expect(top.hiddenTies).toBe(8);
     expect(r.rankings.map((x) => x.id)).toEqual(CLUB_RANKINGS);
-    expect(r.rankings.map((x) => x.id)).not.toContain('repeat_offender');
-    expect(r.rankings.map((x) => x.id)).not.toContain('generous');
+    expect(r.rankings.map((x) => x.id)).toEqual(RANKINGS.map((d) => d.id));
+    expect(r.rankings).toHaveLength(10);
   });
 
   it('fichas y personas excluidas, y cuerpo técnico: fuera, y los demás suben', async () => {
@@ -247,6 +247,90 @@ describe('cálculo', () => {
     expect(r.status).toBe(200);
     expect(r.body.rankings.map((x) => [x.id, x.entries.length, x.ranked])).toEqual(CLUB_RANKINGS.map((id) => [id, 0, 0]));
     expect(r.body.teams.map((t) => t.code)).toEqual(['CMA2627', 'CFA2627']);
+  });
+});
+
+describe('las diez clasificaciones', () => {
+  const PEN_GOAL: EventPayload = { kind: 'shot', shotType: 'penalty', result: 'goal' };
+  const PEN_OUT: EventPayload = { kind: 'shot', shotType: 'penalty', result: 'out' };
+  const PEN_SAVED: EventPayload = { kind: 'shot', shotType: 'penalty', result: 'saved' };
+  const FAST: EventPayload = { kind: 'shot', shotType: 'fast_break', result: 'goal' };
+  const GK_PEN_SAVE: EventPayload = { kind: 'gk_shot', shotType: 'penalty', result: 'save' };
+  const EXCLUSION: EventPayload = { kind: 'exclusion' };
+  const TURNOVER: EventPayload = { kind: 'turnover', turnoverType: 'general' };
+  const full = async () => (await call(`/api/admin/clubs/A/rankings${q()}`, { email: OWNER })).body;
+  const teamRanked = async (teamId: string, def: (typeof RANKINGS)[number]) => {
+    const snap = await teamSnapshot(db, recorder, teamId);
+    const byMatch = snap.matches.map(({ match }) => ({ match, events: snap.events.map((e) => e.event).filter((e) => e.matchId === match.id) }));
+    return rankPlayers(def, seasonCandidates(computeSeasonStats(byMatch.filter((m) => countsForSeason(m.match, m.events)))));
+  };
+
+  beforeEach(async () => {
+    await match('sma', 'ma2', [['a10', PEN_GOAL, 2], ['a10', PEN_OUT], ['a7', FAST, 2], ['a1', GK_PEN_SAVE, 2], ['a11', EXCLUSION, 3]]);
+    await match('smb', 'mb2', [['b10', PEN_GOAL], ['b10', PEN_SAVED, 2], ['b9', TURNOVER, 2], ['b11', FAST]]);
+  });
+
+  it('el club ofrece las diez y cada cifra coincide con la clasificación de su equipo', async () => {
+    const r = await full();
+    expect(r.rankings.map((x) => x.id)).toEqual(RANKINGS.map((d) => d.id));
+    for (const def of RANKINGS) {
+      const club = new Map(ranking(r, def.id).entries.map((e) => [`${e.name}|${e.teams.join()}`, [e.value, e.made, e.of, e.matches]]));
+      let count = 0;
+      for (const [teamId, code] of [['sma', 'SMA2627'], ['smb', 'SMB2627']] as const) {
+        for (const e of await teamRanked(teamId, def)) {
+          count++;
+          expect(club.get(`${e.player.name}|${code}`), `${def.id} ${e.player.name}`).toEqual([e.value, e.made, e.of, e.player.matches]);
+        }
+      }
+      // Sin vínculos, el club es exactamente la unión de los equipos.
+      expect(ranking(r, def.id).ranked, def.id).toBe(count);
+    }
+  });
+
+  it('cifras nuevas: 7 metros con mínimo, contraataque, penaltis parados, exclusiones (la roja no suma) y pérdidas', async () => {
+    const r = await full();
+    // Nadie llega a 5 lanzamientos de 7 metros por separado (3 y 3).
+    expect(ranking(r, 'penalty_specialist').entries).toEqual([]);
+    expect(names(r, 'speedster')).toEqual(['1:Siete A', '2:Juan Pérez']);
+    expect(ranking(r, 'penalty_stopper').entries).toEqual([expect.objectContaining({ name: 'Portero A', value: 2 })]);
+    // Tres exclusiones (la tercera trae la roja por acumulación): 3, no 4.
+    expect(ranking(r, 'repeat_offender').entries).toEqual([expect.objectContaining({ name: 'Juan Pérez', value: 3, teams: ['SMA2627'] })]);
+    expect(ranking(r, 'generous').entries).toEqual([expect.objectContaining({ name: 'Nueve B', value: 2 })]);
+  });
+
+  it('persona vinculada: suma sus fichas en todas, también para llegar al mínimo de 7 metros', async () => {
+    person('ana', 'Ana García López');
+    link('a10', 'ana');
+    link('b10', 'ana');
+    const r = await full();
+    // 2 + 1 goles de 3 + 3 lanzamientos de 7 metros = 3 de 6 = 50 %.
+    expect(ranking(r, 'penalty_specialist').entries).toEqual([
+      expect.objectContaining({ name: 'Ana García López', value: 50, made: 3, of: 6, teams: ['SMA2627', 'SMB2627'] }),
+    ]);
+    for (const def of RANKINGS) expect(ranking(r, def.id).entries.filter((e) => e.name === 'Ana García López').length, def.id).toBeLessThanOrEqual(1);
+    // Los dos «Juan Pérez» siguen separados.
+    expect(ranking(r, 'speedster').entries.map((e) => `${e.name} ${e.teams}`)).toEqual(['Siete A SMA2627', 'Juan Pérez SMB2627']);
+  });
+
+  it('exclusión de ficha, ficha borrada y acción anulada: fuera también de las nuevas', async () => {
+    db.run("UPDATE players SET ranking_excluded = 1 WHERE id = 'a1'");
+    db.run("UPDATE players SET deleted_at = ? WHERE id = 'a11'", NOW);
+    // Anular un contraataque de Siete A (corrección de un partido).
+    const fast = db.sqlite.prepare("SELECT id, version, created_at FROM events WHERE player_id = 'a7' AND shot_type = 'fast_break' LIMIT 1").get() as { id: string; version: number; created_at: string };
+    await applyEventOp(db, recorder, { opId: `op-${++seq}`, teamId: 'sma', baseVersion: fast.version, event: { ...ev(FAST, 'a7', 1, { matchId: 'ma2' }), id: fast.id, createdAt: fast.created_at, deletedAt: NOW } });
+    const r = await full();
+    expect(ranking(r, 'penalty_stopper').entries).toEqual([]);
+    expect(ranking(r, 'repeat_offender').entries).toEqual([]);
+    expect(names(r, 'speedster')).toEqual(['1:Siete A', '1:Juan Pérez']);
+    expect(ranking(r, 'speedster').entries.map((e) => e.value)).toEqual([1, 1]);
+  });
+
+  it('un partido borrado no cuenta en ninguna', async () => {
+    db.run("UPDATE matches SET deleted_at = ? WHERE id = 'ma2'", NOW);
+    const r = await full();
+    for (const id of ['speedster', 'penalty_stopper', 'repeat_offender'] as const) {
+      expect(ranking(r, id).entries.every((e) => !e.teams.includes('SMA2627')), id).toBe(true);
+    }
   });
 });
 
@@ -570,7 +654,7 @@ describe('caché', () => {
     expect(seq()).toEqual(log);
   });
 
-  it('una copia de reglas anteriores con la misma clave (club-v3) nunca se reutiliza', async () => {
+  it('una copia de reglas anteriores con la misma clave (club-v4, cinco clasificaciones) nunca se reutiliza', async () => {
     const sha = async (v: unknown) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(v))))].map((b) => b.toString(16).padStart(2, '0')).join('');
     const teams = () =>
       db.sqlite
@@ -584,16 +668,17 @@ describe('caché', () => {
     const print = (rules: string) => sha([rules, CLUB_RANKINGS, RANKING_THRESHOLDS, RANKING_LIMIT, S2627, version(), teams().map((t) => [t.id, t.seq, t.deleted])]);
     db.run("UPDATE players SET deleted_at = ? WHERE id = 'a7'", NOW);
     await deviceClubRankings(db, coachAuth, 'A', S2627, [], at(0));
-    // La huella de la prueba es la del servidor (club-v4).
-    expect(CLUB_RULES_VERSION).toBe('club-v4');
-    expect(cacheRow()!.fingerprint).toBe(await print('club-v4'));
-    // Copia de club-v3 para el mismo club y estado, con una ficha borrada en cabeza.
+    // La huella de la prueba es la del servidor (club-v5).
+    expect(CLUB_RULES_VERSION).toBe('club-v5');
+    expect(cacheRow()!.fingerprint).toBe(await print('club-v5'));
+    // Copia de club-v4 para el mismo club y estado (cinco clasificaciones), con una ficha borrada en cabeza.
     const stale = { candidates: { 'f:a7': { players: ['a7'], teams: ['sma'], matches: 1 } }, rankings: { ...Object.fromEntries(CLUB_RANKINGS.map((id) => [id, []])), top_scorer: [{ k: 'f:a7', p: 1, v: 3 }] } };
-    db.run("UPDATE club_rankings_cache SET fingerprint = ?, payload = ?, computed_at = ? WHERE club_id = 'A' AND group_key = 'club'", await print('club-v3'), JSON.stringify(stale), NOW);
+    db.run("UPDATE club_rankings_cache SET fingerprint = ?, payload = ?, computed_at = ? WHERE club_id = 'A' AND group_key = 'club'", await print('club-v4'), JSON.stringify(stale), NOW);
     const r = await deviceClubRankings(db, coachAuth, 'A', S2627, [], at(1));
     expect(r.computedAt).toBe(at(1).toISOString());
     expect(JSON.stringify(r)).not.toContain('Siete A');
-    expect(cacheRow()!.fingerprint).toBe(await print('club-v4'));
+    expect(r.rankings).toHaveLength(10);
+    expect(cacheRow()!.fingerprint).toBe(await print('club-v5'));
   });
 
   it('las copias de reglas anteriores (por género o por grupo) nunca se reutilizan y no estorban', async () => {

@@ -3,8 +3,9 @@
 // muestra (goles, eficacia, % paradas…). Ver docs/FORMULAS.md.
 //
 // El cálculo trabaja sobre una lista de candidatos, sin saber de qué equipo
-// salen: hoy son los jugadores de un equipo y una temporada; más adelante
-// podrán ser los de varios equipos de un club.
+// salen: los jugadores de un equipo y una temporada (en el dispositivo) o los de
+// todos los equipos de un club (en el servidor, «Todo el club»). Las diez
+// clasificaciones son las mismas en los dos ámbitos.
 import type { Id } from '../domain/types';
 import { efficiency, onTarget, savePct, type Counters, type SeasonStats } from './engine';
 
@@ -14,6 +15,8 @@ export const RANKING_THRESHOLDS = {
   minShots: 10,
   /** Tiros a puerta recibidos (paradas + goles) para entrar en «El muro». */
   minGkOnTarget: 20,
+  /** Lanzamientos de 7 metros para entrar en «El especialista de 7 metros». */
+  minPenalties: 5,
 } as const;
 
 /** Puestos visibles en cada ranking. */
@@ -24,9 +27,12 @@ export type RankingId =
   | 'sharpshooter'
   | 'wall'
   | 'thief'
+  | 'shots'
   | 'repeat_offender'
   | 'generous'
-  | 'shots';
+  | 'penalty_specialist'
+  | 'speedster'
+  | 'penalty_stopper';
 
 /** Jugador que puede aparecer en un ranking. */
 export interface RankingCandidate {
@@ -56,6 +62,8 @@ export interface RankingDefinition {
   unit?: readonly [string, string];
   /** Mínimo explicado en la interfaz (solo porcentajes). */
   minimum?: string;
+  /** Exclusiones y pérdidas: se muestran sin corona ni «Líder» (no es un mérito). */
+  neutral?: true;
   measure(c: Counters): RankingMeasure | null;
 }
 
@@ -107,24 +115,6 @@ export const RANKINGS: readonly RankingDefinition[] = [
     measure: (c) => count(c.recoveries),
   },
   {
-    id: 'repeat_offender',
-    short: 'Reincidente',
-    title: 'El reincidente',
-    description: 'Más exclusiones de dos minutos. Defiende con tanta intensidad que el árbitro no le quita ojo.',
-    format: 'count',
-    unit: ['exclusión', 'exclusiones'],
-    measure: (c) => count(c.exclusions),
-  },
-  {
-    id: 'generous',
-    short: 'Generoso',
-    title: 'El generoso',
-    description: 'Más pérdidas de balón (incluye pasos, dobles y pases fallados). Comparte el balón con todo el mundo, rivales incluidos.',
-    format: 'count',
-    unit: ['pérdida', 'pérdidas'],
-    measure: (c) => count(c.turnovers.total),
-  },
-  {
     id: 'shots',
     short: 'Lanzamientos',
     title: 'Más lanzamientos',
@@ -133,7 +123,60 @@ export const RANKINGS: readonly RankingDefinition[] = [
     unit: ['lanzamiento', 'lanzamientos'],
     measure: (c) => count(c.shots.attempts),
   },
+  {
+    id: 'repeat_offender',
+    short: 'Reincidente',
+    title: 'El reincidente',
+    description: 'Exclusiones de dos minutos registradas. La roja por tercera exclusión no suma otra.',
+    format: 'count',
+    unit: ['exclusión', 'exclusiones'],
+    neutral: true,
+    measure: (c) => count(c.exclusions),
+  },
+  {
+    id: 'generous',
+    short: 'Generoso',
+    title: 'El generoso',
+    description: 'Pérdidas de balón registradas (incluye pasos, dobles y pases fallados).',
+    format: 'count',
+    unit: ['pérdida', 'pérdidas'],
+    neutral: true,
+    measure: (c) => count(c.turnovers.total),
+  },
+  {
+    id: 'penalty_specialist',
+    short: '7 metros',
+    title: 'El especialista de 7 metros',
+    description: 'Mayor acierto en lanzamientos de 7 metros: goles / lanzamientos de 7 metros.',
+    format: 'pct',
+    minimum: `Mínimo ${T.minPenalties} lanzamientos de 7 metros.`,
+    measure: (c) => ratio(c.shotsByType.penalty.goals, c.shotsByType.penalty.attempts, T.minPenalties, efficiency(c.shotsByType.penalty)),
+  },
+  {
+    id: 'speedster',
+    short: 'Velocista',
+    title: 'El velocista',
+    description: 'Más goles de contraataque.',
+    format: 'count',
+    unit: ['gol', 'goles'],
+    measure: (c) => count(c.shotsByType.fast_break.goals),
+  },
+  {
+    id: 'penalty_stopper',
+    short: 'Cerrojo',
+    title: 'El cerrojo de 7 metros',
+    description: 'Más penaltis (lanzamientos de 7 metros) parados por el portero.',
+    format: 'count',
+    unit: ['parada', 'paradas'],
+    measure: (c) => count(c.gkByType.penalty.saves),
+  },
 ];
+
+/** «Líder» en las clasificaciones de mérito; en las neutras (exclusiones, pérdidas), solo el puesto. */
+export function leaderLabel(def: RankingDefinition, count: number): string {
+  if (def.neutral) return count > 1 ? 'Primeros empatados' : 'Primer puesto';
+  return count > 1 ? 'Líderes empatados' : 'Líder';
+}
 
 export function rankingById(id: RankingId): RankingDefinition {
   return RANKINGS.find((r) => r.id === id)!;

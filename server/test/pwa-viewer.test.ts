@@ -128,8 +128,8 @@ describe('consulta desde otros móviles', () => {
         ['C. BM Quart', 22, 8],
         ['CH Xàtiva', 24, 30],
       ]);
-      // Los siete rankings.
-      expect(RANKINGS).toHaveLength(7);
+      // Los diez rankings.
+      expect(RANKINGS).toHaveLength(10);
       for (const def of RANKINGS) {
         const r = (items: typeof localItems) => rankPlayers(def, seasonCandidates(computeSeasonStats(items))).map((e) => [e.position, e.player.playerId, e.value]);
         expect(r(remoteItems), def.id).toEqual(r(localItems));

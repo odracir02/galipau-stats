@@ -56,10 +56,11 @@ Un único juego, `lucide-react`, con trazo 2 y tamaño 20 px por defecto (compon
 
 ## Rankings
 
-- Cabecera con trofeo; acceso desde el trofeo de la cabecera del equipo y desde la pestaña Temporada.
+- Cabecera con trofeo; acceso desde el trofeo de la cabecera del equipo y desde la pestaña Temporada (que no cambia).
+- Si el dispositivo tiene acceso al club, arriba el selector «Mi equipo / Todo el club», siempre abierto en «Mi equipo». Cambiar de ámbito no sale de la pantalla y las diez clasificaciones están en los dos. Sin conexión, sin selector: los rankings del equipo.
 - Selector en carrusel horizontal de píldoras (se desplaza dentro de sí mismo, no la página).
 - Título y descripción de la clasificación; el mínimo de los porcentajes, en negrita.
-- Tarjeta oscura del líder con corona dorada; si hay empate, «Líderes empatados» con todos sus nombres.
+- Tarjeta oscura del líder con corona dorada; si hay empate, «Líderes empatados» con todos sus nombres. En exclusiones y pérdidas, tarjeta clara sin corona, con «Primer puesto».
 - Lista compacta, sin repetir al líder (empieza por el segundo clasificado): puesto, dorsal, nombre, partidos jugados y cifra (en porcentajes, también aciertos/intentos). Entre tarjeta y lista, como máximo el Top 10.
 - Estado vacío con trofeo gris cuando no hay partidos o nadie cumple el mínimo.
 

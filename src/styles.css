@@ -3025,6 +3025,24 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
   color: var(--c-gold);
 }
 
+/* Exclusiones y pérdidas: el primer puesto, sin corona ni tono de mérito. */
+.rank-leader.rank-neutral {
+  background: var(--c-surface);
+  color: var(--c-text);
+  border: 1px solid var(--c-border);
+}
+
+.rank-neutral .rank-leader-label,
+.rank-neutral .rank-leader-value span {
+  color: var(--c-text-2, var(--c-text));
+}
+
+.rank-neutral .rank-leader-who .dorsal,
+.rank-neutral .rank-leader-names .dorsal {
+  background: var(--c-bg);
+  color: var(--c-text);
+}
+
 .rank-leader-who strong {
   display: -webkit-box;
   -webkit-box-orient: vertical;

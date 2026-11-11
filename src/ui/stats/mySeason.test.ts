@@ -129,12 +129,18 @@ describe('rankings de «Mi jugador»', () => {
       ['sharpshooter', null, false], // 5 lanzamientos: mínimo 10
       ['shots', 1, true],
       ['thief', 1, true],
+      // 7 metros: 1 de 2 (mínimo 5), no entra ni se muestra; contraataque: 1 gol, primero.
+      ['speedster', 1, true],
     ]);
     expect(r[0]!.entry).toMatchObject({ value: 3 });
   });
 
   it('portero: «El muro» (aún sin el mínimo) y solo las demás en las que entra', () => {
-    expect(myRankings(SNAP, 'g1', 'goalkeeper', '2026/27').map((x) => [x.def.id, x.entry])).toEqual([['wall', null]]);
+    // 1 penalti parado: primero en «El cerrojo de 7 metros».
+    expect(myRankings(SNAP, 'g1', 'goalkeeper', '2026/27').map((x) => [x.def.id, x.entry?.position ?? null, x.entry?.value ?? null])).toEqual([
+      ['wall', null, null],
+      ['penalty_stopper', 1, 1],
+    ]);
   });
 
   it('sin acciones: sin puesto en ninguna; sin partidos, ninguna clasificación', () => {

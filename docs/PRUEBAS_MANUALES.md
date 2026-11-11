@@ -160,7 +160,7 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 82. Con un equipo sin partidos, pulsar el trofeo de la cabecera del equipo.
     - ✔ Pantalla «Rankings» con trofeo y estado vacío «Todavía no hay partidos».
 83. Jugar (o usar) dos partidos con goles, lanzamientos, paradas, recuperaciones, exclusiones y pérdidas de varios jugadores.
-84. Volver a Rankings (también desde Temporada → «Rankings»). Recorrer las siete clasificaciones del selector («Muro defensivo» ya no existe).
+84. Volver a Rankings (también desde Temporada → «Rankings»). Recorrer las diez clasificaciones del selector («Muro defensivo» ya no existe).
     - ✔ Cada una muestra su descripción; el francotirador y el muro indican su mínimo.
     - ✔ Las cifras coinciden con Temporada → Jugadores / Porteros.
     - ✔ Tarjeta oscura del líder con corona; empates con el mismo puesto (1, 1, 3) y «Líderes empatados».
@@ -197,7 +197,7 @@ Cada prueba indica qué hacer y qué debe pasar (✔).
 
 105. En otro móvil, canjear el código de consulta y abrir el equipo en «Equipos del club». ✔ «Datos del club · actualizados (hora)», «Actualizar» y la nota «Solo consulta».
 106. Partidos. ✔ Los partidos con su resultado oficial (correcciones incluidas) y Victoria/Derrota/Empate. Al abrir uno, estadísticas de equipo, jugadores y porteros, sin registro, cronómetro ni menú.
-107. Jugadores, Temporada y el trofeo (Rankings). ✔ Plantilla completa, acumulado de temporada y los siete rankings, con las mismas cifras que el móvil que registra.
+107. Jugadores, Temporada y el trofeo (Rankings). ✔ Plantilla completa, acumulado de temporada y los diez rankings, con las mismas cifras que el móvil que registra.
 108. Modo avión y abrir la app. ✔ Se ven los datos descargados con el aviso «Sin conexión… pueden estar desactualizados».
 109. Tras un nuevo envío del registrador, «Actualizar». ✔ Aparecen los datos nuevos.
 110. Con el código de entrenador en otro móvil. ✔ La misma consulta, sin ningún control de escritura.

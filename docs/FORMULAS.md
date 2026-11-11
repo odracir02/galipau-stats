@@ -92,20 +92,30 @@ Con partes de 30 min hay 12 tramos (5', 10', … 60'). Un evento se asigna segú
 
 Cada ranking lee una cifra del acumulado de temporada (mismos partidos que la pestaña Temporada, sin el filtro «Solo finalizados»). No hay fórmulas nuevas. Código: `src/stats/rankings.ts`.
 
+Hay diez clasificaciones, las mismas en los dos ámbitos de la pantalla «Rankings» (Temporada → Rankings → «Mi equipo / Todo el club»):
+
+- **Mi equipo:** se calcula en el dispositivo con los datos del equipo y funciona sin conexión.
+- **Todo el club:** la calcula el servidor con todos los equipos del club en la temporada y el mismo motor. Solo funciona con conexión y no se guarda en el dispositivo. Una persona con fichas vinculadas en varios equipos suma sus contadores una sola vez, y los porcentajes y mínimos se aplican sobre esos totales. Las fichas sin vincular, aunque tengan el mismo nombre, son participantes distintos. Las fichas o personas excluidas y las fichas borradas no participan.
+
 | Ranking | Cifra | Entra quien… |
 | ------- | ----- | ------------ |
 | El pistolero | goles | tiene al menos 1 gol |
 | El francotirador | eficacia = goles / lanzamientos | tiene al menos **10 lanzamientos** |
 | El muro | % paradas = paradas / (paradas + goles encajados); los fuera no cuentan | tiene al menos **20 tiros a puerta** (paradas + goles encajados) |
 | El ladrón | recuperaciones | tiene al menos 1 |
+| Más lanzamientos | goles + fuera + parados | tiene al menos 1 |
 | El reincidente | exclusiones de 2 minutos (la 3.ª cuenta; la roja por acumulación no suma otra) | tiene al menos 1 |
 | El generoso | pérdidas totales (incluye pasos, dobles y pases fallados) | tiene al menos 1 |
-| Más lanzamientos | goles + fuera + parados | tiene al menos 1 |
+| El especialista de 7 metros | acierto = goles de 7 m / lanzamientos de 7 m (fuera y parados incluidos) | tiene al menos **5 lanzamientos de 7 metros** |
+| El velocista | goles de contraataque | tiene al menos 1 |
+| El cerrojo de 7 metros | penaltis parados por el portero (un penalti fuera no es parada) | tiene al menos 1 |
 
 - Orden de mayor a menor. Los empatados comparten puesto y el siguiente salta (1, 1, 3). Dentro de un empate se presentan por dorsal.
 - Los porcentajes se comparan redondeados a un decimal, como se muestran: dos «66,7 %» empatan.
 - Se muestran como máximo 10 jugadores, contando al líder. El líder (o los empatados en el primer puesto) aparece solo en la tarjeta destacada; la lista empieza por el siguiente clasificado con su puesto real. Si en el último puesto visible hay más empatados de los que caben, se indica cuántos quedan fuera.
-- Los mínimos están en `RANKING_THRESHOLDS` y se muestran en la pantalla.
+- Los mínimos están en `RANKING_THRESHOLDS` y se muestran en la pantalla. Los porcentajes salen siempre de los contadores totales, nunca de la media de porcentajes de cada partido. Las clasificaciones de cantidades no tienen mínimo.
+- El reincidente y el generoso se muestran de forma neutra: primer puesto sin corona ni «Líder».
+- El cuerpo técnico nunca aparece: sus acciones no entran en las cifras individuales.
 - Solo cuentan acciones atribuidas a un jugador. Los partidos eliminados y las acciones borradas no cuentan.
 - Nombre y dorsal: los de la convocatoria más reciente del jugador en esa temporada.
 

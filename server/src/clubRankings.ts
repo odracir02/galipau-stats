@@ -1,4 +1,4 @@
-// Rankings del club («Todo el club»): las clasificaciones positivas de los
+// Rankings del club («Todo el club»): las mismas diez clasificaciones de los
 // rankings de equipo, calculadas en el servidor con el mismo motor
 // (computeSeasonStats, rankPlayers) sobre TODOS los equipos vivos del club en una
 // temporada. Funcionan solos: no hay que activar equipos, asignar grupos ni abrir
@@ -22,15 +22,15 @@
 import type { Id, Match, MatchEvent } from '../../src/domain/types';
 import { countsForSeason } from '../../src/services/statsService';
 import { computeSeasonStats, emptyCounters, sumCounters, type Counters, type MatchWithEvents } from '../../src/stats/engine';
-import { RANKING_LIMIT, RANKING_THRESHOLDS, rankPlayers, rankingById, type RankingCandidate, type RankingId } from '../../src/stats/rankings';
+import { RANKING_LIMIT, RANKING_THRESHOLDS, RANKINGS, rankPlayers, rankingById, type RankingCandidate, type RankingId } from '../../src/stats/rankings';
 import { authorizeClub } from './auth';
 import type { Db } from './db';
 import { HttpError, notFound } from './errors';
 import { rowsToMatch, rowToEvent, type EventRow, type MatchRow, type SquadRow } from './mapping';
 import type { AuthContext, TeamRole } from './model';
 
-/** Clasificaciones del club: solo las positivas (nunca exclusiones ni pérdidas). */
-export const CLUB_RANKINGS: readonly RankingId[] = ['top_scorer', 'sharpshooter', 'wall', 'thief', 'shots'];
+/** Clasificaciones del club: las diez de los rankings de equipo, en el mismo orden. */
+export const CLUB_RANKINGS: readonly RankingId[] = RANKINGS.map((r) => r.id);
 
 /**
  * Versión de las reglas del cálculo de club. Cambiarla invalida todas las copias.
@@ -40,7 +40,8 @@ export const CLUB_RANKINGS: readonly RankingId[] = ['top_scorer', 'sharpshooter'
 // club-v2: el grupo ya no se separa por género (club, temporada y grupo).
 // club-v3: las fichas borradas no participan.
 // club-v4: todos los equipos del club en la temporada, sin activación ni grupos.
-export const CLUB_RULES_VERSION = 'club-v4';
+// club-v5: las diez clasificaciones de equipo (antes, cinco).
+export const CLUB_RULES_VERSION = 'club-v5';
 
 /** Nombre del único grupo de cada temporada (la aplicación lo muestra como «Todo el club · 2026/27»). */
 export const CLUB_GROUP = 'Todo el club';

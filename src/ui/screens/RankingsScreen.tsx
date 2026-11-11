@@ -1,15 +1,22 @@
 // Rankings del equipo: clasificaciones de la temporada calculadas con el motor
-// estadístico (ver src/stats/rankings.ts). Solo lectura.
+// estadístico (ver src/stats/rankings.ts). Solo lectura. Si el equipo está
+// vinculado a un club y el servidor lo ofrece, el selector «Mi equipo / Todo el
+// club» permite ver también los rankings de todo el club.
 import { Crown, Trophy } from 'lucide-react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { remote } from '../../app/remote';
 import { repo } from '../../app/repo';
 import { navigate } from '../../app/router';
 import { useLoad } from '../../app/useLoad';
+import { useRemote } from '../../app/useRemote';
+import { useTeamLink } from '../../app/useTeamSync';
+import { isOfficial } from '../../domain/catalog';
 import { formatPct } from '../../domain/format';
 import type { Id } from '../../domain/types';
 import { loadSeasonItems } from '../../services/statsService';
 import { computeSeasonStats, type MatchWithEvents } from '../../stats/engine';
 import {
+  leaderLabel,
   podiumOf,
   rankPlayers,
   RANKING_LIMIT,
@@ -22,6 +29,7 @@ import {
 } from '../../stats/rankings';
 import { Icon } from '../components/Icon';
 import { TopBar } from '../components/TopBar';
+import { RankingsWithClub } from '../stats/ClubRankingsView';
 import { RANKING_ICON } from '../stats/rankingIcons';
 
 
@@ -53,6 +61,15 @@ export function RankingsScreen({ teamId }: { teamId: Id }) {
   }, [items, team]);
 
   const back = () => navigate({ name: 'team', teamId });
+  // Club al que está vinculado este equipo (si lo está) y sus jugadores, para «Todo el club».
+  const link = useTeamLink(teamId);
+  const session = useRemote(remote);
+  const club = link ? session.teams.find((r) => r.teamId === link.remoteTeamId) : undefined;
+  const roster = useLoad(() => (club ? repo.listPlayers(teamId) : Promise.resolve([])), [teamId, club?.clubId]);
+  const players = (roster.data ?? [])
+    .filter((p) => !isOfficial(p))
+    .sort((a, b) => a.number - b.number)
+    .map((p) => ({ id: p.id, name: p.name, number: p.number }));
 
   if (data.error) return <p className="form-error">{data.error}</p>;
   if (data.data && !team) return null;
@@ -71,7 +88,13 @@ export function RankingsScreen({ teamId }: { teamId: Id }) {
       />
       {data.data && (
         <main className="content">
-          <RankingsView items={items ?? []} seasons={seasons} season={activeSeason} onSeason={setSeason} />
+          <RankingsWithClub
+            clubId={club?.clubId}
+            teamId={club?.teamId}
+            clubName={club?.clubName ?? ''}
+            players={players}
+            team={<RankingsView items={items ?? []} seasons={seasons} season={activeSeason} onSeason={setSeason} />}
+          />
         </main>
       )}
     </div>
@@ -209,10 +232,13 @@ function RankingTable({
 
   return (
     <>
-      <section className={`rank-leader${leaders.some((e) => e.player.playerId === highlight) ? ' rank-me' : ''}`} aria-label="Líder">
-        <Icon as={Crown} size={28} className="rank-crown" />
+      <section
+        className={`rank-leader${def.neutral ? ' rank-neutral' : ''}${leaders.some((e) => e.player.playerId === highlight) ? ' rank-me' : ''}`}
+        aria-label={leaderLabel(def, leaders.length)}
+      >
+        {!def.neutral && <Icon as={Crown} size={28} className="rank-crown" />}
         <div className="rank-leader-who">
-          <span className="rank-leader-label">{leaders.length > 1 ? 'Líderes empatados' : 'Líder'}</span>
+          <span className="rank-leader-label">{leaderLabel(def, leaders.length)}</span>
           {leaders.length === 1 ? (
             <strong>
               <span className="dorsal">{lead.player.number}</span> {lead.player.name}

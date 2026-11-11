@@ -66,8 +66,8 @@ export function mySeason(
  * (siguen en la pantalla de rankings).
  */
 const POSITIVE: Record<Position, readonly RankingId[]> = {
-  field: ['top_scorer', 'sharpshooter', 'shots', 'thief'],
-  goalkeeper: ['wall', 'thief', 'top_scorer'],
+  field: ['top_scorer', 'sharpshooter', 'shots', 'thief', 'penalty_specialist', 'speedster'],
+  goalkeeper: ['wall', 'penalty_stopper', 'thief', 'top_scorer'],
 };
 /** Las que se muestran aunque aún no entre (explicando por qué); el resto, solo si entra. */
 const MAIN: Record<Position, readonly RankingId[]> = { field: ['top_scorer', 'sharpshooter'], goalkeeper: ['wall'] };

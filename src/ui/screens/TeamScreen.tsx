@@ -5,8 +5,7 @@ import { navigate } from '../../app/router';
 import { showToast } from '../../app/toast';
 import { useReadOnlyTeam } from '../../app/useImportedTeam';
 import { remote, teamPuller } from '../../app/remote';
-import { useRemote } from '../../app/useRemote';
-import { useRemoteRevision, useTeamLink } from '../../app/useTeamSync';
+import { useRemoteRevision } from '../../app/useTeamSync';
 import { useLoad } from '../../app/useLoad';
 import { isOfficial } from '../../domain/catalog';
 import { fixedSlotOf } from '../../domain/officials';
@@ -18,7 +17,6 @@ import { Icon } from '../components/Icon';
 import { statusBadge } from '../match/labels';
 import { Segmented } from '../components/Segmented';
 import { TopBar } from '../components/TopBar';
-import { SeasonWithClubRankings, type ClubRankingPlayer } from '../stats/ClubRankingsView';
 import { SeasonView } from '../stats/SeasonView';
 import { ClubLinkCard } from './ClubLinkCard';
 import { OngoingMatchBanner } from './OngoingMatchBanner';
@@ -85,7 +83,7 @@ export function TeamScreen({ teamId }: { teamId: Id }) {
         />
         {tab === 'matches' && <MatchList key={`matches-${dataKey}-${revision}`} team={t} readOnly={readOnly} />}
         {tab === 'roster' && <Roster key={`roster-${dataKey}-${revision}`} team={t} readOnly={readOnly} />}
-        {tab === 'season' && <SeasonSection team={t} dataKey={`season-${dataKey}-${revision}`} />}
+        {tab === 'season' && <SeasonPanel key={`season-${dataKey}-${revision}`} team={t} />}
       </main>
       {editingTeam && (
         <TeamFormSheet
@@ -253,30 +251,6 @@ function Roster({ team, readOnly }: { team: Team; readOnly: boolean }) {
         />
       )}
     </>
-  );
-}
-
-/**
- * «Temporada»: la del equipo y, si el servidor los ofrece para el club al que
- * está vinculado, también los rankings del club.
- */
-function SeasonSection({ team, dataKey }: { team: Team; dataKey: string }) {
-  const link = useTeamLink(team.id);
-  const session = useRemote(remote);
-  const club = link ? session.teams.find((r) => r.teamId === link.remoteTeamId) : undefined;
-  const roster = useLoad(() => (club ? repo.listPlayers(team.id) : Promise.resolve([])), [team.id, club?.clubId, dataKey]);
-  const players: ClubRankingPlayer[] = (roster.data ?? [])
-    .filter((p) => !isOfficial(p))
-    .sort((a, b) => a.number - b.number)
-    .map((p) => ({ id: p.id, name: p.name, number: p.number }));
-  return (
-    <SeasonWithClubRankings
-      clubId={club?.clubId}
-      teamId={club?.teamId}
-      clubName={club?.clubName ?? ''}
-      players={players}
-      team={<SeasonPanel key={dataKey} team={team} />}
-    />
   );
 }
 

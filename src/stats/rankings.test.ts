@@ -3,6 +3,7 @@ import { ev, goal, makeMatch, SQUAD } from '../test/fixtures';
 import type { EventPayload, MatchEvent, SquadEntry } from '../domain/types';
 import { computeSeasonStats, savePct, type MatchWithEvents } from './engine';
 import {
+  leaderLabel,
   podiumOf,
   positionOf,
   RANKING_LIMIT,
@@ -196,19 +197,38 @@ describe('rankings: porcentajes y mínimos', () => {
     expect(r[0]!.value).toBe(savePct(stats.players.get('g1')!.counters.gk));
   });
 
-  it('los porteros tienen un único ranking: El muro, por porcentaje (sin «Muro defensivo»)', () => {
+  it('los diez rankings definitivos; de portero, El muro (porcentaje) y El cerrojo de 7 metros (sin «Muro defensivo»)', () => {
     const keeper = RANKINGS.filter((d) => /portero/i.test(d.description));
-    expect(keeper.map((d) => d.id)).toEqual(['wall']);
+    expect(keeper.map((d) => d.id)).toEqual(['wall', 'penalty_stopper']);
     expect(RANKINGS.some((d) => d.title === 'Muro defensivo' || (d.id as string) === 'saves')).toBe(false);
     expect(RANKINGS.map((d) => d.id)).toEqual([
       'top_scorer',
       'sharpshooter',
       'wall',
       'thief',
+      'shots',
       'repeat_offender',
       'generous',
-      'shots',
+      'penalty_specialist',
+      'speedster',
+      'penalty_stopper',
     ]);
+    expect(RANKINGS.map((d) => d.title)).toEqual([
+      'El pistolero',
+      'El francotirador',
+      'El muro',
+      'El ladrón',
+      'Más lanzamientos',
+      'El reincidente',
+      'El generoso',
+      'El especialista de 7 metros',
+      'El velocista',
+      'El cerrojo de 7 metros',
+    ]);
+    // Exclusiones y pérdidas, neutras; el resto, de mérito.
+    expect(RANKINGS.filter((d) => d.neutral).map((d) => d.id)).toEqual(['repeat_offender', 'generous']);
+    expect([leaderLabel(rankingById('generous'), 1), leaderLabel(rankingById('generous'), 2)]).toEqual(['Primer puesto', 'Primeros empatados']);
+    expect([leaderLabel(rankingById('top_scorer'), 1), leaderLabel(rankingById('top_scorer'), 2)]).toEqual(['Líder', 'Líderes empatados']);
   });
 
   it('cada ranking de porcentaje explica su mínimo en el texto', () => {
@@ -242,6 +262,76 @@ describe('rankings: cifras del motor', () => {
   it('la tercera exclusión cuenta como exclusión; la roja por acumulación no suma otra', () => {
     const events = [ev(exclusion, 'p7', 5), ev(exclusion, 'p7', 15), ev(exclusion, 'p7', 25)];
     expect(summary(rank('repeat_offender', [{ match: makeMatch(), events }]))).toEqual([[1, 'p7', 3]]);
+  });
+
+  it('especialista de 7 metros: goles / lanzamientos de 7 metros (fuera y parados incluidos), con mínimo de 5', () => {
+    const pen = (result: 'goal' | 'out' | 'saved') => ({ kind: 'shot', shotType: 'penalty', result }) as const;
+    const events = [
+      // p7: 4 de 5 de 7 metros (y goles de otros tipos, que no cuentan aquí).
+      ...times(4, pen('goal'), 'p7'),
+      ev(pen('saved'), 'p7', 20),
+      ...times(3, goal(), 'p7'),
+      // p14: 3 de 4: bajo el mínimo.
+      ...times(3, pen('goal'), 'p14'),
+      ev(pen('out'), 'p14', 21),
+      // p69: 2 de 5.
+      ...times(2, pen('goal'), 'p69'),
+      ...times(3, pen('out'), 'p69'),
+    ];
+    const r = rank('penalty_specialist', [{ match: makeMatch(), events }]);
+    expect(r.map((e) => [e.position, e.player.playerId, e.value, e.made, e.of])).toEqual([
+      [1, 'p7', 80, 4, 5],
+      [2, 'p69', 40, 2, 5],
+    ]);
+    expect(RANKING_THRESHOLDS.minPenalties).toBe(5);
+    expect(rankingById('penalty_specialist').minimum).toMatch(/5 lanzamientos de 7 metros/);
+  });
+
+  it('el porcentaje sale de los totales de la temporada, no de la media de cada partido', () => {
+    const pen = (result: 'goal' | 'out') => ({ kind: 'shot', shotType: 'penalty', result }) as const;
+    // Partido 1: 1 de 1 (100 %); partido 2: 1 de 4 (25 %). Media 62,5 %; real 2 de 5 = 40 %.
+    const r = rank('penalty_specialist', [
+      { match: makeMatch({ id: 'm1' }), events: [ev(pen('goal'), 'p7', 1)] },
+      { match: makeMatch({ id: 'm2', date: '2026-11-01' }), events: [ev(pen('goal'), 'p7', 1, { matchId: 'm2' }), ...times(3, pen('out'), 'p7', 'm2')] },
+    ]);
+    expect(r.map((e) => [e.player.playerId, e.value, e.made, e.of])).toEqual([['p7', 40, 2, 5]]);
+  });
+
+  it('el velocista cuenta solo goles de contraataque; el cerrojo, solo penaltis parados por el portero', () => {
+    const events = [
+      ...times(2, goal('fast_break'), 'p14'),
+      ev({ kind: 'shot', shotType: 'fast_break', result: 'out' }, 'p14', 10),
+      ev(goal('fast_break'), 'p7', 11),
+      ...times(4, goal(), 'p7'),
+      ...times(3, { kind: 'gk_shot', shotType: 'penalty', result: 'save' }, 'g1'),
+      ev({ kind: 'gk_shot', shotType: 'penalty', result: 'goal' }, 'g1', 12),
+      ev({ kind: 'gk_shot', shotType: 'penalty', result: 'out' }, 'g12', 13),
+      ...times(5, gkSave, 'g12'),
+    ];
+    const items = [{ match: makeMatch(), events }];
+    expect(summary(rank('speedster', items))).toEqual([
+      [1, 'p14', 2],
+      [2, 'p7', 1],
+    ]);
+    // Un penalti fuera no es una parada; las paradas de 9 m no cuentan aquí.
+    expect(summary(rank('penalty_stopper', items))).toEqual([[1, 'g1', 3]]);
+  });
+
+  it('el cuerpo técnico no aparece en ninguna clasificación, aunque tenga acciones', () => {
+    const squad: SquadEntry[] = [...SQUAD, { playerId: 'of1', name: 'Entrenador', number: 0, position: 'field', role: 'official' }];
+    const events = [ev(exclusion, 'of1', 1), ev({ kind: 'turnover', turnoverType: 'general' }, 'of1', 2), ev(exclusion, 'p7', 3)];
+    const items = [{ match: makeMatch({ squad }), events }];
+    for (const def of RANKINGS) expect(rank(def.id, items).some((e) => e.player.playerId === 'of1'), def.id).toBe(false);
+    expect(summary(rank('repeat_offender', items))).toEqual([[1, 'p7', 1]]);
+  });
+
+  it('empates en las nuevas clasificaciones: mismo puesto y, dentro, por dorsal', () => {
+    const events = [ev(goal('fast_break'), 'p69', 1), ev(goal('fast_break'), 'p7', 2), ev(goal('fast_break'), 'p14', 3), ev(goal('fast_break'), 'p14', 4)];
+    expect(summary(rank('speedster', [{ match: makeMatch(), events }]))).toEqual([
+      [1, 'p14', 2],
+      [2, 'p7', 1],
+      [2, 'p69', 1],
+    ]);
   });
 });
 
