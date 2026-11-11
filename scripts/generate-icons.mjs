@@ -43,18 +43,18 @@ const paeth = (a, b, c) => {
 };
 
 /**
- * PNG de `size` × `size`: RGBA si `alpha`, si no RGB (sin transparencia, como pide iOS).
+ * PNG de `width` × `height`: RGBA si `alpha`, si no RGB (sin transparencia, como pide iOS).
  * Sin pérdida: en cada fila se elige el filtro PNG (ninguno, Sub, Up, Average o
  * Paeth) que deja los valores más pequeños, lo que comprime mucho mejor los degradados.
  */
-function encodePng(size, rgba, alpha) {
+function encodePng(width, height, rgba, alpha) {
   const ch = alpha ? 4 : 3;
-  const stride = size * ch;
-  const px = Buffer.alloc(size * stride);
-  for (let i = 0; i < size * size; i++) for (let k = 0; k < ch; k++) px[i * ch + k] = rgba[i * 4 + k];
-  const raw = Buffer.alloc(size * (stride + 1));
+  const stride = width * ch;
+  const px = Buffer.alloc(height * stride);
+  for (let i = 0; i < width * height; i++) for (let k = 0; k < ch; k++) px[i * ch + k] = rgba[i * 4 + k];
+  const raw = Buffer.alloc(height * (stride + 1));
   const line = Buffer.alloc(stride);
-  for (let y = 0; y < size; y++) {
+  for (let y = 0; y < height; y++) {
     let best = -1;
     let bestScore = Infinity;
     for (let f = 0; f <= 4; f++) {
@@ -77,8 +77,8 @@ function encodePng(size, rgba, alpha) {
     raw[y * (stride + 1)] = best;
   }
   const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(size, 0);
-  ihdr.writeUInt32BE(size, 4);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8; // profundidad
   ihdr[9] = alpha ? 6 : 2; // RGBA o RGB
   return Buffer.concat([
@@ -220,8 +220,32 @@ function render(size, { scale = 1, rounded = false } = {}) {
   return out;
 }
 
+/**
+ * Imagen para compartir el enlace (Open Graph), `width` × `height`: el icono con
+ * esquinas redondeadas, de `iconSize` px y centrado, sobre el color de fondo de
+ * la app. Centrado, también queda bien cuando la vista previa recorta un cuadrado.
+ */
+function renderCard(width, height, iconSize, background) {
+  const out = new Uint8Array(width * height * 4);
+  const icon = render(iconSize, { rounded: true });
+  const ox = Math.round((width - iconSize) / 2);
+  const oy = Math.round((height - iconSize) / 2);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const o = (y * width + x) * 4;
+      const ix = x - ox;
+      const iy = y - oy;
+      const inIcon = ix >= 0 && iy >= 0 && ix < iconSize && iy < iconSize;
+      const a = inIcon ? icon[(iy * iconSize + ix) * 4 + 3] / 255 : 0;
+      for (let c = 0; c < 3; c++) out[o + c] = Math.round(background[c] * (1 - a) + (inIcon ? icon[(iy * iconSize + ix) * 4 + c] : 0) * a);
+      out[o + 3] = 255;
+    }
+  }
+  return out;
+}
+
 const write = (name, size, opts = {}) => {
-  writeFileSync(new URL(`../public/${name}`, import.meta.url), encodePng(size, render(size, opts), Boolean(opts.rounded)));
+  writeFileSync(new URL(`../public/${name}`, import.meta.url), encodePng(size, size, render(size, opts), Boolean(opts.rounded)));
   console.log(`public/${name} (${size} × ${size})`);
 };
 
@@ -234,3 +258,7 @@ write('pwa-512-maskable.png', 512, { scale: 0.86 });
 write('apple-touch-icon.png', 180, { scale: 0.92 });
 // Pestaña del navegador: cuadrado redondeado con esquinas transparentes, como la imagen original.
 write('favicon.png', 64, { rounded: true });
+// Vista previa al compartir el enlace (WhatsApp, Telegram…): 1200 × 630, sobre el fondo de la app.
+// El nombre lleva versión para que ninguna caché devuelva una imagen anterior: si cambia, súbela.
+writeFileSync(new URL('../public/og-image-v1.png', import.meta.url), encodePng(1200, 630, renderCard(1200, 630, 440, [23, 33, 44]), false));
+console.log('public/og-image-v1.png (1200 × 630)');

@@ -37,6 +37,8 @@
   - `apple-touch-icon.png` (180 × 180, iPhone, sin transparencia, al 92 %);
   - `pwa-192.png` y `pwa-512.png` (Android y manifiesto, a sangre);
   - `pwa-512-maskable.png` (al 86 %: la rana y el balón dentro del círculo seguro).
+  - `og-image-v1.png` (1200 × 630): la vista previa al compartir el enlace (WhatsApp, Telegram, redes). Los metadatos `og:*` y `twitter:*` los escribe en `index.html` el plugin `shareMeta` de `vite.config.ts`, con la URL absoluta según la rama (`develop` → Preview; otra → producción). Si la imagen cambia, hay que subir la versión del nombre (`-v2`…) en el script y en `SHARE_IMAGE`.
+  - WhatsApp guarda la vista previa de cada enlace durante un tiempo y no permite borrarla: los mensajes ya enviados conservan la anterior, y un enlace compartido de nuevo puede tardar en mostrar la imagen nueva. Para comprobarla al momento, comparte la dirección con algo distinto al final (por ejemplo, `/?v=2`).
   - Los PNG se guardan sin pérdida con el mejor filtro por fila. Los dos de 512 px no entran en la precaché del service worker (`globIgnores` en `vite.config.ts`): solo se usan al instalar y siguen en el manifiesto.
   - Un móvil con la app ya instalada puede tardar en mostrar el icono nuevo: en iPhone hay que quitarla de la pantalla de inicio y volver a añadirla; en Android, Chrome lo actualiza solo pasado un tiempo (o al reinstalarla).
 - En iOS no hay aviso automático de instalación: Safari → Compartir → «Añadir a pantalla de inicio».
