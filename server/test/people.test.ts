@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Player } from '../../src/domain/types';
 import { buildBootstrapSql } from '../scripts/bootstrap-superadmin.mjs';
 import { clearJwksCache } from '../src/access';
-import type { CardView, ClubPeople } from '../src/people';
+import { adminContext } from '../src/auth';
+import type { Db, Statement } from '../src/db';
+import { createPersonWithCards, type CardView, type ClubPeople } from '../src/people';
 import worker, { type Env } from '../src/index';
 import { applyPlayerOp, teamSnapshot } from '../src/teamsync';
 import { ACCESS_ENV, claimsFor, CONFIG, makeIssuer, serveJwks, type Issuer } from './accessKeys';
@@ -343,6 +345,117 @@ describe('autorización y aislamiento', () => {
   it('no son operaciones críticas; las críticas siguen exigiendo su verificación', async () => {
     expect((await call('/api/admin/clubs/A/people', { method: 'POST', body: { displayName: 'Ana' } })).status).toBe(201);
     expect(await call('/api/admin/critical/teams/a1', { method: 'PATCH', body: { name: 'Otro' } })).toMatchObject({ status: 401, body: { error: 'reauth_required' } });
+  });
+});
+
+describe('crear persona con dos fichas (todo o nada)', () => {
+  const pair = (playerIds: unknown, displayName: unknown = 'Ana García', email = ADMIN_A) =>
+    call('/api/admin/clubs/A/people/pair', { method: 'POST', body: { displayName, playerIds }, email });
+  const nothing = (auditBefore: number) => {
+    expect(get('SELECT COUNT(*) AS n FROM people')).toEqual({ n: 0 });
+    expect(get('SELECT COUNT(*) AS n FROM players WHERE person_id IS NOT NULL')).toEqual({ n: 0 });
+    expect(audit()).toHaveLength(auditBefore);
+  };
+  const adminA = () => adminContext(db, { email: ADMIN_A, sub: `sub-${ADMIN_A}`, iat: 0, exp: 0, critical: false });
+
+  it('crea la persona con las dos fichas: auditoría completa, fichas sin cambio de versión ni registro de cambios', async () => {
+    const before = [player('a1-p7'), player('a2-p7')];
+    const v0 = version();
+    const r = await pair(['a1-p7', 'a2-p7'], '  Ana   García ');
+    expect(r).toMatchObject({ status: 201, body: { personId: expect.any(String), version: 1 } });
+    const id = r.body.personId as string;
+    expect(get('SELECT display_name, version FROM people WHERE id = ?', id)).toEqual({ display_name: 'Ana García', version: 1 });
+    expect([player('a1-p7'), player('a2-p7')]).toEqual(before.map((p) => ({ ...p, person_id: id })));
+    expect(get('SELECT COUNT(*) AS n FROM change_log')).toEqual({ n: 0 });
+    expect(version()).toBeGreaterThan(v0);
+    expect(audit().map((x) => `${x.action}:${x.target_type}:${x.target_id === id ? 'persona' : x.target_id}`)).toEqual([
+      'person.create:person:persona',
+      'person.link:player:a1-p7',
+      'person.link:person:persona',
+      'person.link:player:a2-p7',
+      'person.link:person:persona',
+    ]);
+  });
+
+  it('rechaza sin dejar nada: mismo equipo, otro club, cuerpo técnico, borrada, ya vinculada, datos no válidos', async () => {
+    expect(await pair(['a1-p7', 'a1-p14'])).toMatchObject({ status: 409, body: { message: expect.stringMatching(/mismo equipo/) } });
+    expect(await pair(['a1-p7', 'b1-p7'])).toMatchObject({ status: 404 });
+    expect(await pair(['a1-p7', 'b1-p7'], 'Ana', OWNER)).toMatchObject({ status: 404 });
+    expect(await call('/api/admin/clubs/B/people/pair', { method: 'POST', body: { displayName: 'Ana', playerIds: ['b1-p7', 'b1-p14'] } })).toMatchObject({ status: 404 });
+    db.run("UPDATE players SET role = 'official', number = 0, position = 'field' WHERE id = 'a2-p69'");
+    expect(await pair(['a1-p7', 'a2-p69'])).toMatchObject({ status: 409 });
+    db.run("UPDATE players SET deleted_at = ? WHERE id = 'a2-g1'", NOW);
+    expect(await pair(['a1-p7', 'a2-g1'])).toMatchObject({ status: 404 });
+    for (const ids of [['a1-p7'], ['a1-p7', 'a1-p7'], ['a1-p7', 7], 'a1-p7', ['a1-p7', 'a2-p7', 'a2-p14']]) expect((await pair(ids)).status).toBe(400);
+    expect((await pair(['a1-p7', 'a2-p7'], '')).status).toBe(400);
+    nothing(0);
+    // Ya vinculada (con el vínculo de una ficha suelta): tampoco.
+    const otra = await newPerson('Otra');
+    await link('a2-p7', otra, null);
+    const n = audit().length;
+    expect(await pair(['a1-p7', 'a2-p7'])).toMatchObject({ status: 409 });
+    expect(get('SELECT COUNT(*) AS n FROM people')).toEqual({ n: 1 });
+    expect(player('a1-p7')).toMatchObject({ person_id: null });
+    expect(audit()).toHaveLength(n);
+  });
+
+  it('una ficha vinculada entretanto (entre la comprobación y el lote): nada se crea ni se vincula', async () => {
+    db.run("INSERT INTO people (id, club_id, display_name, created_at, updated_at) VALUES ('otra', 'A', 'Otra', ?, ?)", NOW, NOW);
+    const racing = new Proxy(db, {
+      get: (t, k) =>
+        k === 'batch'
+          ? async (statements: Statement[]) => {
+              t.run("UPDATE players SET person_id = 'otra' WHERE id = 'a2-p7'");
+              return t.batch(statements);
+            }
+          : Reflect.get(t, k, t),
+    }) as unknown as Db;
+    await expect(createPersonWithCards(racing, await adminA(), 'A', { displayName: 'Ana', playerIds: ['a1-p7', 'a2-p7'] })).rejects.toMatchObject({ status: 409 });
+    expect(get('SELECT COUNT(*) AS n FROM people')).toEqual({ n: 1 });
+    expect(player('a1-p7')).toMatchObject({ person_id: null });
+    expect(player('a2-p7')).toMatchObject({ person_id: 'otra' });
+    expect(audit()).toHaveLength(0);
+  });
+
+  it('si falla cualquier paso del lote, no queda ningún efecto (ni persona, ni vínculos, ni auditoría)', async () => {
+    const auth = await adminA();
+    // Ocho escrituras: persona, su auditoría y, por ficha, dos auditorías y el vínculo.
+    for (let broken = 0; broken < 8; broken++) {
+      const failing = new Proxy(db, {
+        get: (t, k) =>
+          k === 'batch'
+            ? async (statements: Statement[]) => {
+                expect(statements).toHaveLength(8);
+                return t.batch(statements.map((s, i) => (i === broken ? t.prepare('INSERT INTO tabla_que_no_existe VALUES (1)') : s)));
+              }
+            : Reflect.get(t, k, t),
+      }) as unknown as Db;
+      await expect(createPersonWithCards(failing, auth, 'A', { displayName: 'Ana', playerIds: ['a1-p7', 'a2-p7'] }), `paso ${broken}`).rejects.toThrow();
+      nothing(0);
+    }
+  });
+
+  it('dos creaciones a la vez con la misma ficha: solo una persona', async () => {
+    const [one, two] = await Promise.all([pair(['a1-p7', 'a2-p7'], 'Ana'), pair(['a1-p7', 'a2-p14'], 'Ana bis')]);
+    expect([one.status, two.status].sort()).toEqual([201, 409]);
+    expect(get('SELECT COUNT(*) AS n FROM people')).toEqual({ n: 1 });
+    expect(get('SELECT COUNT(*) AS n FROM players WHERE person_id IS NOT NULL')).toEqual({ n: 2 });
+  });
+
+  it('las operaciones de siempre siguen igual sobre la persona creada; la sincronización también', async () => {
+    const { auth: coach } = await addDevice(db, 'coach', [{ clubId: 'A', teamId: 'a1', role: 'coach' }]);
+    const id = (await pair(['a1-p7', 'a2-p7'])).body.personId as string;
+    // Quitar una ficha y añadir otra con los endpoints individuales.
+    expect(await link('a2-p7', null, id)).toMatchObject({ status: 200 });
+    expect(await link('a2-p14', id, null)).toMatchObject({ status: 200 });
+    expect(await call(`/api/admin/people/${id}`, { method: 'PATCH', body: { displayName: 'Ana G.', expectedVersion: 1 } })).toMatchObject({ status: 200 });
+    // Crear una persona sola sigue funcionando.
+    expect((await call('/api/admin/clubs/A/people', { method: 'POST', body: { displayName: 'Sola' } })).status).toBe(201);
+    const current = get<{ version: number }>("SELECT version FROM players WHERE id = 'a1-p7'");
+    const p: Player = { id: 'a1-p7', teamId: 'a1', name: 'Siete renombrado', number: 7, position: 'field', active: true, createdAt: NOW, updatedAt: NOW };
+    expect(await applyPlayerOp(db, coach, { opId: 'op-pair', teamId: 'a1', baseVersion: current.version, player: p })).toMatchObject({ status: 'applied' });
+    expect(player('a1-p7')).toMatchObject({ person_id: id, name: 'Siete renombrado' });
+    expect(JSON.stringify(await teamSnapshot(db, coach, 'a1'))).not.toMatch(/person|Ana G/);
   });
 });
 

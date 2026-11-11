@@ -187,6 +187,68 @@ export async function createPerson(db: Db, auth: AuthContext, clubId: Id, args: 
   return { personId: id, version: 1 };
 }
 
+/**
+ * Crea una persona con dos fichas de equipos distintos del club, todo o nada:
+ * en un solo lote, y cada escritura solo si las dos fichas siguen sin persona
+ * (si otro administrador vinculó alguna entretanto, no se crea nada: 409). Las
+ * fichas no cambian de versión ni pasan por el registro de cambios.
+ */
+export async function createPersonWithCards(
+  db: Db,
+  auth: AuthContext,
+  clubId: Id,
+  args: { displayName?: unknown; playerIds?: unknown },
+  now = new Date(),
+): Promise<{ personId: Id; version: number }> {
+  await authorizeClub(db, auth, clubId, 'club.people.manage');
+  const name = displayName(args.displayName);
+  const ids = args.playerIds;
+  if (!Array.isArray(ids) || ids.length !== 2 || !ids.every((x) => typeof x === 'string' && x) || ids[0] === ids[1]) {
+    throw invalid('Hacen falta dos fichas distintas.');
+  }
+  const [a, b] = ids as [Id, Id];
+  const rows = (
+    await db
+      .prepare(
+        `SELECT p.id, p.team_id, t.club_id, p.person_id, p.role FROM players p JOIN teams t ON t.id = p.team_id
+          WHERE p.id IN (?, ?) AND p.deleted_at IS NULL AND t.deleted_at IS NULL`,
+      )
+      .bind(a, b)
+      .all<{ id: string; team_id: string; club_id: string; person_id: string | null; role: string | null }>()
+  ).results;
+  // Ficha inexistente, borrada o de otro club: «no encontrada» (no se revela nada de otros clubes).
+  if (rows.length !== 2 || rows.some((r) => r.club_id !== clubId)) throw notFound();
+  if (rows.some((r) => (r.role ?? 'player') !== 'player')) throw conflict('El cuerpo técnico no se vincula a personas.');
+  if (rows[0]!.team_id === rows[1]!.team_id) throw conflict('Las dos fichas son del mismo equipo: no pueden ser de la misma persona.');
+  if (rows.some((r) => r.person_id !== null)) throw conflict('Alguna ficha ya tiene persona; vuelve a cargar la lista.');
+
+  const id = newId();
+  const at = now.toISOString();
+  // Las dos fichas siguen libres, vivas y de jugador: condición de la creación.
+  const free = `(SELECT COUNT(*) FROM players WHERE id IN (?, ?) AND person_id IS NULL AND deleted_at IS NULL AND role = 'player') = 2`;
+  // Lo demás, solo si la persona se ha creado en este lote.
+  const created = { sql: 'EXISTS (SELECT 1 FROM people WHERE id = ?)', values: [id] };
+  let results;
+  try {
+    results = await db.batch([
+      db
+        .prepare(`INSERT INTO people (id, club_id, display_name, created_at, updated_at) SELECT ?, ?, ?, ?, ? WHERE ${free}`)
+        .bind(id, clubId, name, at, at, a, b),
+      auditRow(db, auth, 'person.create', 'person', id, at, created),
+      ...[a, b].flatMap((pid) => [
+        auditRow(db, auth, 'person.link', 'player', pid, at, created),
+        auditRow(db, auth, 'person.link', 'person', id, at, created),
+        db.prepare(`UPDATE players SET person_id = ? WHERE id = ? AND person_id IS NULL AND ${created.sql}`).bind(id, pid, id),
+      ]),
+    ]);
+  } catch (e) {
+    // Un trigger o el índice único de 0007 lo rechaza: el lote entero se anula.
+    linkError(e);
+  }
+  if (results[0]!.meta.changes !== 1) throw conflict('Alguna ficha ha cambiado mientras tanto; vuelve a cargar la lista.');
+  return { personId: id, version: 1 };
+}
+
 /** Persona viva y su club (404 si no existe, está borrada o es de otro club). */
 async function personOf(db: Db, auth: AuthContext, personId: Id): Promise<{ id: Id; clubId: Id; version: number; rankingExcluded: boolean }> {
   const row = await db

@@ -1,10 +1,16 @@
 // Panel de administración de GalipauStats: clubes, equipos por temporada y sus
-// dos códigos de invitación. Separado de la PWA de entrenadores y familias.
-// Todas las escrituras son operaciones críticas: si no están habilitadas en el
-// entorno, los formularios aparecen desactivados.
-import { ChevronLeft, ChevronRight, Copy, Eye, EyeOff, KeyRound, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react';
-import { api, ApiError } from './api';
+// dos códigos de invitación; jugadores del club (identidad común) y rankings del
+// club. Separado de la PWA de entrenadores y familias. Las escrituras de clubes,
+// equipos y códigos son operaciones críticas: si no están habilitadas en el
+// entorno, sus formularios aparecen desactivados. Jugadores y rankings del club
+// son administración normal (salvo ampliar quién ve los rankings).
+import { ChevronRight, Copy, Eye, EyeOff, KeyRound, Plus, RefreshCw, Trash2, Trophy, Users } from 'lucide-react';
+import { useState, useSyncExternalStore, type FormEvent } from 'react';
+import { api } from './api';
+import { ClubRankingsScreen } from './ClubRankingsScreen';
+import { PeopleScreen } from './PeopleScreen';
+import { go, useAction, useData } from './hooks';
+import { Field, Screen, TopBar, WritesDisabled } from './ui';
 import {
   CODE_LABEL,
   canManageClub,
@@ -28,11 +34,18 @@ import {
 
 // --- Navegación por hash ------------------------------------------------------
 
-type Route = { name: 'clubs' } | { name: 'club'; clubId: string } | { name: 'team'; clubId: string; teamId: string };
+type Route =
+  | { name: 'clubs' }
+  | { name: 'club'; clubId: string }
+  | { name: 'team'; clubId: string; teamId: string }
+  | { name: 'people'; clubId: string }
+  | { name: 'rankings'; clubId: string };
 
 function parseRoute(hash: string): Route {
   const [a, clubId, b, teamId] = hash.replace(/^#\/?/, '').split('/');
   if (a === 'clubs' && clubId && b === 'teams' && teamId) return { name: 'team', clubId, teamId };
+  if (a === 'clubs' && clubId && b === 'people' && teamId === undefined) return { name: 'people', clubId };
+  if (a === 'clubs' && clubId && b === 'rankings' && teamId === undefined) return { name: 'rankings', clubId };
   if (a === 'clubs' && clubId) return { name: 'club', clubId };
   return { name: 'clubs' };
 }
@@ -41,84 +54,6 @@ const subscribe = (cb: () => void) => {
   window.addEventListener('hashchange', cb);
   return () => window.removeEventListener('hashchange', cb);
 };
-const go = (hash: string) => (window.location.hash = hash);
-
-// --- Carga de datos ----------------------------------------------------------
-
-function useData<T>(path: string | null): { data: T | undefined; error: string | null; reload: () => void } {
-  const [state, setState] = useState<{ data?: T; error: string | null }>({ error: null });
-  const [version, setVersion] = useState(0);
-  useEffect(() => {
-    if (!path) return;
-    let cancelled = false;
-    api<T>(path).then(
-      (data) => !cancelled && setState({ data, error: null }),
-      (e: unknown) => !cancelled && setState({ error: e instanceof ApiError ? e.message : 'Error de conexión.' }),
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [path, version]);
-  return { data: state.data, error: state.error, reload: useCallback(() => setVersion((v) => v + 1), []) };
-}
-
-/** Ejecuta una escritura y devuelve su error como texto. */
-function useAction() {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const run = async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
-    setBusy(true);
-    setError(null);
-    try {
-      return await fn();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Error de conexión.');
-      return undefined;
-    } finally {
-      setBusy(false);
-    }
-  };
-  return { busy, error, run };
-}
-
-// --- Piezas comunes -------------------------------------------------------------
-
-function TopBar({ title, subtitle, back }: { title: string; subtitle?: string; back?: string }) {
-  return (
-    <header className="topbar">
-      {back && (
-        <button type="button" className="icon-btn" onClick={() => go(back)} aria-label="Volver">
-          <ChevronLeft size={24} aria-hidden="true" />
-        </button>
-      )}
-      <div className="topbar-title">
-        <h1>{title}</h1>
-        {subtitle && <span>{subtitle}</span>}
-      </div>
-    </header>
-  );
-}
-
-function WritesDisabled() {
-  return (
-    <p className="notice">
-      <ShieldCheck size={18} aria-hidden="true" />
-      Las operaciones de escritura (crear, editar, suspender y gestionar códigos) están desactivadas en este entorno hasta
-      completar la verificación de seguridad.
-    </p>
-  );
-}
-
-function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
-  return (
-    <label>
-      {label}
-      {children}
-      {hint && <small>{hint}</small>}
-    </label>
-  );
-}
-
 // --- Clubes ----------------------------------------------------------------------
 
 function ClubsScreen({ me }: { me: Me }) {
@@ -223,6 +158,34 @@ function ClubScreen({ me, clubId }: { me: Me; clubId: string }) {
       {!me.criticalOpsEnabled && <WritesDisabled />}
       {club.status === 'suspended' && (
         <p className="notice">Club suspendido: sus entrenadores y familias no pueden acceder a los equipos hasta reactivarlo.</p>
+      )}
+
+      {canManageClub(me, clubId) && (
+        <>
+          <h2 className="section-title">Jugadores y rankings del club</h2>
+          <ul className="list">
+            <li>
+              <button type="button" className="list-item" onClick={() => go(`#/clubs/${club.id}/people`)}>
+                <Users size={20} aria-hidden="true" />
+                <span className="list-main">
+                  <strong>Jugadores del club</strong>
+                  <span className="muted">Une las fichas de quien juega en varios equipos</span>
+                </span>
+                <ChevronRight className="chevron" size={20} aria-hidden="true" />
+              </button>
+            </li>
+            <li>
+              <button type="button" className="list-item" onClick={() => go(`#/clubs/${club.id}/rankings`)}>
+                <Trophy size={20} aria-hidden="true" />
+                <span className="list-main">
+                  <strong>Rankings del club</strong>
+                  <span className="muted">Equipos que participan, grupos y quién los ve</span>
+                </span>
+                <ChevronRight className="chevron" size={20} aria-hidden="true" />
+              </button>
+            </li>
+          </ul>
+        </>
       )}
 
       <h2 className="section-title">Equipos</h2>
@@ -470,15 +433,6 @@ function TeamScreen({ me, clubId, teamId }: { me: Me; clubId: string; teamId: st
   );
 }
 
-function Screen({ title, subtitle, back, children }: { title: string; subtitle?: string; back?: string; children?: ReactNode }) {
-  return (
-    <div className="screen">
-      <TopBar title={title} subtitle={subtitle} back={back} />
-      <main className="content">{children}</main>
-    </div>
-  );
-}
-
 export function App() {
   const hash = useSyncExternalStore(subscribe, () => window.location.hash);
   const me = useData<Me>('/api/admin/me');
@@ -492,5 +446,9 @@ export function App() {
       return <ClubScreen key={route.clubId} me={me.data} clubId={route.clubId} />;
     case 'team':
       return <TeamScreen key={route.teamId} me={me.data} clubId={route.clubId} teamId={route.teamId} />;
+    case 'people':
+      return <PeopleScreen key={route.clubId} me={me.data} clubId={route.clubId} />;
+    case 'rankings':
+      return <ClubRankingsScreen key={route.clubId} me={me.data} clubId={route.clubId} />;
   }
 }

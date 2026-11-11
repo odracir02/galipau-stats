@@ -32,6 +32,7 @@
 //   GET    /api/admin/clubs/:clubId/rankings?season&gender&group   clasificación completa del grupo
 //   GET    /api/admin/clubs/:clubId/people                  personas, fichas y ajustes de rankings
 //   POST   /api/admin/clubs/:clubId/people                  crear persona
+//   POST   /api/admin/clubs/:clubId/people/pair             crear persona con dos fichas (todo o nada)
 //   PATCH  /api/admin/people/:personId                      nombre visible o exclusión (versión esperada)
 //   POST   /api/admin/people/:personId/delete               borrar persona (desvincula sus fichas)
 //   PUT    /api/admin/players/:playerId/person              vincular o desvincular (persona esperada)
@@ -456,6 +457,9 @@ async function peopleRoute(request: Request, db: Db, auth: AuthContext, path: st
   if (section === 'clubs' && id && sub === 'people' && path.length === 3) {
     if (m === 'GET') return json(await persons.listClubPeople(db, auth, id));
     if (m === 'POST') return json(await persons.createPerson(db, auth, id, await body()), 201);
+  }
+  if (section === 'clubs' && id && sub === 'people' && path[3] === 'pair' && path.length === 4 && m === 'POST') {
+    return json(await persons.createPersonWithCards(db, auth, id, await body()), 201);
   }
   if (section === 'clubs' && id && sub === 'rankings' && path.length === 3 && m === 'GET') {
     return json(await adminClubRankings(db, auth, id, groupFromQuery(new URL(request.url).searchParams)));
