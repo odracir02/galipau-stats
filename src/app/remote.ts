@@ -1,5 +1,6 @@
 import { createApi } from '../remote/api';
 import { AutoSync } from '../remote/autosync';
+import { ClubRankingsClient } from '../remote/clubRankings';
 import { ClubSync } from '../remote/clubsync';
 import { TeamImporter } from '../remote/importer';
 import { TeamPuller } from '../remote/pull';
@@ -34,6 +35,10 @@ export const clubViewer: ClubViewer | null =
 
 // Los datos descargados siguen a la sesión: sin acceso verificado, se retiran.
 if (remote && clubViewer) clubViewer.followSession(remote);
+
+/** Rankings del club (solo lectura, con conexión, sin guardar nada); null si esta versión no usa servidor. */
+export const clubRankings: ClubRankingsClient | null =
+  api && accountStore && remote ? new ClubRankingsClient(api, accountStore, () => void remote.refresh()) : null;
 
 /** «Mi jugador» de cada equipo de consulta (preferencia local, nunca se envía). */
 export const myPlayer = new MyPlayerPreferences();

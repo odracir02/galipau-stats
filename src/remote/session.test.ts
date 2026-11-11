@@ -38,6 +38,8 @@ function fakeApi() {
     snapshot: vi.fn<Api['snapshot']>(),
     changes: vi.fn<Api['changes']>(),
     takeControl: vi.fn<Api['takeControl']>(),
+    clubRankingGroups: vi.fn<Api['clubRankingGroups']>(),
+    clubRankings: vi.fn<Api['clubRankings']>(),
   };
 }
 const failing = (e: RemoteError) => async () => Promise.reject(e);

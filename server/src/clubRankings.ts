@@ -385,8 +385,16 @@ async function ownPlayers(db: Db, auth: AuthContext, clubId: Id, state: GroupSta
   return rows.filter((r) => teams.has(r.team_id)).map((r) => r.id);
 }
 
+/**
+ * Grupo que el dispositivo puede consultar y, de sus equipos, los de este club
+ * en los que el dispositivo es entrenador (para preseleccionar el del equipo abierto).
+ */
+export interface DeviceClubGroup extends GroupKey {
+  teamIds: Id[];
+}
+
 /** Grupos que el dispositivo puede consultar (para ofrecerlos en la aplicación). */
-export async function deviceClubGroups(db: Db, auth: AuthContext, clubId: Id): Promise<{ groups: GroupKey[] }> {
+export async function deviceClubGroups(db: Db, auth: AuthContext, clubId: Id): Promise<{ groups: DeviceClubGroup[] }> {
   if (!auth.grants.some((gr) => gr.clubId === clubId)) throw notFound();
   const club = await db
     .prepare("SELECT rankings_visibility AS visibility FROM clubs WHERE id = ? AND deleted_at IS NULL AND status = 'active'")
@@ -399,15 +407,23 @@ export async function deviceClubGroups(db: Db, auth: AuthContext, clubId: Id): P
   const rows = (
     await db
       .prepare(
-        `SELECT DISTINCT season, gender, ranking_group AS "group" FROM teams
+        `SELECT season, gender, ranking_group AS "group", id FROM teams
           WHERE club_id = ? AND club_rankings = 1 AND ranking_group IS NOT NULL AND gender IS NOT NULL AND deleted_at IS NULL
             AND id IN (${coachTeams.map(() => '?').join(', ')})
-          ORDER BY season DESC, gender, ranking_group`,
+          ORDER BY season DESC, gender, ranking_group, id`,
       )
       .bind(clubId, ...coachTeams)
-      .all<GroupKey>()
+      .all<GroupKey & { id: Id }>()
   ).results;
-  return { groups: rows };
+  // Mismo orden y mismos grupos que antes; cada uno con sus equipos (solo los del dispositivo).
+  const groups = new Map<string, DeviceClubGroup>();
+  for (const { id, ...g } of rows) {
+    const key = `${g.season}|${groupKey(g)}`;
+    const found = groups.get(key);
+    if (found) found.teamIds.push(id);
+    else groups.set(key, { ...g, teamIds: [id] });
+  }
+  return { groups: [...groups.values()] };
 }
 
 // --- Administración --------------------------------------------------------------------

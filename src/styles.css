@@ -3535,3 +3535,43 @@ body:has(.sheet-backdrop) .toast:not(.toast-error) {
 .rank-leader.rank-me {
   box-shadow: 0 0 0 3px var(--c-accent);
 }
+
+/* Rankings del club (dentro de «Temporada»). */
+.club-rank-filters label {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.club-rank-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.club-rank-title h3 {
+  margin: 0;
+}
+
+.club-rank-title .btn {
+  flex: none;
+}
+
+.club-rank-group {
+  margin: var(--s-2) 0 0;
+  font-weight: 600;
+}
+
+.club-rank-head .hint {
+  margin: var(--s-2) 0 0;
+}
+
+.club-rank-teams {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.rank-leader-who .club-rank-teams {
+  display: block;
+}

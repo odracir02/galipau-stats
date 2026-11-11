@@ -143,6 +143,45 @@ function errorFor(status: number, code: string | undefined, serverMessage: strin
   return new RemoteError(kind, message, status, code);
 }
 
+/** Grupo de los rankings del club (temporada, modalidad y grupo de clasificación). */
+export interface ClubRankingGroup {
+  season: string;
+  gender: 'male' | 'female' | 'mixed';
+  group: string;
+  /**
+   * Equipos del club que participan en el grupo y en los que este dispositivo es
+   * entrenador. Opcional: un servidor anterior no lo envía.
+   */
+  teamIds?: string[];
+}
+
+export interface ClubRankingEntry {
+  position: number;
+  /** Nombre visible: el de la persona del club o el de la ficha. */
+  name: string;
+  /** Códigos de los equipos del grupo en los que suma. */
+  teams: string[];
+  matches: number;
+  value: number;
+  made?: number;
+  of?: number;
+}
+
+/** Clasificaciones del club tal como las calcula el servidor (Top 10 y puestos propios). */
+export interface ClubRankings {
+  season: string;
+  gender: ClubRankingGroup['gender'];
+  group: string;
+  computedAt: string;
+  teams: { code: string; name: string }[];
+  rankings: { id: 'top_scorer' | 'sharpshooter' | 'wall' | 'thief' | 'shots'; ranked: number; hiddenTies: number; entries: ClubRankingEntry[] }[];
+  mine: {
+    playerId: string;
+    excluded?: true;
+    rankings: { id: ClubRankings['rankings'][number]['id']; position: number; ranked: number; value: number; made?: number; of?: number }[];
+  }[];
+}
+
 export interface ApiOptions {
   baseUrl: string;
   fetch?: typeof fetch;
@@ -161,6 +200,10 @@ export interface Api {
   changes(token: string, teamId: string, since: number): Promise<ChangesPage>;
   /** Toma el control de un partido en curso (entrenador), con el contador de control visto. */
   takeControl(token: string, op: { opId: string; teamId: string; matchId: string; expectedEpoch: number }): Promise<{ status: 'applied' | 'duplicate'; entityId: string; epoch: number }>;
+  /** Grupos de los rankings del club que este dispositivo puede consultar (los decide el servidor). */
+  clubRankingGroups(token: string, clubId: string): Promise<{ groups: ClubRankingGroup[] }>;
+  /** Clasificaciones de un grupo y, de las fichas pedidas (como mucho 5), su puesto si el servidor lo permite. */
+  clubRankings(token: string, clubId: string, group: ClubRankingGroup, playerIds: readonly string[]): Promise<ClubRankings>;
 }
 
 export function createApi({ baseUrl, fetch: doFetch = globalThis.fetch.bind(globalThis), timeoutMs = 10_000 }: ApiOptions): Api {
@@ -220,6 +263,12 @@ export function createApi({ baseUrl, fetch: doFetch = globalThis.fetch.bind(glob
     takeControl: (token, op) => call('POST', '/api/sync/control', token, op),
     changes: (token, teamId, since) =>
       call<ChangesPage>('GET', `/api/teams/${encodeURIComponent(teamId)}/changes?since=${since}`, token),
+    clubRankingGroups: (token, clubId) => call('GET', `/api/clubs/${encodeURIComponent(clubId)}/rankings`, token),
+    clubRankings: (token, clubId, g, playerIds) => {
+      const q = new URLSearchParams({ season: g.season, gender: g.gender, group: g.group });
+      if (playerIds.length) q.set('players', playerIds.slice(0, 5).join(','));
+      return call('GET', `/api/clubs/${encodeURIComponent(clubId)}/rankings?${q.toString()}`, token);
+    },
   };
 }
 

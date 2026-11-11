@@ -144,7 +144,16 @@ export function RankingsView({
   );
 }
 
-function RankingPicker({ value, onChange }: { value: RankingId; onChange: (id: RankingId) => void }) {
+export function RankingPicker({
+  value,
+  onChange,
+  options = RANKINGS,
+}: {
+  value: RankingId;
+  onChange: (id: RankingId) => void;
+  /** Clasificaciones que se ofrecen (por defecto, todas las del equipo). */
+  options?: readonly RankingDefinition[];
+}) {
   const ref = useRef<HTMLDivElement>(null);
   // Mantiene visible la opción elegida en el carrusel.
   useLayoutEffect(() => {
@@ -152,7 +161,7 @@ function RankingPicker({ value, onChange }: { value: RankingId; onChange: (id: R
   }, [value]);
   return (
     <div className="rank-picker" role="tablist" aria-label="Clasificación" ref={ref}>
-      {RANKINGS.map((r) => (
+      {options.map((r) => (
         <button
           key={r.id}
           type="button"
@@ -169,7 +178,7 @@ function RankingPicker({ value, onChange }: { value: RankingId; onChange: (id: R
   );
 }
 
-function RankEmpty({ title, text }: { title: string; text: string }) {
+export function RankEmpty({ title, text }: { title: string; text: string }) {
   return (
     <div className="empty-card">
       <Icon as={Trophy} size={28} className="rank-empty-icon" />

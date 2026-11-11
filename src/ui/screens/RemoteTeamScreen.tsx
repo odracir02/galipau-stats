@@ -6,7 +6,8 @@
 import { ChevronRight, Clipboard, CloudOff, Radio, RefreshCw, Trophy } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { errorMessage } from '../../app/errors';
-import { clubViewer, liveFeed, remote } from '../../app/remote';
+import { clubViewer, liveFeed, myPlayer, remote } from '../../app/remote';
+import type { MyPlayerPreference } from '../../app/myPlayer';
 import { navigate, openFromTeam, rememberTab, type RemoteTab } from '../../app/router';
 import { showToast } from '../../app/toast';
 import { useRemoteTeamData } from '../../app/useRemoteTeamData';
@@ -21,6 +22,7 @@ import { Segmented } from '../components/Segmented';
 import { ConfirmSheet } from '../components/Sheet';
 import { TopBar } from '../components/TopBar';
 import { statusBadge } from '../match/labels';
+import { SeasonWithClubRankings } from '../stats/ClubRankingsView';
 import { SeasonView } from '../stats/SeasonView';
 import { KV } from '../stats/StatTables';
 import { MyPlayerTab } from './MyPlayerTab';
@@ -89,6 +91,8 @@ export function FreshnessBar({
     </div>
   );
 }
+
+const favouriteOf = (p: MyPlayerPreference | null) => (p && 'playerId' in p ? p.playerId : undefined);
 
 export function RemoteTeamScreen({ teamId, tab: routeTab }: { teamId: string; tab?: RemoteTab }) {
   const { session, view, team } = useRemoteTeamData(teamId);
@@ -169,12 +173,25 @@ export function RemoteTeamScreen({ teamId, tab: routeTab }: { teamId: string; ta
             {tab === 'matches' && <RemoteMatchList teamId={teamId} snapshot={snapshot} />}
             {tab === 'players' && !viewer && <RemotePlayers snapshot={snapshot} />}
             {tab === 'season' && (
-              <SeasonView
-                items={items}
-                defaultSeason={team.season}
-                onRankings={() => openFromTeam(teamId, { name: 'remoteRankings', teamId })}
-                // Consulta: también los jugadores aún sin estadísticas (el entrenador, como siempre).
-                roster={viewer ? snapshot.players.map((p) => p.player) : undefined}
+              <SeasonWithClubRankings
+                clubId={team.clubId}
+                teamId={team.teamId}
+                clubName={team.clubName}
+                players={snapshot.players
+                  .map((p) => p.player)
+                  .filter((p) => !isOfficial(p))
+                  .sort((a, b) => a.number - b.number)
+                  .map((p) => ({ id: p.id, name: p.name, number: p.number }))}
+                defaultPlayerId={viewer ? favouriteOf(myPlayer.get(teamId)) : undefined}
+                team={
+                  <SeasonView
+                    items={items}
+                    defaultSeason={team.season}
+                    onRankings={() => openFromTeam(teamId, { name: 'remoteRankings', teamId })}
+                    // Consulta: también los jugadores aún sin estadísticas (el entrenador, como siempre).
+                    roster={viewer ? snapshot.players.map((p) => p.player) : undefined}
+                  />
+                }
               />
             )}
           </>

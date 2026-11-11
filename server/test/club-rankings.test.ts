@@ -227,7 +227,51 @@ describe('permisos', () => {
     expect(r.status).toBe(200);
     // Solo las fichas de SU equipo (sma).
     expect(r.body.mine.map((m) => m.playerId)).toEqual(['a11']);
-    expect((await call('/api/clubs/A/rankings', { token: coachToken })).body).toEqual({ groups: [SENIOR_M] });
+    expect((await call('/api/clubs/A/rankings', { token: coachToken })).body).toEqual({ groups: [{ ...SENIOR_M, teamIds: ['sma'] }] });
+  });
+
+  it('grupos: cada uno con sus equipos del club en los que el dispositivo es entrenador, en el orden de siempre', async () => {
+    // Otro equipo del grupo sénior en el que este dispositivo NO tiene permiso: no aparece.
+    team('smd', 'SMD2627');
+    const { token } = await addDevice(db, 'varios', [
+      { clubId: 'A', teamId: 'sma', role: 'coach' },
+      { clubId: 'A', teamId: 'smb', role: 'coach' },
+      { clubId: 'A', teamId: 'sfa', role: 'coach' },
+      { clubId: 'A', teamId: 'jm', role: 'coach' },
+      { clubId: 'A', teamId: 'old', role: 'coach' },
+      // Sin grupo (no participa), solo consulta, o de otro club: nunca.
+      { clubId: 'A', teamId: 'np', role: 'coach' },
+      { clubId: 'A', teamId: 'smd', role: 'viewer' },
+      { clubId: 'B', teamId: 'xb', role: 'coach' },
+    ]);
+    const r = await call('/api/clubs/A/rankings', { token });
+    expect(r.status).toBe(200);
+    expect(r.headers.get('Cache-Control')).toBe('no-store');
+    expect(r.body).toEqual({
+      groups: [
+        { season: '2026/27', gender: 'female', group: 'senior', teamIds: ['sfa'] },
+        { season: '2026/27', gender: 'male', group: 'juvenil', teamIds: ['jm'] },
+        { season: '2026/27', gender: 'male', group: 'senior', teamIds: ['sma', 'smb'] },
+        { season: '2025/26', gender: 'male', group: 'senior', teamIds: ['old'] },
+      ],
+    });
+    expect(JSON.stringify(r.body)).not.toMatch(/"np"|"smd"|"xb"/);
+    // Mismas claves que antes en cada grupo; solo se añade teamIds.
+    for (const g of r.body.groups as Record<string, unknown>[]) expect(Object.keys(g).sort()).toEqual(['gender', 'group', 'season', 'teamIds']);
+    // Desde el otro club (abierto a entrenadores): solo su equipo.
+    db.run("UPDATE clubs SET rankings_visibility = 'coaches' WHERE id = 'B'");
+    expect((await call('/api/clubs/B/rankings', { token })).body).toEqual({ groups: [{ ...SENIOR_M, teamIds: ['xb'] }] });
+  });
+
+  it('grupos: equipo que deja de participar o se borra, fuera de teamIds y, sin equipos, fuera el grupo', async () => {
+    const { token } = await addDevice(db, 'dos', [
+      { clubId: 'A', teamId: 'sma', role: 'coach' },
+      { clubId: 'A', teamId: 'smb', role: 'coach' },
+    ]);
+    db.run("UPDATE teams SET club_rankings = 0 WHERE id = 'smb'");
+    expect((await call('/api/clubs/A/rankings', { token })).body).toEqual({ groups: [{ ...SENIOR_M, teamIds: ['sma'] }] });
+    db.run("UPDATE teams SET deleted_at = ? WHERE id = 'sma'", NOW);
+    expect((await call('/api/clubs/A/rankings', { token })).body).toEqual({ groups: [] });
   });
 
   it('visibilidad «admins»: ningún dispositivo; la administración, la clasificación completa', async () => {
