@@ -109,6 +109,18 @@ Cada ranking lee una cifra del acumulado de temporada (mismos partidos que la pe
 - Solo cuentan acciones atribuidas a un jugador. Los partidos eliminados y las acciones borradas no cuentan.
 - Nombre y dorsal: los de la convocatoria más reciente del jugador en esa temporada.
 
+## «Mi jugador» (consulta)
+
+Mismo motor y mismos partidos que la pestaña Temporada; solo cambia qué partidos entran en cada cifra. Código: `src/ui/stats/mySeason.ts`.
+
+- **Totales del resumen**: los de Temporada, incluido el partido en juego (con aviso).
+- **Recuentos**: convocatorias de la temporada · en partidos finalizados · con alguna acción registrada a su nombre. Estar convocado no significa haber jugado (no hay minutos).
+- **Medias** (solo partidos finalizados y en la posición de cada convocatoria):
+  - jugador de campo: goles / convocatorias en partidos finalizados;
+  - portero: paradas / partidos finalizados con lanzamientos entre palos registrados (una convocatoria sin recibir nada no cuenta como 0).
+- **Evolución**: los 10 últimos partidos finalizados con convocatoria; cada barra es el total registrado (lanzamientos o lanzamientos entre palos) y su parte rellena, los aciertos. Escala común entre los partidos de la misma posición; si ha jugado en las dos, cada una con la suya.
+- **Últimos 3 frente a temporada**: las medias anteriores en los 3 últimos partidos finalizados de una posición y en todos los de esa posición. Solo con al menos 6 en ella; nunca se mezclan posiciones; sin partidos válidos no hay media.
+
 ## Lo que NO se calcula
 
 Minutos jugados, tiempo en pista, +/−, ni ninguna métrica que no se pueda derivar de los eventos registrados.

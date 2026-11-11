@@ -10,11 +10,28 @@ import type { MyPlayerPreference } from '../../app/myPlayer';
 import { isOfficial, MATCH_STATUS_LABEL } from '../../domain/catalog';
 import { formatDate, formatPct, opponentLabel } from '../../domain/format';
 import type { TeamSnapshot } from '../../remote/api';
-import { efficiency, onTarget, perMatch, savePct, type Counters } from '../../stats/engine';
+import { efficiency, onTarget, savePct, type Counters } from '../../stats/engine';
 import { Icon } from '../components/Icon';
 import { Ring } from '../stats/charts';
+import { EvolutionBars } from '../stats/EvolutionBars';
 import { statusBadge } from '../match/labels';
-import { liveMatches, matchLine, myRankings, mySeason, recentMatches, type MyMatch, type MyRanking, type MySeason } from '../stats/mySeason';
+import {
+  comparisonAverages,
+  liveMatches,
+  mainAverage,
+  matchLine,
+  myEvolution,
+  myRankings,
+  mySeason,
+  otherPositionMatches,
+  recentMatches,
+  type MyAverage,
+  type MyComparison,
+  type MyEvolution,
+  type MyMatch,
+  type MyRanking,
+  type MySeason,
+} from '../stats/mySeason';
 import { RANKING_ICON } from '../stats/rankingIcons';
 import { PlayerCard } from '../stats/PlayerCard';
 import { Tile } from '../stats/StatTables';
@@ -45,6 +62,8 @@ export function MyPlayerTab({ teamId, snapshot, season }: { teamId: string; snap
   const chosen = chosenId ? players.find((p) => p.id === chosenId) : undefined;
   // Se recalcula con cada cambio de los datos descargados (directo, «Actualizar»).
   const stats = useMemo(() => (chosen ? mySeason(snapshot, chosen, season) : null), [snapshot, chosen, season]);
+  // Recuentos y medias (solo partidos finalizados), con los cálculos de mySeason.ts.
+  const evolution = useMemo(() => (chosen ? myEvolution(snapshot, chosen.id, season) : null), [snapshot, chosen, season]);
   // Solo con algún partido en la temporada: sin convocatorias no hay nada que clasificar.
   const rankings = useMemo(
     () => (chosen && stats && stats.matches > 0 ? myRankings(snapshot, chosen.id, stats.row.position, season) : []),
@@ -112,7 +131,7 @@ export function MyPlayerTab({ teamId, snapshot, season }: { teamId: string; snap
   }
 
   // «Ahora no»: el equipo se consulta igual; se puede elegir cuando se quiera.
-  if (!chosen || !stats) {
+  if (!chosen || !stats || !evolution) {
     return (
       <div className="empty-card">
         <Icon as={UserRound} size={28} />
@@ -148,7 +167,8 @@ export function MyPlayerTab({ teamId, snapshot, season }: { teamId: string; snap
       {live.map((m) => (
         <LiveCard key={m.match.id} teamId={teamId} m={m} />
       ))}
-      <SeasonSummary stats={stats} season={season} />
+      <SeasonSummary stats={stats} evolution={evolution} season={season} />
+      {stats.matches > 0 && <Evolution teamId={teamId} evolution={evolution} />}
       {rankings.length > 0 && <RankingsCard teamId={teamId} rankings={rankings} />}
       {recent.length > 0 && <RecentMatches teamId={teamId} matches={recent} />}
       {card && <PlayerCard row={stats.row} mode="season" context={`Temporada ${season}`} onClose={() => setCard(false)} />}
@@ -156,14 +176,36 @@ export function MyPlayerTab({ teamId, snapshot, season }: { teamId: string; snap
   );
 }
 
-const avg = (v: number | null) => (v === null ? '—' : v.toLocaleString('es-ES', { maximumFractionDigits: 1 }));
-/** «3/5», o «—» si no hay ninguno (nunca un 0 % engañoso). */
-const ofTotal = (made: number, total: number) => (total > 0 ? `${made}/${total}` : '—');
+const decimal = (v: number) => v.toLocaleString('es-ES', { maximumFractionDigits: 1 });
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+/** «1,5 de media», solo si hay media (nunca un 0 engañoso). */
+const averageSub = (a: MyAverage | null) => (a?.value != null ? `${decimal(a.value)} de media` : undefined);
+const POSITION_NAME = { field: 'jugador de campo', goalkeeper: 'portero' } as const;
+
+/**
+ * Qué cuenta la media principal: el denominador, con su número. Sin partidos que
+ * cuenten, por qué todavía no hay media.
+ */
+function averageNote(a: MyAverage | null, position: 'field' | 'goalkeeper', finished: number): string {
+  const what = position === 'goalkeeper' ? 'paradas' : 'goles';
+  if (finished === 0) return `La media de ${what} aparecerá con su primer partido finalizado.`;
+  if (!a || a.denominator === 0) {
+    return position === 'goalkeeper'
+      ? 'Todavía sin media de paradas: no tiene lanzamientos entre palos registrados en partidos finalizados como portero.'
+      : 'Todavía sin media de goles: no tiene convocatorias como jugador de campo en partidos finalizados.';
+  }
+  return position === 'goalkeeper'
+    ? `Media de paradas: por partido finalizado con lanzamientos entre palos (${a.denominator}).`
+    : `Media de goles: por convocatoria en partido finalizado (${a.denominator}).`;
+}
 
 /** Resumen de la temporada: las cifras principales, de un vistazo. El detalle, en la ficha completa. */
-function SeasonSummary({ stats, season }: { stats: MySeason; season: string }) {
-  const { row, matches, finished, live } = stats;
+function SeasonSummary({ stats, evolution, season }: { stats: MySeason; evolution: MyEvolution; season: string }) {
+  const { row, matches, live } = stats;
   const c = row.counters;
+  const { counts } = evolution;
+  const average = mainAverage(evolution, row.position);
+  const other = otherPositionMatches(evolution, row.position);
   if (matches === 0) {
     return (
       <div className="empty-card">
@@ -175,25 +217,29 @@ function SeasonSummary({ stats, season }: { stats: MySeason; season: string }) {
   return (
     <section className="card myplayer-season" aria-label={`Temporada ${season}`}>
       <h3>Temporada {season}</h3>
-      {row.position === 'goalkeeper' ? <KeeperSummary c={c} matches={matches} /> : <FieldSummary c={c} matches={matches} />}
-      <p className="hint">
-        {matches} {matches === 1 ? 'partido' : 'partidos'} con convocatoria
-        {finished !== matches && ` (${finished} ${finished === 1 ? 'finalizado' : 'finalizados'})`}.
-        {live > 0 && (
-          <span className="myplayer-live">
-            {' '}
-            <Icon as={Radio} size={14} /> Incluye el partido en juego: las cifras cambian en directo.
-          </span>
-        )}
+      {row.position === 'goalkeeper' ? <KeeperSummary c={c} average={average} /> : <FieldSummary c={c} average={average} />}
+      <p className="myplayer-counts">
+        <span>{count(counts.convocations, 'convocatoria', 'convocatorias')}</span>
+        <span>{counts.finished} en partidos finalizados</span>
+        <span>{counts.finishedWithActions} con acciones registradas</span>
       </p>
+      <p className="hint">
+        {averageNote(average, row.position, counts.finished)}
+        {other > 0 &&
+          ` También ha ido convocado como ${POSITION_NAME[row.position === 'goalkeeper' ? 'field' : 'goalkeeper']} en ${count(other, 'partido', 'partidos')}: la media solo cuenta sus partidos como ${POSITION_NAME[row.position]}.`}
+      </p>
+      {live > 0 && (
+        <p className="hint myplayer-live">
+          <Icon as={Radio} size={14} /> Los totales incluyen el partido en juego y cambian en directo; la media solo cuenta partidos finalizados.
+        </p>
+      )}
     </section>
   );
 }
 
-function FieldSummary({ c, matches }: { c: Counters; matches: number }) {
+function FieldSummary({ c, average }: { c: Counters; average: MyAverage | null }) {
   const s = c.shots;
   const pen = c.shotsByType.penalty;
-  const fast = c.shotsByType.fast_break;
   return (
     <>
       <div className="hero">
@@ -215,18 +261,16 @@ function FieldSummary({ c, matches }: { c: Counters; matches: number }) {
         </div>
       </div>
       <div className="tiles myplayer-tiles">
-        <Tile label="Partidos" value={matches} />
-        <Tile label="Goles" value={s.goals} sub={`${avg(perMatch(s.goals, matches))}/p`} accent />
+        <Tile label="Goles" value={s.goals} sub={averageSub(average)} accent />
         <Tile label="Lanzamientos" value={s.attempts} />
-        <Tile label="Penaltis (7 m)" value={ofTotal(pen.goals, pen.attempts)} />
-        <Tile label="Contraataque" value={ofTotal(fast.goals, fast.attempts)} />
         <Tile label="Recuperaciones" value={c.recoveries} />
+        <Tile label="Goles de 7 m" value={pen.goals} sub={pen.attempts > 0 ? `de ${pen.attempts}` : undefined} />
       </div>
     </>
   );
 }
 
-function KeeperSummary({ c, matches }: { c: Counters; matches: number }) {
+function KeeperSummary({ c, average }: { c: Counters; average: MyAverage | null }) {
   const gk = c.gk;
   const pen = c.gkByType.penalty;
   return (
@@ -250,18 +294,100 @@ function KeeperSummary({ c, matches }: { c: Counters; matches: number }) {
         </div>
       </div>
       <div className="tiles myplayer-tiles">
-        <Tile label="Partidos" value={matches} />
-        <Tile label="Paradas" value={gk.saves} sub={`${avg(perMatch(gk.saves, matches))}/p`} accent />
-        <Tile label="Recibidos" value={gk.received} />
+        <Tile label="Paradas" value={gk.saves} sub={averageSub(average)} accent />
+        <Tile label="Entre palos" value={onTarget(gk)} />
         <Tile label="Goles encajados" value={gk.goals} />
-        <Tile label="Penaltis parados" value={ofTotal(pen.saves, onTarget(pen))} />
-        <Tile label="Recuperaciones" value={c.recoveries} />
+        <Tile label="Penaltis parados" value={pen.saves} sub={onTarget(pen) > 0 ? `de ${onTarget(pen)}` : undefined} />
       </div>
     </>
   );
 }
 
 const openMatch = (teamId: string, matchId: string) => openFromTeam(teamId, { name: 'remoteMatch', teamId, matchId });
+
+/**
+ * Evolución partido a partido: los últimos partidos finalizados con convocatoria
+ * (la serie de myEvolution, sin el partido en juego). Cada uno abre su partido,
+ * igual que «Últimos partidos».
+ */
+function Evolution({ teamId, evolution }: { teamId: string; evolution: MyEvolution }) {
+  const { series, counts } = evolution;
+  return (
+    <section className="card myplayer-evolution" aria-labelledby="myplayer-evolution-title">
+      <h3 id="myplayer-evolution-title">Evolución</h3>
+      {series.length === 0 ? (
+        <p className="hint">Aparecerá cuando termine su primer partido con convocatoria.</p>
+      ) : (
+        <>
+          <p className="hint">
+            {series.length === 1
+              ? 'Su partido finalizado con convocatoria.'
+              : series.length < counts.finished
+                ? `Sus últimos ${series.length} partidos finalizados con convocatoria (de ${counts.finished}).`
+                : 'Sus partidos finalizados con convocatoria.'}{' '}
+            Solo refleja las acciones registradas.
+          </p>
+          <EvolutionBars points={series} title="Evolución partido a partido" onOpen={(matchId) => openMatch(teamId, matchId)} />
+          {evolution.comparisons.map((c) => (
+            <RecentForm key={c.position} comparison={c} mixed={evolution.mixedPositions} />
+          ))}
+        </>
+      )}
+    </section>
+  );
+}
+
+/** Una cifra con un decimal: «2,0». */
+const oneDecimal = (v: number) => v.toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const shortDate = (date: string) => `${date.slice(8, 10)}/${date.slice(5, 7)}`;
+
+/**
+ * Últimos 3 partidos frente a la temporada, en una posición (solo con al menos
+ * seis partidos finalizados en ella). Dos cifras y sus denominadores: sin
+ * valoraciones, flechas ni colores.
+ */
+function RecentForm({ comparison: c, mixed }: { comparison: MyComparison; mixed: boolean }) {
+  const { recent, season } = comparisonAverages(c);
+  // Sin ningún partido válido en toda la temporada no hay nada que comparar.
+  if (season.value === null) return null;
+  const keeper = c.position === 'goalkeeper';
+  const metric = keeper ? 'Paradas de media' : 'Goles de media';
+  const as = keeper ? 'como portero' : 'como jugador de campo';
+  const period = `del ${shortDate(c.recentDates.from)} al ${shortDate(c.recentDates.to)}`;
+  const recentBase = keeper
+    ? `${recent.denominator} de 3 con lanzamientos entre palos`
+    : `sobre ${count(recent.denominator, 'convocatoria', 'convocatorias')}`;
+  const seasonBase = keeper
+    ? `sobre ${count(season.denominator, 'partido', 'partidos')} con lanzamientos entre palos`
+    : `sobre ${count(season.denominator, 'convocatoria', 'convocatorias')}`;
+  return (
+    <section className="evo-compare" aria-label={`Últimos 3 y temporada${mixed ? ` ${as}` : ''}`}>
+      <h4>
+        {metric}
+        {mixed && <span className="muted"> · {keeper ? 'Portero' : 'Jugador de campo'}</span>}
+      </h4>
+      <dl className="evo-compare-figures">
+        <div>
+          <dt>Últimos 3</dt>
+          <dd>{recent.value === null ? <span className="muted">Sin media</span> : <strong>{oneDecimal(recent.value)}</strong>}</dd>
+          <dd className="evo-compare-base">{recentBase}</dd>
+        </div>
+        <div>
+          <dt>Temporada</dt>
+          <dd>
+            <strong>{oneDecimal(season.value)}</strong>
+          </dd>
+          <dd className="evo-compare-base">{seasonBase}</dd>
+        </div>
+      </dl>
+      <p className="hint">
+        {keeper
+          ? `Últimos 3: partidos finalizados ${as} ${period}. Medias por partido con lanzamientos entre palos registrados.`
+          : `Últimos 3: partidos finalizados ${as} ${period}. Medias por convocatoria en partido finalizado.`}
+      </p>
+    </section>
+  );
+}
 
 /** Partido en juego: marcador, estado y lo que lleva el jugador (o que no está convocado). */
 function LiveCard({ teamId, m }: { teamId: string; m: MyMatch }) {
