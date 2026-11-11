@@ -1,17 +1,10 @@
-/** Marca de GalipauStats: balón estilizado. */
-export function LogoMark({ size = 28 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <circle cx="16" cy="16" r="14" fill="var(--c-accent)" />
-      <path
-        d="M2.5 16h27M10 3.8c4.2 5.4 4.2 19 0 24.4M22 3.8c-4.2 5.4-4.2 19 0 24.4"
-        stroke="var(--c-on-accent)"
-        strokeWidth="2"
-        fill="none"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
+/**
+ * Marca de GalipauStats: la rana con el balón (el icono de la app). Reutiliza
+ * `pwa-192.png`, que ya está en la precaché: nítida en pantallas de alta
+ * densidad y disponible sin conexión.
+ */
+export function LogoMark({ size = 30 }: { size?: number }) {
+  return <img className="brand-mark" src="/pwa-192.png" width={size} height={size} alt="" aria-hidden="true" decoding="async" />;
 }
 
 export function Brand() {

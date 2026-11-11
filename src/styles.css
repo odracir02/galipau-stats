@@ -175,6 +175,13 @@ svg {
   gap: var(--s-2);
 }
 
+/* Icono de la app junto al nombre, con las esquinas redondeadas como al instalarla. */
+.brand-mark {
+  display: block;
+  flex: none;
+  border-radius: 24%;
+}
+
 .brand-name {
   font-weight: 750;
   letter-spacing: -0.02em;
