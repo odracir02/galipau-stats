@@ -1,326 +1,79 @@
-// «Rankings del club»: qué equipos participan, en qué grupo de clasificación y
-// quién ve los rankings. Solo ofrece lo que el servidor permite: reducir la
-// visibilidad es administración normal; ampliarla a entrenadores es una
-// operación crítica (verificación reforzada); la consulta (jugadores y familias),
-// todavía no. Un grupo reúne a los equipos con el mismo nombre de grupo en la
-// temporada, sean del género o la categoría que sean.
-// Las clasificaciones se consultan ya calculadas por el servidor: aquí no se
-// calcula nada.
-import { Lock, ShieldAlert, Trophy } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
-import { ConfirmSheet } from '../../src/ui/components/Sheet';
-import { api } from './api';
-import { canManageClub, GENDER_LABEL, type ClubDetail, type Me } from './format';
-import {
-  groupQuery,
-  rankingGroups,
-  rankingTitle,
-  rankingValue,
-  teamRankingProblem,
-  VISIBILITY_LABEL,
-  type ClubPeople,
-  type ClubRankingsView,
-  type GroupKey,
-  type RankingsTeam,
-} from './people';
-import { useAction, useData } from './hooks';
-import { ActionError, Field, Screen } from './ui';
-
-/** `review`: exige marcar que se ha revisado la privacidad antes de confirmar. */
-type Confirm = { title: string; message: ReactNode; label: string; danger?: boolean; review?: boolean; run: () => Promise<unknown> };
-
-const groupLabel = (g: GroupKey) => `${g.group} · ${g.season}`;
+// «Rankings del club»: funcionan solos. Cada temporada reúne a todos los equipos
+// del club (sin activar equipos, grupos ni visibilidad) y los ven los
+// entrenadores y la consulta (familias) de cualquier equipo del club. Aquí solo
+// se explica qué se muestra y se revisa la clasificación completa, ya calculada
+// por el servidor; las uniones de fichas y las exclusiones están en «Jugadores
+// del club».
+import { ShieldAlert, Trophy } from 'lucide-react';
+import { useState } from 'react';
+import { canManageClub, type ClubDetail, type Me } from './format';
+import { rankingSeasons, rankingTitle, rankingValue, seasonQuery, type ClubPeople, type ClubRankingsView } from './people';
+import { useData } from './hooks';
+import { Field, Screen } from './ui';
 
 export function ClubRankingsScreen({ me, clubId }: { me: Me; clubId: string }) {
   const club = useData<ClubDetail>(`/api/admin/clubs/${encodeURIComponent(clubId)}`);
   const data = useData<ClubPeople>(`/api/admin/clubs/${encodeURIComponent(clubId)}/people`);
-  const action = useAction();
-  const [confirm, setConfirm] = useState<Confirm | null>(null);
-  const [reviewed, setReviewed] = useState(false);
-  const [groups, setGroups] = useState<Record<string, string>>({});
   const back = `#/clubs/${clubId}`;
   const title = 'Rankings del club';
 
   if (!canManageClub(me, clubId)) return <Screen title={title} back={back}><p className="form-error">No administras este club.</p></Screen>;
   if (data.error) return <Screen title={title} back={back}><p className="form-error">{data.error}</p></Screen>;
   if (!data.data) return <Screen title={title} subtitle="Cargando…" back={back} />;
-  const { visibility, teams } = data.data.rankings;
-
-  const done = () => {
-    setConfirm(null);
-    setGroups({});
-    data.reload();
-  };
-  const ask = (c: Confirm) => {
-    action.clear();
-    setReviewed(false);
-    setConfirm(c);
-  };
-  const runConfirm = async () => {
-    if (!confirm) return;
-    const ok = await action.run(confirm.run);
-    setConfirm(null);
-    if (ok !== undefined) done();
-  };
-  const setTeam = (t: RankingsTeam, body: { participates?: boolean; group?: string | null }) =>
-    api(`/api/admin/teams/${encodeURIComponent(t.teamId)}/rankings`, { method: 'PATCH', body });
-
-  const bySeason = new Map<string, RankingsTeam[]>();
-  for (const t of teams) bySeason.set(t.season, [...(bySeason.get(t.season) ?? []), t]);
-  const privacyNotice = (
-    <p className="notice">
-      <ShieldAlert size={18} aria-hidden="true" />
-      Los nombres visibles y las cifras de sus jugadores aparecerán en las clasificaciones del club que vean los administradores y,
-      si se amplía, los entrenadores de los equipos participantes. Si el equipo tiene menores, actívalo solo con la información y el
-      consentimiento necesarios.
-    </p>
-  );
 
   return (
     <Screen title={title} subtitle={club.data?.name} back={back}>
       <p className="hint">
-        Las clasificaciones del club reúnen a los jugadores de los equipos que participan en un mismo grupo (misma temporada y
-        modalidad). Están desactivadas hasta que actives equipos y les asignes un grupo.
+        Cada temporada, «Todo el club» reúne automáticamente a todos los equipos del club, sean del género o la categoría que
+        sean. No hay que activar nada.
       </p>
-      <ActionError action={action} onReload={done} />
-
-      <section className="card form">
-        <h3>Quién ve los rankings del club</h3>
-        <p>
-          Ahora: <strong>{VISIBILITY_LABEL[visibility]}</strong>
-        </p>
-        <ul className="visibility-list">
-          <li>
-            <span className="list-main">
-              <strong>{VISIBILITY_LABEL.admins}</strong>
-              <span className="muted">Para revisar antes de abrirlos.</span>
-            </span>
-            {visibility !== 'admins' && (
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={() =>
-                  ask({
-                    title: 'Reducir quién los ve',
-                    label: 'Reducir',
-                    message: <p>Solo los administradores del club verán los rankings del club. Los entrenadores dejarán de verlos.</p>,
-                    run: () => api(`/api/admin/clubs/${encodeURIComponent(clubId)}/rankings`, { method: 'PUT', body: { visibility: 'admins' } }),
-                  })
-                }
-              >
-                Reducir a esta
-              </button>
-            )}
-          </li>
-          <li>
-            <span className="list-main">
-              <strong>{VISIBILITY_LABEL.coaches}</strong>
-              <span className="muted">
-                <Lock size={14} aria-hidden="true" /> Operación crítica: te pedirá verificar de nuevo tu identidad.
-                {!me.criticalOpsEnabled && ' Las operaciones críticas no están habilitadas en este entorno.'}
-              </span>
-            </span>
-            {visibility === 'admins' && (
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={!me.criticalOpsEnabled}
-                onClick={() =>
-                  ask({
-                    title: 'Abrir los rankings a los entrenadores',
-                    label: 'Ampliar (verificación reforzada)',
-                    message: (
-                      <>
-                        <p>Los entrenadores de los equipos participantes verán el Top 10 de cada clasificación de su grupo, con nombres y cifras de jugadores de otros equipos del club.</p>
-                        <p>Es una operación crítica: se te pedirá verificar de nuevo tu identidad.</p>
-                      </>
-                    ),
-                    run: () => api(`/api/admin/critical/clubs/${encodeURIComponent(clubId)}/rankings`, { method: 'PUT', body: { visibility: 'coaches' } }),
-                  })
-                }
-              >
-                Ampliar a esta
-              </button>
-            )}
-          </li>
-          <li className="unavailable">
-            <span className="list-main">
-              <strong>{VISIBILITY_LABEL.members}</strong>
-              <span className="muted">No disponible todavía: faltan las condiciones de privacidad y consentimiento.</span>
-            </span>
-            <span className="status">No disponible</span>
-          </li>
-        </ul>
-      </section>
-
-      <h2 className="section-title">Equipos</h2>
-      {teams.length === 0 && (
-        <div className="empty-card">
-          <strong>El club no tiene equipos</strong>
-        </div>
-      )}
-      {[...bySeason.entries()].map(([season, list]) => (
-        <section key={season}>
-          <h3 className="section-title">Temporada {season}</h3>
-          <ul className="list">
-            {list.map((t) => {
-              const problem = teamRankingProblem(t);
-              const draft = groups[t.teamId] ?? t.group ?? '';
-              const changed = draft.trim() !== (t.group ?? '');
-              return (
-                <li key={t.teamId} className="card team-ranking">
-                  <div className="team-ranking-head">
-                    <span className="list-main">
-                      <strong>{t.name}</strong>
-                      <span className="muted">
-                        {t.code}
-                        {t.gender ? ` · ${GENDER_LABEL[t.gender]}` : ' · sin modalidad'}
-                      </span>
-                    </span>
-                    <span className={`status ${t.participates ? 'status-on' : ''}`}>{t.participates ? 'Participa' : 'No participa'}</span>
-                  </div>
-                  {problem && <p className="hint">{problem}</p>}
-                  <div className="form inline-form">
-                    <Field label="Grupo de clasificación" hint="Mismo nombre en los equipos que clasifican juntos, sea cual sea su género o categoría (p. ej. Todo el club).">
-                      <input
-                        value={draft}
-                        maxLength={30}
-                        placeholder="Todo el club"
-                        onChange={(e) => setGroups({ ...groups, [t.teamId]: e.target.value })}
-                        list={`grupos-${clubId}`}
-                      />
-                    </Field>
-                    <div className="code-actions">
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        disabled={!changed || action.busy}
-                        onClick={() =>
-                          ask({
-                            title: 'Cambiar el grupo',
-                            label: 'Guardar grupo',
-                            message: draft.trim() ? (
-                              <p>
-                                <strong>{t.name}</strong> clasificará en el grupo «{draft.trim()}».
-                              </p>
-                            ) : (
-                              <p>
-                                <strong>{t.name}</strong> se quedará sin grupo y no aparecerá en ninguna clasificación del club.
-                              </p>
-                            ),
-                            run: () => setTeam(t, { group: draft.trim() || null }),
-                          })
-                        }
-                      >
-                        Guardar grupo
-                      </button>
-                      <button
-                        type="button"
-                        className={`btn btn-sm ${t.participates ? 'btn-danger-outline' : ''}`}
-                        disabled={action.busy}
-                        onClick={() =>
-                          ask(
-                            t.participates
-                              ? {
-                                  title: 'Dejar de participar',
-                                  label: 'Dejar de participar',
-                                  message: <p><strong>{t.name}</strong> dejará de aparecer en los rankings del club. Sus estadísticas no cambian.</p>,
-                                  run: () => setTeam(t, { participates: false }),
-                                }
-                              : {
-                                  title: 'Activar la participación',
-                                  label: 'Activar',
-                                  review: true,
-                                  message: (
-                                    <>
-                                      <p>
-                                        <strong>{t.name}</strong> ({t.code}) participará en los rankings del club.
-                                      </p>
-                                      {privacyNotice}
-                                    </>
-                                  ),
-                                  run: () => setTeam(t, { participates: true }),
-                                },
-                          )
-                        }
-                      >
-                        {t.participates ? 'Dejar de participar' : 'Activar participación'}
-                      </button>
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
-      <datalist id={`grupos-${clubId}`}>
-        {[...new Set(teams.map((t) => t.group).filter((g): g is string => !!g))].map((g) => (
-          <option key={g} value={g} />
-        ))}
-      </datalist>
-
-      <Verification clubId={clubId} teams={teams} />
-
-      {confirm && (
-        <ConfirmSheet
-          title={confirm.title}
-          message={
-            <>
-              {confirm.message}
-              {confirm.review && (
-                <label className="check confirm-check">
-                  <input type="checkbox" checked={reviewed} onChange={(e) => setReviewed(e.target.checked)} />
-                  He revisado la privacidad de este equipo
-                </label>
-              )}
-            </>
-          }
-          confirmLabel={action.busy ? 'Guardando…' : confirm.label}
-          danger={confirm.danger}
-          onCancel={() => setConfirm(null)}
-          onConfirm={() => {
-            if (confirm.review && !reviewed) return;
-            void runConfirm();
-          }}
-        />
-      )}
+      <p className="notice">
+        <ShieldAlert size={18} aria-hidden="true" />
+        <span>
+          Los entrenadores y quienes tengan un código de consulta de cualquier equipo del club ven el Top 10 de cada clasificación,
+          con el nombre visible y las cifras de jugadores de todos los equipos. Si alguien no debe aparecer (por ejemplo, porque lo
+          pide o porque es menor y falta la autorización), exclúyelo en «Jugadores del club»; allí también puedes unir las fichas de
+          quien juega en varios equipos y darle un nombre visible adecuado.
+        </span>
+      </p>
+      <Verification clubId={clubId} seasons={rankingSeasons(data.data.rankings.teams)} />
     </Screen>
   );
 }
 
-/** Clasificaciones ya calculadas por el servidor, para revisarlas. Solo lectura. */
-function Verification({ clubId, teams }: { clubId: string; teams: readonly RankingsTeam[] }) {
-  const groups = rankingGroups(teams);
+/** Clasificación completa ya calculada por el servidor, para revisarla. Solo lectura. */
+function Verification({ clubId, seasons }: { clubId: string; seasons: readonly string[] }) {
   const [chosen, setChosen] = useState(0);
-  const g = groups[chosen] ?? groups[0];
-  const view = useData<ClubRankingsView>(g ? `/api/admin/clubs/${encodeURIComponent(clubId)}/rankings?${groupQuery(g)}` : null);
+  const season = seasons[chosen] ?? seasons[0];
+  const view = useData<ClubRankingsView>(season ? `/api/admin/clubs/${encodeURIComponent(clubId)}/rankings?${seasonQuery(season)}` : null);
 
   return (
     <section className="card form">
       <h3>
         <Trophy size={16} aria-hidden="true" /> Revisar las clasificaciones
       </h3>
-      {groups.length === 0 ? (
-        <p className="empty">Ningún equipo participa todavía con un grupo y una modalidad: no hay clasificaciones que revisar.</p>
+      {seasons.length === 0 ? (
+        <p className="empty">El club no tiene equipos todavía: no hay clasificaciones que revisar.</p>
       ) : (
         <>
-          <Field label="Grupo a revisar">
-            <select value={chosen} onChange={(e) => setChosen(Number(e.target.value))}>
-              {groups.map((x, i) => (
-                <option key={groupLabel(x)} value={i}>
-                  {groupLabel(x)}
-                </option>
-              ))}
-            </select>
-          </Field>
+          {seasons.length > 1 && (
+            <Field label="Temporada">
+              <select value={chosen} onChange={(e) => setChosen(Number(e.target.value))}>
+                {seasons.map((s, i) => (
+                  <option key={s} value={i}>
+                    Todo el club · {s}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           {view.error && <p className="form-error">{view.error}</p>}
           {!view.data && !view.error && <p className="hint">Cargando…</p>}
           {view.data && (
             <>
               <p className="hint">
-                Equipos: {view.data.teams.map((t) => t.code).join(', ') || '—'}. Clasificación completa (los entrenadores, si se les
-                abre, solo ven el Top 10).
+                Todo el club · {view.data.season}. Equipos: {view.data.teams.map((t) => t.code).join(', ') || '—'}. Clasificación
+                completa (entrenadores y familias ven el Top 10).
               </p>
               {view.data.rankings.map((r) => (
                 <div key={r.id} className="club-ranking">

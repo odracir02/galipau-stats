@@ -1,13 +1,18 @@
-// Rankings del club: las clasificaciones positivas de los rankings de equipo,
-// calculadas en el servidor con el mismo motor (computeSeasonStats, rankPlayers)
-// sobre los equipos que participan en un grupo (club, temporada y grupo de
-// clasificación; ni el género ni la categoría separan: un grupo puede reunir a
-// todo el club). Una persona con fichas en varios equipos suma una sola vez
+// Rankings del club («Todo el club»): las clasificaciones positivas de los
+// rankings de equipo, calculadas en el servidor con el mismo motor
+// (computeSeasonStats, rankPlayers) sobre TODOS los equipos vivos del club en una
+// temporada. Funcionan solos: no hay que activar equipos, asignar grupos ni abrir
+// la visibilidad; ni el género ni la categoría separan. Los ven los entrenadores
+// y la consulta (familias) con un permiso vigente en un equipo del club en esa
+// temporada. Una persona con fichas en varios equipos suma una sola vez
 // (players.person_id); una ficha sin persona participa sola. Nunca por nombre.
 //
+// Las columnas antiguas de configuración (teams.club_rankings y ranking_group,
+// clubs.rankings_visibility) se conservan en D1 pero ya no se leen.
+//
 // El resultado se guarda en club_rankings_cache con una huella: solo se calcula
-// de nuevo si cambia algo de lo que depende (acciones, partidos, fichas de esos
-// equipos; vínculos, exclusiones o ajustes del club; reglas). Lo guardado solo
+// de nuevo si cambia algo de lo que depende (acciones, partidos, fichas y equipos
+// del club en la temporada; vínculos o exclusiones; reglas). Lo guardado solo
 // tiene identificadores y cifras: los nombres se leen al responder. Los
 // permisos se comprueban en cada petición, haya o no copia.
 //
@@ -34,29 +39,31 @@ export const CLUB_RANKINGS: readonly RankingId[] = ['top_scorer', 'sharpshooter'
  */
 // club-v2: el grupo ya no se separa por género (club, temporada y grupo).
 // club-v3: las fichas borradas no participan.
-export const CLUB_RULES_VERSION = 'club-v3';
+// club-v4: todos los equipos del club en la temporada, sin activación ni grupos.
+export const CLUB_RULES_VERSION = 'club-v4';
 
-/** Grupo de clasificación: dentro de un club, una temporada y un nombre de grupo. */
+/** Nombre del único grupo de cada temporada (la aplicación lo muestra como «Todo el club · 2026/27»). */
+export const CLUB_GROUP = 'Todo el club';
+
+/** Clasificación de un club en una temporada. `group` es siempre CLUB_GROUP (lo esperan las aplicaciones). */
 export interface GroupKey {
   season: string;
   group: string;
 }
 
 /**
- * Grupo pedido en la consulta (400 si no es válido). Un parámetro «gender» de
- * versiones anteriores de la aplicación se ignora: no separa a nadie.
+ * Temporada pedida en la consulta (400 si no es válida). Los parámetros «group»
+ * y «gender» de versiones anteriores de la aplicación se ignoran: hay un único
+ * grupo por temporada.
  */
 export function groupFromQuery(params: URLSearchParams): GroupKey {
   const season = (params.get('season') ?? '').trim();
-  const group = (params.get('group') ?? '').trim();
-  if (!season || season.length > 7 || !group || group.length > 30) {
-    throw new HttpError(400, 'bad_request', 'Temporada o grupo no válidos.');
-  }
-  return { season, group };
+  if (!season || season.length > 7) throw new HttpError(400, 'bad_request', 'Temporada no válida.');
+  return { season, group: CLUB_GROUP };
 }
 
-/** Clave de la copia en caché. «g:» la distingue de las de club-v1 («género:grupo»). */
-const groupKey = (g: GroupKey) => `g:${g.group}`;
+/** Clave de la copia en caché: distinta de las de reglas anteriores («género:grupo», «g:grupo»). */
+const CACHE_KEY = 'club';
 
 // --- Lo guardado en caché (sin nombres) ------------------------------------------------
 
@@ -92,26 +99,25 @@ interface GroupTeam {
 }
 
 interface GroupState {
-  visibility: 'admins' | 'coaches' | 'members';
   version: number;
   teams: GroupTeam[];
 }
 
-/** Club activo y equipos que participan en el grupo, con su último cambio. null si el club no existe o no está activo. */
+/** Club activo y sus equipos vivos de la temporada, con su último cambio. null si el club no existe o no está activo. */
 async function groupState(db: Db, clubId: Id, g: GroupKey): Promise<GroupState | null> {
   const [clubRes, teamsRes] = await db.batch([
-    db.prepare("SELECT rankings_visibility AS visibility, rankings_version AS version FROM clubs WHERE id = ? AND deleted_at IS NULL AND status = 'active'").bind(clubId),
+    db.prepare("SELECT rankings_version AS version FROM clubs WHERE id = ? AND deleted_at IS NULL AND status = 'active'").bind(clubId),
     db
       .prepare(
         `SELECT t.id, t.code, t.name, COALESCE((SELECT MAX(c.seq) FROM change_log c WHERE c.team_id = t.id), 0) AS seq,
                 (SELECT COUNT(*) FROM players p WHERE p.team_id = t.id AND p.deleted_at IS NOT NULL) AS deleted
            FROM teams t
-          WHERE t.club_id = ? AND t.season = ? AND t.ranking_group = ? AND t.club_rankings = 1 AND t.deleted_at IS NULL
+          WHERE t.club_id = ? AND t.season = ? AND t.deleted_at IS NULL
           ORDER BY t.id`,
       )
-      .bind(clubId, g.season, g.group),
+      .bind(clubId, g.season),
   ]);
-  const club = (clubRes?.results?.[0] ?? null) as { visibility: GroupState['visibility']; version: number } | null;
+  const club = (clubRes?.results?.[0] ?? null) as { version: number } | null;
   if (!club) return null;
   return { ...club, teams: (teamsRes?.results ?? []) as GroupTeam[] };
 }
@@ -213,7 +219,7 @@ async function rankingsOf(db: Db, clubId: Id, g: GroupKey, state: GroupState, no
   const print = await fingerprint(state, g);
   const cached = await db
     .prepare('SELECT fingerprint, payload, computed_at FROM club_rankings_cache WHERE club_id = ? AND season = ? AND group_key = ?')
-    .bind(clubId, g.season, groupKey(g))
+    .bind(clubId, g.season, CACHE_KEY)
     .first<{ fingerprint: string; payload: string; computed_at: string }>();
   if (cached && cached.fingerprint === print) return { data: JSON.parse(cached.payload) as CachedRankings, computedAt: cached.computed_at };
   const data = await computeGroup(db, state.teams.map((t) => t.id), g.season);
@@ -223,7 +229,7 @@ async function rankingsOf(db: Db, clubId: Id, g: GroupKey, state: GroupState, no
       `INSERT INTO club_rankings_cache (club_id, season, group_key, fingerprint, payload, computed_at) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT (club_id, season, group_key) DO UPDATE SET fingerprint = excluded.fingerprint, payload = excluded.payload, computed_at = excluded.computed_at`,
     )
-    .bind(clubId, g.season, groupKey(g), print, JSON.stringify(data), computedAt)
+    .bind(clubId, g.season, CACHE_KEY, print, JSON.stringify(data), computedAt)
     .run();
   return { data, computedAt };
 }
@@ -352,25 +358,21 @@ async function positionsOf(db: Db, data: CachedRankings, playerIds: readonly Id[
 
 const unavailable = () => new HttpError(403, 'club_rankings_unavailable', 'Los rankings del club no están disponibles para este dispositivo.');
 
-/** Roles de dispositivo que ve cada visibilidad del club («admins»: ninguno). */
-const ROLES_BY_VISIBILITY: Record<GroupState['visibility'], readonly TeamRole[]> = {
-  admins: [],
-  coaches: ['coach'],
-  members: ['coach', 'viewer'],
-};
+/** Roles de dispositivo que ven los rankings del club: entrenadores y consulta. */
+const CLUB_RANKING_ROLES: readonly TeamRole[] = ['coach', 'viewer'];
 
-/** Equipos del club en los que el dispositivo tiene un permiso que esta visibilidad abre. */
-const reachableTeams = (auth: AuthContext, clubId: Id, visibility: GroupState['visibility']): Id[] =>
-  auth.grants.filter((gr) => gr.clubId === clubId && ROLES_BY_VISIBILITY[visibility].includes(gr.role)).map((gr) => gr.teamId);
+/** Equipos del club en los que el dispositivo tiene un permiso vigente (los revocados no llegan aquí). */
+const reachableTeams = (auth: AuthContext, clubId: Id): Id[] =>
+  auth.grants.filter((gr) => gr.clubId === clubId && CLUB_RANKING_ROLES.includes(gr.role)).map((gr) => gr.teamId);
 
 /**
- * Un dispositivo solo ve los rankings de un grupo si el club los abre a su rol
- * («coaches»: entrenadores; «members»: también la consulta) y tiene ese permiso
- * en un equipo que participa en el grupo. Se comprueba en cada petición.
+ * Un dispositivo ve los rankings del club de una temporada si tiene un permiso
+ * vigente (entrenador o consulta) en un equipo vivo del club en esa temporada.
+ * Se comprueba en cada petición.
  */
 function deviceAllowed(auth: AuthContext, clubId: Id, state: GroupState): boolean {
   const teams = new Set(state.teams.map((t) => t.id));
-  return reachableTeams(auth, clubId, state.visibility).some((t) => teams.has(t));
+  return reachableTeams(auth, clubId).some((t) => teams.has(t));
 }
 
 /** Top 10 de cada clasificación y el puesto de las fichas propias pedidas (de equipos a los que tiene acceso). */
@@ -409,49 +411,42 @@ async function ownPlayers(db: Db, auth: AuthContext, clubId: Id, state: GroupSta
 }
 
 /**
- * Grupo que el dispositivo puede consultar y, de sus equipos, los de este club
- * en los que tiene un permiso que la visibilidad abre (para preseleccionar el del
- * equipo abierto).
+ * Temporada del club que el dispositivo puede consultar y, de sus equipos, los
+ * de esa temporada en los que tiene permiso (para abrir en la del equipo).
  */
 export interface DeviceClubGroup extends GroupKey {
   teamIds: Id[];
 }
 
-/** Grupos que el dispositivo puede consultar (para ofrecerlos en la aplicación). */
+/** Temporadas del club que el dispositivo puede consultar (una por cada temporada de sus equipos), la más reciente primero. */
 export async function deviceClubGroups(db: Db, auth: AuthContext, clubId: Id): Promise<{ groups: DeviceClubGroup[] }> {
   if (!auth.grants.some((gr) => gr.clubId === clubId)) throw notFound();
-  const club = await db
-    .prepare("SELECT rankings_visibility AS visibility FROM clubs WHERE id = ? AND deleted_at IS NULL AND status = 'active'")
-    .bind(clubId)
-    .first<{ visibility: GroupState['visibility'] }>();
+  const club = await db.prepare("SELECT id FROM clubs WHERE id = ? AND deleted_at IS NULL AND status = 'active'").bind(clubId).first<{ id: string }>();
   if (!club) throw notFound();
-  const reachable = [...new Set(reachableTeams(auth, clubId, club.visibility))];
+  const reachable = [...new Set(reachableTeams(auth, clubId))];
   if (reachable.length === 0) return { groups: [] };
   const rows = (
     await db
       .prepare(
-        `SELECT season, ranking_group AS "group", id FROM teams
-          WHERE club_id = ? AND club_rankings = 1 AND ranking_group IS NOT NULL AND deleted_at IS NULL
-            AND id IN (${reachable.map(() => '?').join(', ')})
-          ORDER BY season DESC, ranking_group, id`,
+        `SELECT season, id FROM teams
+          WHERE club_id = ? AND deleted_at IS NULL AND id IN (${reachable.map(() => '?').join(', ')})
+          ORDER BY season DESC, id`,
       )
       .bind(clubId, ...reachable)
-      .all<GroupKey & { id: Id }>()
+      .all<{ season: string; id: Id }>()
   ).results;
-  // Un grupo por temporada y nombre; cada uno con sus equipos (solo los del dispositivo).
   const groups = new Map<string, DeviceClubGroup>();
-  for (const { id, ...g } of rows) {
-    const key = `${g.season}|${groupKey(g)}`;
-    const found = groups.get(key);
+  for (const { season, id } of rows) {
+    const found = groups.get(season);
     if (found) found.teamIds.push(id);
-    else groups.set(key, { ...g, teamIds: [id] });
+    else groups.set(season, { season, group: CLUB_GROUP, teamIds: [id] });
   }
   return { groups: [...groups.values()] };
 }
 
 // --- Administración --------------------------------------------------------------------
 
-/** Clasificación completa (todos los puestos), para revisar antes de abrirla. Solo administración. */
+/** Clasificación completa (todos los puestos), para revisarla. Solo administración. */
 export async function adminClubRankings(db: Db, auth: AuthContext, clubId: Id, g: GroupKey, now = new Date()): Promise<ClubRankingsResponse> {
   await authorizeClub(db, auth, clubId, 'club.rankings.manage');
   const state = await groupState(db, clubId, g);

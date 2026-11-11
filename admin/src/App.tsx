@@ -3,7 +3,7 @@
 // club. Separado de la PWA de entrenadores y familias. Las escrituras de clubes,
 // equipos y códigos son operaciones críticas: si no están habilitadas en el
 // entorno, sus formularios aparecen desactivados. Jugadores y rankings del club
-// son administración normal (salvo ampliar quién ve los rankings).
+// son administración normal (los rankings del club funcionan solos).
 import { ChevronRight, Copy, Eye, EyeOff, KeyRound, Plus, RefreshCw, Trash2, Trophy, Users } from 'lucide-react';
 import { useState, useSyncExternalStore, type FormEvent } from 'react';
 import { api } from './api';
@@ -179,7 +179,7 @@ function ClubScreen({ me, clubId }: { me: Me; clubId: string }) {
                 <Trophy size={20} aria-hidden="true" />
                 <span className="list-main">
                   <strong>Rankings del club</strong>
-                  <span className="muted">Equipos que participan, grupos y quién los ve</span>
+                  <span className="muted">Quién los ve y revisión de las clasificaciones</span>
                 </span>
                 <ChevronRight className="chevron" size={20} aria-hidden="true" />
               </button>

@@ -5,8 +5,6 @@ import { formatPct } from '../../src/domain/format';
 import { rankingById, type RankingId } from '../../src/stats/rankings';
 import type { Gender } from './format';
 
-export type RankingsVisibility = 'admins' | 'coaches' | 'members';
-
 export interface CardView {
   playerId: string;
   teamId: string;
@@ -28,26 +26,19 @@ export interface PersonView {
   cards: CardView[];
 }
 
+/** Equipo del club: todos forman el ranking del club de su temporada. */
 export interface RankingsTeam {
   teamId: string;
   code: string;
   name: string;
   season: string;
   gender: Gender | null;
-  participates: boolean;
-  group: string | null;
 }
 
 export interface ClubPeople {
   people: PersonView[];
   unlinked: CardView[];
-  rankings: { visibility: RankingsVisibility; teams: RankingsTeam[] };
-}
-
-/** Grupo de clasificación: temporada y nombre (ni el género ni la categoría separan). */
-export interface GroupKey {
-  season: string;
-  group: string;
+  rankings: { teams: RankingsTeam[] };
 }
 
 export interface ClubRankingEntry {
@@ -67,12 +58,6 @@ export interface ClubRankingsView {
   teams: { code: string; name: string }[];
   rankings: { id: RankingId; ranked: number; hiddenTies: number; entries: ClubRankingEntry[] }[];
 }
-
-export const VISIBILITY_LABEL: Record<RankingsVisibility, string> = {
-  admins: 'Solo administradores del club',
-  coaches: 'Entrenadores de los equipos participantes',
-  members: 'Entrenadores y consulta (jugadores y familias)',
-};
 
 /** Texto sin mayúsculas ni tildes, para buscar «José» con «jose». */
 export const fold = (s: string) =>
@@ -115,24 +100,12 @@ export function linkProblem(card: CardView, target: { cards: readonly CardView[]
   return null;
 }
 
-/** Grupos que se pueden consultar: equipos participantes con grupo (sea cual sea su modalidad). */
-export function rankingGroups(teams: readonly RankingsTeam[]): GroupKey[] {
-  const seen = new Map<string, GroupKey>();
-  for (const t of teams) {
-    if (!t.participates || !t.group) continue;
-    const key = `${t.season}|${t.group}`;
-    if (!seen.has(key)) seen.set(key, { season: t.season, group: t.group });
-  }
-  return [...seen.values()].sort((a, b) => b.season.localeCompare(a.season) || a.group.localeCompare(b.group, 'es'));
+/** Temporadas con equipos (cada una tiene su ranking del club), la más reciente primero. */
+export function rankingSeasons(teams: readonly RankingsTeam[]): string[] {
+  return [...new Set(teams.map((t) => t.season))].sort((a, b) => b.localeCompare(a));
 }
 
-export const groupQuery = (g: GroupKey) => `season=${encodeURIComponent(g.season)}&group=${encodeURIComponent(g.group)}`;
-
-/** Por qué un equipo todavía no clasifica con otros, o null si está listo. */
-export function teamRankingProblem(t: RankingsTeam): string | null {
-  if (t.participates && !t.group) return 'Participa, pero sin grupo: no aparece en ninguna clasificación.';
-  return null;
-}
+export const seasonQuery = (season: string) => `season=${encodeURIComponent(season)}`;
 
 /** Título y cifra de una clasificación, como en los rankings de equipo. */
 export const rankingTitle = (id: RankingId) => rankingById(id).title;

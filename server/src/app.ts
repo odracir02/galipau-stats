@@ -16,8 +16,8 @@
 //   POST /api/sync/matches                   escritura: entrenador (partido y convocatoria)
 //   POST /api/sync/events                    escritura: entrenador
 //   POST /api/sync/control                   tomar el control de un partido en curso (entrenador)
-//   GET  /api/clubs/:clubId/rankings         grupos de rankings del club que puede consultar
-//   GET  /api/clubs/:clubId/rankings?season&gender&group[&players=a,b]   Top 10 del grupo y puestos propios
+//   GET  /api/clubs/:clubId/rankings         temporadas del club que puede consultar («Todo el club»)
+//   GET  /api/clubs/:clubId/rankings?season[&players=a,b]   Top 10 del club en la temporada y puestos propios
 // Las rutas de datos del equipo (changes, snapshot y /api/sync/*) responden 503
 // update_required a una PWA que no declara `X-GalipauStats-Features: officials`
 // si el equipo tiene cuerpo técnico (compat.ts). La sesión, el canje, salir del
@@ -29,7 +29,7 @@
 //   GET    /api/admin/clubs                                 clubes visibles
 //   GET    /api/admin/clubs/:clubId                         ficha del club y sus equipos
 //   GET    /api/admin/teams/:teamId/codes                   los dos códigos del equipo
-//   GET    /api/admin/clubs/:clubId/rankings?season&gender&group   clasificación completa del grupo
+//   GET    /api/admin/clubs/:clubId/rankings?season         clasificación completa del club en la temporada
 //   GET    /api/admin/clubs/:clubId/people                  personas, fichas y ajustes de rankings
 //   POST   /api/admin/clubs/:clubId/people                  crear persona
 //   POST   /api/admin/clubs/:clubId/people/pair             crear persona con dos fichas (todo o nada)
@@ -37,9 +37,8 @@
 //   POST   /api/admin/people/:personId/delete               borrar persona (desvincula sus fichas)
 //   PUT    /api/admin/players/:playerId/person              vincular o desvincular (persona esperada)
 //   PUT    /api/admin/players/:playerId/ranking             exclusión de la ficha
-//   PATCH  /api/admin/teams/:teamId/rankings                participación y grupo del equipo
-//   PUT    /api/admin/clubs/:clubId/rankings                reducir la visibilidad de los rankings del club
-//     (gestión de personas y rankings: auditada, sin ventana crítica)
+//     (gestión de personas y exclusiones: auditada, sin ventana crítica; los
+//     rankings del club no se configuran: funcionan solos para todo el club)
 // Escrituras: todas críticas (ADMIN_CRITICAL_OPS + aplicación crítica de Access):
 //   GET    /api/admin/critical/reauth?return=/admin/…       volver al panel tras verificar
 //   POST   /api/admin/critical/clubs                        crear club (superadmin)
@@ -49,7 +48,6 @@
 //   POST   /api/admin/critical/clubs/:clubId/admins         nombrar administrador (superadmin)
 //   DELETE /api/admin/critical/clubs/:clubId/admins/:id     retirar administrador (superadmin)
 //   POST   /api/admin/critical/clubs/:clubId/teams          crear equipo con sus dos códigos
-//   PUT    /api/admin/critical/clubs/:clubId/rankings       ampliar la visibilidad de los rankings del club
 //   PATCH  /api/admin/critical/teams/:teamId                editar equipo
 //   POST   /api/admin/critical/teams/:teamId/codes/:role/regenerate   regenerar un código
 //   POST   /api/admin/critical/teams/:teamId/codes/:role/revoke       revocar un código
@@ -239,8 +237,8 @@ async function route(request: Request, env: Env): Promise<Response> {
     throw notFound();
   }
 
-  // Rankings del club: sin grupo, los grupos que puede consultar; con grupo, su
-  // Top 10 y el puesto de las fichas propias pedidas (?players=a,b).
+  // Rankings del club: sin temporada, las temporadas que puede consultar; con
+  // temporada, su Top 10 y el puesto de las fichas propias pedidas (?players=a,b).
   if (request.method === 'GET' && parts[1] === 'clubs' && parts[2] && parts[3] === 'rankings' && parts.length === 4) {
     if (!url.searchParams.has('season')) return json(await deviceClubGroups(env.DB, auth, parts[2]));
     const players = (url.searchParams.get('players') ?? '').split(',').filter(Boolean);
@@ -411,10 +409,6 @@ async function adminRoute(request: Request, env: Env, path: string[]): Promise<R
       await revokeClubAdmin(env.DB, auth, { clubId, identityId });
       return json({ ok: true });
     }
-    if (m === 'PUT' && clubId && sub === 'rankings' && path.length === 4) {
-      await persons.setRankingsVisibility(env.DB, auth, clubId, (await readJson<Record<string, unknown>>(request)) ?? {}, { expand: true });
-      return json({ ok: true });
-    }
     if (m === 'POST' && clubId && sub === 'teams' && path.length === 4) {
       const body = (await readJson<Record<string, unknown>>(request)) ?? {};
       const created = await createTeam(
@@ -446,7 +440,7 @@ async function adminRoute(request: Request, env: Env, path: string[]): Promise<R
 }
 
 /**
- * Personas del club y ajustes de los rankings: operaciones normales de
+ * Personas del club, exclusiones y revisión de los rankings: operaciones normales de
  * administración (no críticas), con permiso por club y auditoría. null si la
  * ruta no es de este grupo.
  */
@@ -464,10 +458,6 @@ async function peopleRoute(request: Request, db: Db, auth: AuthContext, path: st
   if (section === 'clubs' && id && sub === 'rankings' && path.length === 3 && m === 'GET') {
     return json(await adminClubRankings(db, auth, id, groupFromQuery(new URL(request.url).searchParams)));
   }
-  if (section === 'clubs' && id && sub === 'rankings' && path.length === 3 && m === 'PUT') {
-    await persons.setRankingsVisibility(db, auth, id, await body());
-    return json({ ok: true });
-  }
   if (section === 'people' && id && path.length === 2 && m === 'PATCH') return json(await persons.updatePerson(db, auth, id, await body()));
   if (section === 'people' && id && sub === 'delete' && path.length === 3 && m === 'POST') return json(await persons.deletePerson(db, auth, id, await body()));
   if (section === 'players' && id && sub === 'person' && path.length === 3 && m === 'PUT') {
@@ -478,10 +468,6 @@ async function peopleRoute(request: Request, db: Db, auth: AuthContext, path: st
   }
   if (section === 'players' && id && sub === 'ranking' && path.length === 3 && m === 'PUT') {
     await persons.setPlayerRankingExcluded(db, auth, id, await body());
-    return json({ ok: true });
-  }
-  if (section === 'teams' && id && sub === 'rankings' && path.length === 3 && m === 'PATCH') {
-    await persons.updateTeamRankings(db, auth, id, await body());
     return json({ ok: true });
   }
   return null;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardTeamLine, fold, groupQuery, linkProblem, rankingGroups, rankingValue, searchCards, searchPeople, teamRankingProblem, type CardView, type PersonView, type RankingsTeam } from './people';
+import { cardTeamLine, fold, linkProblem, rankingSeasons, rankingValue, searchCards, searchPeople, seasonQuery, type CardView, type PersonView, type RankingsTeam } from './people';
 
 const card = (playerId: string, teamId: string, name: string, number: number, extra: Partial<CardView> = {}): CardView => ({
   playerId,
@@ -20,8 +20,6 @@ const team = (teamId: string, extra: Partial<RankingsTeam> = {}): RankingsTeam =
   name: teamId,
   season: '2026/27',
   gender: 'male',
-  participates: true,
-  group: 'senior',
   ...extra,
 });
 
@@ -62,36 +60,11 @@ describe('reglas antes de unir (las del servidor)', () => {
 });
 
 describe('rankings del club', () => {
-  it('grupos: equipos que participan con grupo, de cualquier modalidad, sin repetir, los más recientes primero', () => {
-    const teams = [
-      team('sma'),
-      team('smb'),
-      team('sfa', { gender: 'female' }),
-      team('old', { season: '2025/26' }),
-      team('np', { participates: false }),
-      team('sin-grupo', { group: null }),
-      team('sin-modalidad', { gender: null }),
-    ];
-    // Masculinos, femenino y sin modalidad del mismo grupo y temporada: un solo grupo.
-    expect(rankingGroups(teams)).toEqual([
-      { season: '2026/27', group: 'senior' },
-      { season: '2025/26', group: 'senior' },
-    ]);
-    expect(rankingGroups([...teams, team('club', { group: 'Todo el club' })])).toEqual([
-      { season: '2026/27', group: 'senior' },
-      { season: '2026/27', group: 'Todo el club' },
-      { season: '2025/26', group: 'senior' },
-    ]);
-    expect(rankingGroups([])).toEqual([]);
-    expect(groupQuery({ season: '2026/27', group: 'Todo el club' })).toBe('season=2026%2F27&group=Todo%20el%20club');
-  });
-
-  it('avisa de los equipos que no pueden clasificar', () => {
-    // La modalidad ya no impide participar.
-    expect(teamRankingProblem(team('x', { gender: null }))).toBeNull();
-    expect(teamRankingProblem(team('x', { group: null }))).toMatch(/sin grupo/);
-    expect(teamRankingProblem(team('x', { participates: false, group: null }))).toBeNull();
-    expect(teamRankingProblem(team('x'))).toBeNull();
+  it('una clasificación por temporada con todos sus equipos, de cualquier modalidad; la más reciente primero', () => {
+    const teams = [team('old', { season: '2025/26' }), team('sma'), team('sfa', { gender: 'female' }), team('sin-modalidad', { gender: null })];
+    expect(rankingSeasons(teams)).toEqual(['2026/27', '2025/26']);
+    expect(rankingSeasons([])).toEqual([]);
+    expect(seasonQuery('2026/27')).toBe('season=2026%2F27');
   });
 
   it('muestra las cifras tal como llegan del servidor (sin calcular nada)', () => {

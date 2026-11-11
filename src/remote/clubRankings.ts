@@ -1,5 +1,6 @@
-// Rankings del club en la aplicación: solo lectura y solo con conexión. El
-// servidor decide qué grupos puede ver el dispositivo y calcula las
+// Rankings del club («Todo el club») en la aplicación: solo lectura y solo con
+// conexión. El servidor decide qué temporadas del club puede ver el dispositivo
+// (una por cada temporada de sus equipos) y calcula las
 // clasificaciones (aquí no se calcula nada). Nada se guarda en el dispositivo:
 // ni en localStorage, ni en IndexedDB, ni en la caché del service worker.
 import { RemoteError, type Api, type ClubRankingGroup, type ClubRankings } from './api';

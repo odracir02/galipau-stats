@@ -28,8 +28,9 @@ export interface ClubRankingPlayer {
 type Scope = 'team' | 'club';
 
 /**
- * «Temporada» con el selector «Mi equipo / Todo el club». Solo aparece si el servidor
- * ofrece grupos del club a este dispositivo; si no, `team` tal cual.
+ * «Temporada» con el selector «Mi equipo / Todo el club», siempre abierta en «Mi
+ * equipo». El selector solo aparece si el servidor ofrece el club a este
+ * dispositivo (con conexión); si no, `team` tal cual.
  */
 export function SeasonWithClubRankings({
   clubId,
@@ -307,7 +308,7 @@ function ClubRankingTable({ def, data }: { def: RankingDefinition; data: ClubRan
   const noMatches = useMemo(() => data.rankings.every((r) => r.ranked === 0), [data]);
   if (!ranking || ranking.entries.length === 0) {
     return noMatches ? (
-      <RankEmpty title="Todavía no hay partidos" text={`No hay partidos de los equipos del grupo en la temporada ${data.season}.`} />
+      <RankEmpty title="Todavía no hay partidos" text={`No hay partidos de los equipos del club en la temporada ${data.season}.`} />
     ) : (
       <RankEmpty
         title="Sin clasificación todavía"
@@ -373,8 +374,12 @@ function ClubRankingTable({ def, data }: { def: RankingDefinition; data: ClubRan
         </p>
       )}
       <p className="hint">
-        {ranking.ranked} {ranking.ranked === 1 ? 'clasificado' : 'clasificados'} en el grupo. Una persona con fichas en varios
-        equipos del grupo suma una sola vez.
+        {ranking.ranked} {ranking.ranked === 1 ? 'clasificado' : 'clasificados'} en el club. Una persona con fichas en varios
+        equipos del club suma una sola vez.
+      </p>
+      <p className="hint">
+        Lo ven los entrenadores y las familias con código de cualquier equipo del club. Si alguien no debe aparecer, puede pedírselo
+        al club.
       </p>
     </>
   );

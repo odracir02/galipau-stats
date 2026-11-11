@@ -80,23 +80,17 @@
   box-shadow: 0 0 0 3px var(--c-accent-ring);
 }
 
-.person-card,
-.team-ranking {
+.person-card {
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
 }
 
-.person-head,
-.team-ranking-head {
+.person-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--s-2);
-}
-
-.team-ranking-head .list-main {
-  flex: 1;
 }
 
 .card-lines {
@@ -143,44 +137,6 @@
 
 .form-error .btn {
   margin-left: var(--s-2);
-}
-
-.status-on {
-  border-color: transparent;
-  background: var(--c-success-soft);
-  color: var(--c-success);
-}
-
-.visibility-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.visibility-list li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s-2) var(--s-3);
-  padding: var(--s-2) 0;
-}
-
-.visibility-list li + li {
-  border-top: 1px solid var(--c-border);
-}
-
-.visibility-list .list-main {
-  flex: 1 1 14rem;
-}
-
-.visibility-list .muted svg {
-  vertical-align: -2px;
-}
-
-.visibility-list .unavailable {
-  opacity: 0.7;
 }
 
 .club-ranking h4 {

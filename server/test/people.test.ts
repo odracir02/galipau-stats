@@ -1,5 +1,5 @@
-// Gestión administrativa de personas (identidad común) y ajustes de los rankings
-// del club, por HTTP y con tokens reales de Cloudflare Access de prueba. Datos sintéticos.
+// Gestión administrativa de personas (identidad común) y exclusiones de los
+// rankings del club, por HTTP y con tokens reales de Cloudflare Access de prueba. Datos sintéticos.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Player } from '../../src/domain/types';
 import { buildBootstrapSql } from '../scripts/bootstrap-superadmin.mjs';
@@ -65,7 +65,7 @@ const link = (playerId: string, personId: string | null, expectedPersonId: strin
   call(`/api/admin/players/${playerId}/person`, { method: 'PUT', body: { personId, expectedPersonId }, email });
 
 describe('personas del club', () => {
-  it('sin nada creado: ninguna persona, todas las fichas de jugadores sin vincular y los rankings desactivados', async () => {
+  it('sin nada creado: ninguna persona, todas las fichas de jugadores sin vincular y los equipos del club', async () => {
     db.run("UPDATE players SET role = 'official', number = 0, position = 'field' WHERE id = 'a1-p69'");
     const r = await call('/api/admin/clubs/A/people');
     expect(r.status).toBe(200);
@@ -74,10 +74,10 @@ describe('personas del club', () => {
     // 5 + 5 fichas del club A, sin el oficial ni las del club B.
     expect(list.unlinked.map((c: CardView) => c.playerId).sort()).toEqual(['a1-g1', 'a1-g12', 'a1-p14', 'a1-p7', 'a2-g1', 'a2-g12', 'a2-p14', 'a2-p69', 'a2-p7']);
     expect(list.unlinked[0]).toMatchObject({ teamCode: expect.any(String), number: expect.any(Number), season: '2026/27', rankingExcluded: false });
-    expect(list.rankings).toEqual({
-      visibility: 'admins',
-      teams: expect.arrayContaining([expect.objectContaining({ teamId: 'a1', participates: false, group: null }), expect.objectContaining({ teamId: 'a2', participates: false, group: null })]),
-    });
+    // Solo los equipos (todos forman el ranking del club de su temporada): sin visibilidad, participación ni grupos.
+    expect(list.rankings.teams.map((t) => t.teamId).sort()).toEqual(['a1', 'a2']);
+    expect(Object.keys(list.rankings)).toEqual(['teams']);
+    expect(Object.keys(list.rankings.teams[0]!).sort()).toEqual(['code', 'gender', 'name', 'season', 'teamId']);
     expect(JSON.stringify(r.body)).not.toMatch(/b1-/);
   });
 
@@ -194,107 +194,41 @@ describe('vincular fichas', () => {
   });
 });
 
-describe('ajustes de los rankings del club', () => {
-  it('participación y grupo solo cambian cuando se piden; exclusión de una ficha', async () => {
+describe('exclusiones de los rankings del club', () => {
+  it('excluir e incluir una ficha: auditado e invalida los rankings del club', async () => {
     const v0 = version();
-    expect(await call('/api/admin/teams/a1/rankings', { method: 'PATCH', body: { participates: true } })).toMatchObject({ status: 200 });
-    expect(get("SELECT club_rankings, ranking_group FROM teams WHERE id = 'a1'")).toEqual({ club_rankings: 1, ranking_group: null });
-    expect(await call('/api/admin/teams/a1/rankings', { method: 'PATCH', body: { group: '  senior ' } })).toMatchObject({ status: 200 });
-    expect(get("SELECT club_rankings, ranking_group FROM teams WHERE id = 'a1'")).toEqual({ club_rankings: 1, ranking_group: 'senior' });
-    // Repetir lo mismo no cambia nada ni deja auditoría.
-    const n = audit().length;
-    await call('/api/admin/teams/a1/rankings', { method: 'PATCH', body: { participates: true, group: 'senior' } });
-    expect(audit()).toHaveLength(n);
-    expect(await call('/api/admin/teams/a1/rankings', { method: 'PATCH', body: { group: null } })).toMatchObject({ status: 200 });
-    expect(get("SELECT ranking_group FROM teams WHERE id = 'a1'")).toEqual({ ranking_group: null });
     expect(await call('/api/admin/players/a1-p14/ranking', { method: 'PUT', body: { excluded: true } })).toMatchObject({ status: 200 });
     expect(player('a1-p14')).toMatchObject({ ranking_excluded: 1 });
     expect(version()).toBeGreaterThan(v0);
-    expect(audit().map((a) => a.action)).toEqual([
-      'team.rankings_join',
-      'team.rankings_group',
-      'team.rankings_group',
-      'player.ranking_exclude',
-    ]);
-    // El otro equipo y el otro club, sin tocar.
-    expect(get("SELECT club_rankings, ranking_group FROM teams WHERE id = 'a2'")).toEqual({ club_rankings: 0, ranking_group: null });
-    expect(get("SELECT rankings_visibility, rankings_version FROM clubs WHERE id = 'B'")).toEqual({ rankings_visibility: 'admins', rankings_version: 0 });
+    // Repetir lo mismo no cambia nada ni deja auditoría.
+    await call('/api/admin/players/a1-p14/ranking', { method: 'PUT', body: { excluded: true } });
+    expect(await call('/api/admin/players/a1-p14/ranking', { method: 'PUT', body: { excluded: false } })).toMatchObject({ status: 200 });
+    expect(audit().map((a) => a.action)).toEqual(['player.ranking_exclude', 'player.ranking_include']);
+    expect(get("SELECT rankings_version FROM clubs WHERE id = 'B'")).toEqual({ rankings_version: 0 });
   });
 
   it('valida las entradas', async () => {
-    for (const body of [{}, { participates: 'sí' }, { group: 'x'.repeat(31) }, { group: 7 }]) {
-      expect((await call('/api/admin/teams/a1/rankings', { method: 'PATCH', body })).status).toBe(400);
-    }
-    for (const visibility of ['todos', null, 1]) expect((await call('/api/admin/clubs/A/rankings', { method: 'PUT', body: { visibility } })).status).toBe(400);
     expect((await call('/api/admin/players/a1-p7/ranking', { method: 'PUT', body: { excluded: 'no' } })).status).toBe(400);
     db.run("UPDATE players SET role = 'official', number = 0, position = 'field' WHERE id = 'a1-p69'");
     expect((await call('/api/admin/players/a1-p69/ranking', { method: 'PUT', body: { excluded: true } })).status).toBe(409);
   });
 });
 
-describe('visibilidad de los rankings del club', () => {
-  const visibility = (club = 'A') => get<{ v: string }>('SELECT rankings_visibility AS v FROM clubs WHERE id = ?', club).v;
-  const put = (v: unknown, opts: { email?: string; critical?: boolean; route?: 'normal' | 'critical'; club?: string } = {}) =>
-    call(`/api/admin/${opts.route === 'critical' ? 'critical/' : ''}clubs/${opts.club ?? 'A'}/rankings`, { method: 'PUT', body: { visibility: v }, email: opts.email, critical: opts.critical });
-  const unchanged = (n: number, v = 'admins') => {
-    expect(visibility()).toBe(v);
-    expect(audit()).toHaveLength(n);
-  };
-
-  it('empieza en «admins»; mantenerla no cambia nada ni deja auditoría', async () => {
-    expect(visibility()).toBe('admins');
-    expect(await put('admins')).toMatchObject({ status: 200 });
-    unchanged(0);
-  });
-
-  it('ampliar a «coaches» por la administración normal: rechazado (también con token reforzado) y sin cambios', async () => {
-    expect(await put('coaches')).toMatchObject({ status: 401, body: { error: 'reauth_required' } });
-    expect(await put('coaches', { critical: true })).toMatchObject({ status: 401, body: { error: 'reauth_required' } });
-    expect(await put('coaches', { email: OWNER })).toMatchObject({ status: 401, body: { error: 'reauth_required' } });
-    unchanged(0);
-  });
-
-  it('ampliar a «coaches» por la ruta crítica exige el token de verificación reforzada', async () => {
-    expect(await put('coaches', { route: 'critical' })).toMatchObject({ status: 401, body: { error: 'reauth_required' } });
-    unchanged(0);
-    expect(await put('coaches', { route: 'critical', critical: true })).toMatchObject({ status: 200 });
-    expect(visibility()).toBe('coaches');
-    expect(audit().map((a) => `${a.action}:${a.target_id}`)).toEqual(['club.rankings_visibility.coaches:A']);
-    // Ni el administrador de otro club, con token reforzado.
-    expect(await put('coaches', { route: 'critical', critical: true, email: ADMIN_B })).toMatchObject({ status: 404 });
-    expect(visibility('B')).toBe('admins');
-  });
-
-  it('con las operaciones críticas deshabilitadas (como en Preview), no hay forma de ampliarla', async () => {
-    env = { ...env, ADMIN_CRITICAL_OPS: 'disabled' };
-    expect(await put('coaches', { route: 'critical', critical: true })).toMatchObject({ status: 503, body: { error: 'critical_disabled' } });
-    expect(await put('coaches', { critical: true })).toMatchObject({ status: 401, body: { error: 'reauth_required' } });
-    unchanged(0);
-    // Reducir sigue siendo posible.
-    db.run("UPDATE clubs SET rankings_visibility = 'coaches' WHERE id = 'A'");
-    expect(await put('admins')).toMatchObject({ status: 200 });
-    expect(visibility()).toBe('admins');
-  });
-
-  it('reducir es administración normal, auditada', async () => {
-    db.run("UPDATE clubs SET rankings_visibility = 'coaches' WHERE id = 'A'");
-    const n = audit().length;
-    expect(await put('admins')).toMatchObject({ status: 200 });
-    expect(visibility()).toBe('admins');
-    expect(audit().slice(n).map((a) => a.action)).toEqual(['club.rankings_visibility.admins']);
-  });
-
-  it('«members» está bloqueada para todos, por cualquier ruta, sin cambios ni auditoría', async () => {
-    for (const opts of [{}, { email: OWNER }, { route: 'critical' as const, critical: true }, { route: 'critical' as const, critical: true, email: OWNER }]) {
-      const r = await put('members', opts);
-      expect(r).toMatchObject({ status: 409, body: { error: 'members_unavailable' } });
-      expect(String(r.body.message)).toMatch(/jugadores y familias/);
+describe('rankings del club sin configuración', () => {
+  it('las rutas antiguas de participación, grupos y visibilidad ya no existen: 404 sin cambios ni auditoría', async () => {
+    const teams = () => all('SELECT id, club_rankings, ranking_group FROM teams ORDER BY id');
+    const clubs = () => all('SELECT id, rankings_visibility, rankings_version FROM clubs ORDER BY id');
+    const before = { teams: teams(), clubs: clubs() };
+    const attempts: [string, string, unknown, boolean][] = [
+      ['PATCH', '/api/admin/teams/a1/rankings', { participates: true, group: 'senior' }, false],
+      ['PUT', '/api/admin/clubs/A/rankings', { visibility: 'admins' }, false],
+      ['PUT', '/api/admin/critical/clubs/A/rankings', { visibility: 'members' }, true],
+    ];
+    for (const [method, path, body, critical] of attempts) {
+      for (const email of [ADMIN_A, OWNER]) expect((await call(path, { method, body, email, critical })).status, `${method} ${path}`).toBe(404);
     }
-    unchanged(0);
-    // Tampoco desde «coaches».
-    db.run("UPDATE clubs SET rankings_visibility = 'coaches' WHERE id = 'A'");
-    expect(await put('members', { route: 'critical', critical: true, email: OWNER })).toMatchObject({ status: 409 });
-    unchanged(0, 'coaches');
+    expect({ teams: teams(), clubs: clubs() }).toEqual(before);
+    expect(audit()).toEqual([]);
   });
 
   it('las operaciones críticas existentes no cambian: siguen exigiendo el token reforzado', async () => {
@@ -313,9 +247,8 @@ describe('autorización y aislamiento', () => {
     expect((await call(`/api/admin/people/${bea}/delete`, { method: 'POST', body: { expectedVersion: 1 } })).status).toBe(404);
     expect((await link('b1-p7', bea, null)).status).toBe(404);
     expect((await call('/api/admin/players/b1-p7/ranking', { method: 'PUT', body: { excluded: true } })).status).toBe(404);
-    expect((await call('/api/admin/teams/b1/rankings', { method: 'PATCH', body: { participates: true } })).status).toBe(404);
-    expect((await call('/api/admin/clubs/B/rankings', { method: 'PUT', body: { visibility: 'members' } })).status).toBe(404);
-    expect(get("SELECT rankings_visibility, rankings_version FROM clubs WHERE id = 'B'")).toEqual({ rankings_visibility: 'admins', rankings_version: 0 });
+    expect((await call('/api/admin/clubs/B/rankings?season=2026%2F27')).status).toBe(404);
+    expect(get("SELECT rankings_version FROM clubs WHERE id = 'B'")).toEqual({ rankings_version: 0 });
     expect(((await call('/api/admin/clubs/B/people', { email: OWNER })).body as unknown as ClubPeople).people).toHaveLength(1);
     expect((await link('b1-p7', bea, null, OWNER)).status).toBe(200);
   });

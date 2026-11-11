@@ -243,7 +243,7 @@ Las estadísticas se refieren a personas identificables, posiblemente menores. E
   - identidad administrativa: nombre, correo (necesario para vincularla con Access) y el identificador de su cuenta de Access;
   - ni fechas de nacimiento ni fotos;
   - las IP solo como hash.
-- **Acceso:** cada dato se ve con un permiso del equipo o del club. El superadministrador lo ve todo; sus operaciones quedan auditadas. Los rankings de club no mostrarán a quienes estén por debajo del décimo puesto, salvo la fila del jugador destacado del propio dispositivo.
+- **Acceso:** cada dato se ve con un permiso del equipo o del club. El superadministrador lo ve todo; sus operaciones quedan auditadas. Los rankings del club los ven los entrenadores y la consulta (familias) de cualquier equipo del club, con nombre visible y cifras de jugadores de todos sus equipos; no muestran a quienes estén por debajo del décimo puesto, salvo el puesto de las fichas del propio equipo que pida el dispositivo. El club puede excluir una ficha o una persona y darle un nombre visible adecuado.
 - **Revocación:** de códigos, permisos, roles y dispositivos, con efecto inmediato; las sesiones de Access, desde su panel.
 - **Supresión:** el borrado físico de un jugador, equipo o club elimina en cascada sus datos. El borrado lógico sirve para sincronizar; habrá que fijar un plazo de purga definitiva.
 - **Pendiente de decisión** antes de abrir el servicio a otros clubes:

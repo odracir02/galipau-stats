@@ -1,5 +1,5 @@
 // Identidad común de jugadores que juegan en varios equipos del club (personas)
-// y ajustes de los rankings del club. Solo administración: superadministrador o
+// y exclusiones de los rankings del club. Solo administración: superadministrador o
 // administrador de ESE club, sin ventana de operaciones críticas, con auditoría.
 //
 // Vincular es solo una referencia (players.person_id): las fichas, dorsales,
@@ -7,7 +7,8 @@
 // el registro de cambios, y nada de esto llega a los dispositivos. Nunca se
 // vincula por nombre: siempre lo decide un administrador. La base de datos
 // (0007) vuelve a imponer cada regla; aquí se comprueban antes para responder
-// con un error claro. Los ajustes de rankings solo cambian cuando se piden.
+// con un error claro. Los rankings del club no se configuran: reúnen solos a
+// todos los equipos del club en cada temporada (clubRankings.ts).
 import type { Id } from '../../src/domain/types';
 import { newId } from '../../src/domain/ids';
 import { authorizeClub } from './auth';
@@ -15,8 +16,6 @@ import type { Db, Statement } from './db';
 import { HttpError, notFound } from './errors';
 import type { AuthContext } from './model';
 
-export type RankingsVisibility = 'admins' | 'coaches' | 'members';
-const VISIBILITIES: readonly RankingsVisibility[] = ['admins', 'coaches', 'members'];
 
 /** Ficha deportiva tal como la ve la administración (solo datos del equipo). */
 export interface CardView {
@@ -44,7 +43,8 @@ export interface ClubPeople {
   people: PersonView[];
   /** Fichas de jugadores (sin cuerpo técnico) aún sin persona. */
   unlinked: CardView[];
-  rankings: { visibility: RankingsVisibility; teams: { teamId: Id; code: string; name: string; season: string; gender: string | null; participates: boolean; group: string | null }[] };
+  /** Equipos vivos del club (todos forman el ranking de su temporada). */
+  rankings: { teams: { teamId: Id; code: string; name: string; season: string; gender: string | null }[] };
 }
 
 const conflict = (message: string) => new HttpError(409, 'conflict', message);
@@ -79,10 +79,6 @@ function flag(value: unknown, field: string): boolean {
   if (typeof value !== 'boolean') throw invalid(`${field} no válido.`);
   return value;
 }
-
-/** Grupo de clasificación (1–30 caracteres) o null para quitarlo. */
-const group = (value: unknown): string | null =>
-  value === null || value === '' ? null : line(value, 30, 'Grupo de clasificación no válido.');
 
 /** Traduce un rechazo de la base de datos (0007) a un error claro, sin datos. */
 function linkError(e: unknown): never {
@@ -122,10 +118,10 @@ const card = (r: CardRow): CardView => ({
   rankingExcluded: r.ranking_excluded === 1,
 });
 
-/** Personas del club con sus fichas, fichas sin vincular y ajustes de rankings. */
+/** Personas del club con sus fichas, fichas sin vincular y los equipos del club. */
 export async function listClubPeople(db: Db, auth: AuthContext, clubId: Id): Promise<ClubPeople> {
   await authorizeClub(db, auth, clubId, 'club.people.manage');
-  const [peopleRes, cardsRes, clubRes, teamsRes] = await db.batch([
+  const [peopleRes, cardsRes, teamsRes] = await db.batch([
     db
       .prepare('SELECT id, display_name, ranking_excluded, version FROM people WHERE club_id = ? AND deleted_at IS NULL ORDER BY display_name, id')
       .bind(clubId),
@@ -139,10 +135,9 @@ export async function listClubPeople(db: Db, auth: AuthContext, clubId: Id): Pro
           ORDER BY t.season DESC, t.code, p.number, p.id`,
       )
       .bind(clubId),
-    db.prepare('SELECT rankings_visibility FROM clubs WHERE id = ?').bind(clubId),
     db
       .prepare(
-        `SELECT id, code, name, season, gender, club_rankings, ranking_group FROM teams
+        `SELECT id, code, name, season, gender FROM teams
           WHERE club_id = ? AND deleted_at IS NULL ORDER BY season DESC, code`,
       )
       .bind(clubId),
@@ -159,15 +154,12 @@ export async function listClubPeople(db: Db, auth: AuthContext, clubId: Id): Pro
     })),
     unlinked: cards.filter((c) => c.person_id === null).map(card),
     rankings: {
-      visibility: (rows<{ rankings_visibility: RankingsVisibility }>(clubRes)[0]?.rankings_visibility ?? 'admins'),
-      teams: rows<{ id: string; code: string; name: string; season: string; gender: string | null; club_rankings: number; ranking_group: string | null }>(teamsRes).map((t) => ({
+      teams: rows<{ id: string; code: string; name: string; season: string; gender: string | null }>(teamsRes).map((t) => ({
         teamId: t.id,
         code: t.code,
         name: t.name,
         season: t.season,
         gender: t.gender,
-        participates: t.club_rankings === 1,
-        group: t.ranking_group,
       })),
     },
   };
@@ -430,77 +422,4 @@ export async function setPlayerRankingExcluded(db: Db, auth: AuthContext, player
     auditRow(db, auth, excluded ? 'player.ranking_exclude' : 'player.ranking_include', 'player', playerId, at, guard),
     db.prepare('UPDATE players SET ranking_excluded = ? WHERE id = ? AND ranking_excluded = ?').bind(excluded ? 1 : 0, playerId, excluded ? 0 : 1),
   ]);
-}
-
-// --- Ajustes de rankings ------------------------------------------------------------
-
-/** Participación de un equipo y su grupo de clasificación (solo lo que se pide). */
-export async function updateTeamRankings(
-  db: Db,
-  auth: AuthContext,
-  teamId: Id,
-  args: { participates?: unknown; group?: unknown },
-  now = new Date(),
-): Promise<void> {
-  const team = await db
-    .prepare('SELECT club_id, club_rankings, ranking_group FROM teams WHERE id = ? AND deleted_at IS NULL')
-    .bind(teamId)
-    .first<{ club_id: string; club_rankings: number; ranking_group: string | null }>();
-  if (!team) throw notFound();
-  await authorizeClub(db, auth, team.club_id, 'club.rankings.manage');
-  const participates = args.participates === undefined ? null : flag(args.participates, 'Participación');
-  const nextGroup = args.group === undefined ? undefined : group(args.group);
-  if (participates === null && nextGroup === undefined) throw invalid('No hay nada que cambiar.');
-  const at = now.toISOString();
-  const statements: Statement[] = [];
-  if (participates !== null && participates !== (team.club_rankings === 1)) {
-    statements.push(
-      db.prepare('UPDATE teams SET club_rankings = ? WHERE id = ?').bind(participates ? 1 : 0, teamId),
-      auditRow(db, auth, participates ? 'team.rankings_join' : 'team.rankings_leave', 'team', teamId, at),
-    );
-  }
-  if (nextGroup !== undefined && nextGroup !== team.ranking_group) {
-    statements.push(db.prepare('UPDATE teams SET ranking_group = ? WHERE id = ?').bind(nextGroup, teamId), auditRow(db, auth, 'team.rankings_group', 'team', teamId, at));
-  }
-  if (statements.length) await db.batch(statements);
-}
-
-/** De menos a más: quién puede ver los rankings del club. */
-const REACH: Record<RankingsVisibility, number> = { admins: 0, coaches: 1, members: 2 };
-
-/**
- * Quién ve los rankings del club. Reducirla (o mantenerla) es administración
- * normal; ampliarla solo se hace por la ruta crítica (`expand`), con la
- * verificación reforzada de las operaciones críticas. «members» (jugadores y
- * familias) aún no se puede activar: faltan la privacidad y el consentimiento.
- */
-export async function setRankingsVisibility(
-  db: Db,
-  auth: AuthContext,
-  clubId: Id,
-  args: { visibility?: unknown },
-  { expand = false }: { expand?: boolean } = {},
-  now = new Date(),
-): Promise<void> {
-  if (!VISIBILITIES.includes(args.visibility as RankingsVisibility)) throw invalid('Visibilidad no válida.');
-  const next = args.visibility as RankingsVisibility;
-  await authorizeClub(db, auth, clubId, 'club.rankings.manage');
-  if (next === 'members') {
-    throw new HttpError(409, 'members_unavailable', 'Todavía no se pueden abrir los rankings del club a jugadores y familias.');
-  }
-  const current = (await db.prepare('SELECT rankings_visibility AS v FROM clubs WHERE id = ?').bind(clubId).first<{ v: RankingsVisibility }>())!.v;
-  if (next === current) return;
-  if (REACH[next] > REACH[current]) {
-    if (!expand) throw new HttpError(401, 'reauth_required', 'Ampliar quién ve los rankings del club requiere la verificación reforzada.');
-    // Exige el token de la aplicación de operaciones críticas (y que estén habilitadas).
-    await authorizeClub(db, auth, clubId, 'club.rankings.expand');
-  }
-  const at = now.toISOString();
-  // Solo si sigue como se leyó: una carrera nunca convierte una reducción en una ampliación.
-  const guard = { sql: 'EXISTS (SELECT 1 FROM clubs WHERE id = ? AND rankings_visibility = ?)', values: [clubId, current] };
-  const results = await db.batch([
-    auditRow(db, auth, `club.rankings_visibility.${next}`, 'club', clubId, at, guard),
-    db.prepare('UPDATE clubs SET rankings_visibility = ? WHERE id = ? AND rankings_visibility = ?').bind(next, clubId, current),
-  ]);
-  if (results.at(-1)!.meta.changes !== 1) throw conflict('La visibilidad ha cambiado mientras tanto; vuelve a cargarla.');
 }

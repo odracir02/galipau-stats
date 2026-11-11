@@ -88,12 +88,15 @@ Correspondencia con IndexedDB:
 - Los campos que solo existen en el servidor (club, categoría, modalidad, persona, versión, dispositivo que registra) se guardan aparte. **No cambian los datos locales.**
 - La conversión está en [`mapping.ts`](../server/src/mapping.ts). Las pruebas comprueban que un partido completo da exactamente las mismas estadísticas antes y después de pasar por la base de datos (tercera exclusión, % de paradas, pendientes, borrados).
 
-### Rankings de club (preparado, no implementado)
+### Rankings del club («Todo el club»)
 
-- Candidatos = jugadores de los equipos del club a los que el dispositivo tiene acceso, con filtros opcionales por equipo y categoría.
-- Clave de agregación: `person_id` si el jugador está vinculado a una persona y `player_id` si no. Una persona que juega en dos equipos suma una sola vez. Cada acción pertenece a un único partido y equipo, así que no se cuenta dos veces.
-- El cálculo reutiliza `src/stats/rankings.ts`. `rankPlayers` produce la clasificación completa, `topOf` el Top 10 y `positionOf` el puesto del jugador seleccionado. La respuesta del servidor solo incluirá el Top 10 y, si procede, la fila de ese jugador; nunca el resto de puestos por debajo del décimo.
-- Hasta que existan personas vinculadas, el ranking de club agrupa por jugador de plantilla.
+- **Automáticos:** cada temporada, un único ranking con todos los equipos vivos del club, sean del género o la categoría que sean. No se activan equipos, no se asignan grupos ni se abre la visibilidad. Un equipo o club nuevo entra solo.
+- **Quién los ve:** los dispositivos con un permiso vigente (entrenador o consulta) en un equipo del club en esa temporada. Se comprueba en cada petición: un permiso revocado pierde el acceso en la siguiente. Sin permiso en el club, 404; con permiso en el club pero no en esa temporada, 403. Respuestas con `Cache-Control: no-store`.
+- **Qué muestran:** las cinco clasificaciones positivas (máximo goleador, francotirador, muro, ladrón y lanzamientos); solo el Top 10, con nombre visible, códigos de equipo, partidos y la cifra. El puesto propio solo de fichas de los equipos del dispositivo (como mucho 5). Nunca identificadores, partidos, convocatorias ni acciones.
+- **Clave de agregación:** `person_id` si la ficha está vinculada a una persona (siempre de forma expresa, nunca por nombre) y la ficha si no. Una persona que juega en dos equipos suma una sola vez. No participan el cuerpo técnico, las fichas o personas excluidas ni las fichas borradas.
+- **Cálculo:** reutiliza `computeSeasonStats` y `rankPlayers`. Se guarda en `club_rankings_cache` (clave `club` por club y temporada) con una huella de lo que lo determina: reglas (`club-v4`), versión de rankings del club (vínculos, exclusiones y cambios de equipos), y el último cambio y las fichas borradas de cada equipo.
+- **Configuración antigua:** `teams.club_rankings`, `teams.ranking_group` y `clubs.rankings_visibility` se conservan en D1 pero ya no se leen. No hace falta ninguna migración.
+- **Administración:** la clasificación completa de cada temporada (`GET /api/admin/clubs/:id/rankings?season=`), las uniones de fichas y las exclusiones. Ya no existen las rutas de participación, grupos ni visibilidad.
 
 ## API (fase actual)
 
