@@ -50,6 +50,9 @@ export default defineConfig(({ mode }) => {
         workbox: {
           // El manifiesto lo añade el propio plugin; no se repite aquí.
           globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+          // Los iconos de 512 px solo se usan al instalar (siguen en el manifiesto):
+          // no hace falta guardarlos para el uso sin conexión.
+          globIgnores: ['**/pwa-512*.png'],
           navigateFallback: 'index.html',
         },
       }),
