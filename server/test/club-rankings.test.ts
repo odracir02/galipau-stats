@@ -6,7 +6,10 @@ import type { EventPayload, Match, Player, Position, SquadEntry } from '../../sr
 import { ev, makeMatch } from '../../src/test/fixtures';
 import { buildBootstrapSql } from '../scripts/bootstrap-superadmin.mjs';
 import { clearJwksCache } from '../src/access';
-import { CLUB_RANKINGS, deviceClubRankings, type ClubRankingsResponse } from '../src/clubRankings';
+import { countsForSeason } from '../../src/services/statsService';
+import { computeSeasonStats } from '../../src/stats/engine';
+import { RANKING_LIMIT, RANKING_THRESHOLDS } from '../../src/stats/rankings';
+import { CLUB_RANKINGS, CLUB_RULES_VERSION, deviceClubRankings, type ClubRankingsResponse } from '../src/clubRankings';
 import worker, { type Env } from '../src/index';
 import type { AuthContext } from '../src/model';
 import { applyEventOp } from '../src/sync';
@@ -243,6 +246,92 @@ describe('cálculo', () => {
   });
 });
 
+describe('fichas borradas', () => {
+  // Hoy ninguna ruta de la aplicación borra fichas (la sincronización las desactiva);
+  // se marcan aquí directamente, como haría una corrección de datos.
+  const remove = (...ids: string[]) => db.run(`UPDATE players SET deleted_at = ? WHERE id IN (${ids.map(() => '?').join(', ')})`, NOW, ...ids);
+  const admin = async () => (await call(`/api/admin/clubs/A/rankings${q()}`, { email: OWNER })).body;
+  const keys = (r: ClubRankingsResponse) => r.rankings.flatMap((x) => x.entries.map((e) => `${x.id}:${e.name}`));
+
+  it('ficha borrada con estadísticas: fuera de todas las clasificaciones, sin nombre, y los demás suben', async () => {
+    remove('a7');
+    const r = await deviceClubRankings(db, coachAuth, 'A', SENIOR, ['a7', 'a11']);
+    expect(names(r, 'top_scorer')).toEqual(['1:Ana García', '2:Nueve B', '3:Ana G.', '3:Juan Pérez', '3:Juan Pérez']);
+    expect(JSON.stringify(r)).not.toContain('Siete A');
+    // Su puesto propio tampoco se puede pedir; el de las demás fichas, sí.
+    expect(r.mine.map((m) => m.playerId)).toEqual(['a11']);
+    // La administración (clasificación completa) tampoco la ve.
+    const full = await admin();
+    expect(JSON.stringify(full)).not.toContain('Siete A');
+    expect(ranking(full, 'top_scorer').ranked).toBe(5);
+  });
+
+  it('ficha borrada sin estadísticas: el resultado no cambia', async () => {
+    await roster('sma', { a20: ['Sin Datos', 20] });
+    const strip = (r: ClubRankingsResponse) => ({ ...r, computedAt: '' });
+    const before = strip(await admin());
+    remove('a20');
+    expect(strip(await admin())).toEqual(before);
+    expect(JSON.stringify(before)).not.toContain('Sin Datos');
+  });
+
+  it('persona con una ficha borrada: conserva solo la ficha viva, con su equipo, partidos y mínimos', async () => {
+    person('ana', 'Ana García López');
+    link('a10', 'ana');
+    link('b10', 'ana');
+    const both = await admin();
+    // Juntas: 3 + 1 goles; 4 de 12 lanzamientos (llega al mínimo de 10).
+    expect(ranking(both, 'top_scorer').entries[0]).toMatchObject({ name: 'Ana García López', value: 4, matches: 2, teams: ['SMA2627', 'SMB2627'] });
+    expect(ranking(both, 'sharpshooter').entries.find((e) => e.name === 'Ana García López')).toMatchObject({ made: 4, of: 12 });
+    remove('b10');
+    const r = await admin();
+    const ana = ranking(r, 'top_scorer').entries.filter((e) => e.name === 'Ana García López');
+    expect(ana).toEqual([expect.objectContaining({ value: 3, matches: 1, teams: ['SMA2627'] })]);
+    // Sola: 3 de 6 lanzamientos, por debajo del mínimo sobre su total.
+    expect(ranking(r, 'sharpshooter').entries.some((e) => e.name === 'Ana García López')).toBe(false);
+    // Ni duplicada ni la ficha borrada suelta.
+    expect(keys(r).filter((k) => k === 'top_scorer:Ana García López')).toHaveLength(1);
+    expect(JSON.stringify(r)).not.toContain('Ana G.');
+  });
+
+  it('persona con todas sus fichas borradas: desaparece', async () => {
+    person('ana', 'Ana García López');
+    link('a10', 'ana');
+    link('b10', 'ana');
+    remove('a10', 'b10');
+    const r = await admin();
+    for (const n of ['Ana García López', 'Ana García', 'Ana G.']) expect(JSON.stringify(r)).not.toContain(n);
+    expect(names(r, 'top_scorer')).toEqual(['1:Siete A', '2:Nueve B', '3:Juan Pérez', '3:Juan Pérez']);
+  });
+
+  it('exclusiones: siguen igual con fichas borradas al lado', async () => {
+    person('ana', 'Ana');
+    link('a10', 'ana');
+    link('b10', 'ana');
+    db.run("UPDATE people SET ranking_excluded = 1 WHERE id = 'ana'");
+    db.run("UPDATE players SET ranking_excluded = 1 WHERE id = 'b9'");
+    remove('b10', 'a11');
+    const r = await deviceClubRankings(db, coachAuth, 'A', SENIOR, ['a10', 'a11', 'a7']);
+    expect(names(r, 'top_scorer')).toEqual(['1:Siete A', '2:Juan Pérez']);
+    // Persona excluida: se indica como siempre; ficha borrada: no se devuelve.
+    expect(r.mine).toEqual(expect.arrayContaining([{ playerId: 'a10', excluded: true, rankings: [] }, expect.objectContaining({ playerId: 'a7', rankings: expect.any(Array) })]));
+    expect(r.mine.map((m) => m.playerId).sort()).toEqual(['a10', 'a7']);
+  });
+
+  it('el equipo no cambia: su descarga y su «Temporada» siguen contando a la ficha borrada', async () => {
+    const stats = async () => {
+      const snap = await teamSnapshot(db, coachAuth, 'sma');
+      const byMatch = snap.matches.map(({ match }) => ({ match, events: snap.events.map((e) => e.event).filter((e) => e.matchId === match.id) }));
+      return { snap, season: computeSeasonStats(byMatch.filter((m) => countsForSeason(m.match, m.events))) };
+    };
+    const before = await stats();
+    remove('a7');
+    const after = await stats();
+    expect(after.snap).toEqual(before.snap);
+    expect(after.season.players.get('a7')!.counters.shots.goals).toBe(3);
+  });
+});
+
 describe('permisos', () => {
   it('entrenador de un equipo del grupo: Top 10 y su puesto; de las fichas ajenas pedidas, nada', async () => {
     const r = await call(`/api/clubs/A/rankings${q(SENIOR, '&players=a11,b11,b9')}`, { token: coachToken });
@@ -450,6 +539,52 @@ describe('caché', () => {
     expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM club_rankings_cache').get()).toEqual({ n: 2 });
     db.run("UPDATE clubs SET rankings_visibility = 'admins' WHERE id = 'A'");
     expect((await call(`/api/clubs/A/rankings${q()}`, { token: coachToken })).status).toBe(403);
+  });
+
+  it('borrar o recuperar una ficha invalida la copia, aunque no pase por el registro de cambios', async () => {
+    await deviceClubRankings(db, coachAuth, 'A', SENIOR, [], at(0));
+    const seq = () => db.sqlite.prepare('SELECT MAX(seq) AS s FROM change_log').get();
+    const log = seq();
+    const before = cacheRow()!.fingerprint;
+    db.run("UPDATE players SET deleted_at = ? WHERE id = 'a7'", NOW);
+    expect(seq()).toEqual(log);
+    const r = await deviceClubRankings(db, coachAuth, 'A', SENIOR, [], at(1));
+    expect(r.computedAt).toBe(at(1).toISOString());
+    expect(JSON.stringify(r)).not.toContain('Siete A');
+    expect(cacheRow()!.fingerprint).not.toBe(before);
+    db.run("UPDATE players SET deleted_at = NULL WHERE id = 'a7'");
+    const back = await deviceClubRankings(db, coachAuth, 'A', SENIOR, [], at(2));
+    expect(back.computedAt).toBe(at(2).toISOString());
+    expect(names(back, 'top_scorer')[0]).toBe('1:Siete A');
+    // Calcular no escribe nada fuera de la copia.
+    expect(seq()).toEqual(log);
+  });
+
+  it('una copia de club-v2 (con fichas borradas dentro) nunca se reutiliza', async () => {
+    const sha = async (v: unknown) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(v))))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    const teams = () =>
+      db.sqlite
+        .prepare(
+          `SELECT t.id, COALESCE((SELECT MAX(c.seq) FROM change_log c WHERE c.team_id = t.id), 0) AS seq,
+                  (SELECT COUNT(*) FROM players p WHERE p.team_id = t.id AND p.deleted_at IS NOT NULL) AS deleted
+             FROM teams t WHERE t.club_id = 'A' AND t.season = '2026/27' AND t.ranking_group = 'senior' AND t.club_rankings = 1 AND t.deleted_at IS NULL ORDER BY t.id`,
+        )
+        .all() as { id: string; seq: number; deleted: number }[];
+    const version = () => (db.sqlite.prepare("SELECT rankings_version AS v FROM clubs WHERE id = 'A'").get() as { v: number }).v;
+    const print = (rules: string, withDeleted: boolean) =>
+      sha([rules, CLUB_RANKINGS, RANKING_THRESHOLDS, RANKING_LIMIT, SENIOR, version(), teams().map((t) => (withDeleted ? [t.id, t.seq, t.deleted] : [t.id, t.seq]))]);
+    db.run("UPDATE players SET deleted_at = ? WHERE id = 'a7'", NOW);
+    await deviceClubRankings(db, coachAuth, 'A', SENIOR, [], at(0));
+    // La huella de la prueba es la del servidor (club-v3).
+    expect(CLUB_RULES_VERSION).toBe('club-v3');
+    expect(cacheRow()!.fingerprint).toBe(await print('club-v3', true));
+    // Copia de club-v2 para el mismo grupo y estado, con la ficha borrada en cabeza.
+    const stale = { candidates: { 'f:a7': { players: ['a7'], teams: ['sma'], matches: 1 } }, rankings: { ...Object.fromEntries(CLUB_RANKINGS.map((id) => [id, []])), top_scorer: [{ k: 'f:a7', p: 1, v: 3 }] } };
+    db.run("UPDATE club_rankings_cache SET fingerprint = ?, payload = ?, computed_at = ? WHERE club_id = 'A' AND group_key = 'g:senior'", await print('club-v2', false), JSON.stringify(stale), NOW);
+    const r = await deviceClubRankings(db, coachAuth, 'A', SENIOR, [], at(1));
+    expect(r.computedAt).toBe(at(1).toISOString());
+    expect(JSON.stringify(r)).not.toContain('Siete A');
+    expect(cacheRow()!.fingerprint).toBe(await print('club-v3', true));
   });
 
   it('una copia de las reglas anteriores (separadas por género) nunca se reutiliza', async () => {

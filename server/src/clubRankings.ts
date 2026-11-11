@@ -10,6 +10,10 @@
 // equipos; vínculos, exclusiones o ajustes del club; reglas). Lo guardado solo
 // tiene identificadores y cifras: los nombres se leen al responder. Los
 // permisos se comprueban en cada petición, haya o no copia.
+//
+// Una ficha borrada (players.deleted_at) no participa: ni sola ni sumando a su
+// persona, y su nombre nunca se devuelve. En la «Temporada» del equipo sus
+// partidos siguen contando como siempre.
 import type { Id, Match, MatchEvent } from '../../src/domain/types';
 import { countsForSeason } from '../../src/services/statsService';
 import { computeSeasonStats, emptyCounters, sumCounters, type Counters, type MatchWithEvents } from '../../src/stats/engine';
@@ -29,7 +33,8 @@ export const CLUB_RANKINGS: readonly RankingId[] = ['top_scorer', 'sharpshooter'
  * esta versión cubre cambios en la forma de agregar o en el motor.
  */
 // club-v2: el grupo ya no se separa por género (club, temporada y grupo).
-export const CLUB_RULES_VERSION = 'club-v2';
+// club-v3: las fichas borradas no participan.
+export const CLUB_RULES_VERSION = 'club-v3';
 
 /** Grupo de clasificación: dentro de un club, una temporada y un nombre de grupo. */
 export interface GroupKey {
@@ -82,6 +87,8 @@ interface GroupTeam {
   code: string;
   name: string;
   seq: number;
+  /** Fichas borradas del equipo: borrar o recuperar una cambia la huella aunque no pase por el registro de cambios. */
+  deleted: number;
 }
 
 interface GroupState {
@@ -96,7 +103,8 @@ async function groupState(db: Db, clubId: Id, g: GroupKey): Promise<GroupState |
     db.prepare("SELECT rankings_visibility AS visibility, rankings_version AS version FROM clubs WHERE id = ? AND deleted_at IS NULL AND status = 'active'").bind(clubId),
     db
       .prepare(
-        `SELECT t.id, t.code, t.name, COALESCE((SELECT MAX(c.seq) FROM change_log c WHERE c.team_id = t.id), 0) AS seq
+        `SELECT t.id, t.code, t.name, COALESCE((SELECT MAX(c.seq) FROM change_log c WHERE c.team_id = t.id), 0) AS seq,
+                (SELECT COUNT(*) FROM players p WHERE p.team_id = t.id AND p.deleted_at IS NOT NULL) AS deleted
            FROM teams t
           WHERE t.club_id = ? AND t.season = ? AND t.ranking_group = ? AND t.club_rankings = 1 AND t.deleted_at IS NULL
           ORDER BY t.id`,
@@ -115,7 +123,7 @@ async function sha256(value: unknown): Promise<string> {
 
 /** Huella de todo lo que cambia el cálculo de un grupo. */
 const fingerprint = (state: GroupState, g: GroupKey) =>
-  sha256([CLUB_RULES_VERSION, CLUB_RANKINGS, RANKING_THRESHOLDS, RANKING_LIMIT, g, state.version, state.teams.map((t) => [t.id, t.seq])]);
+  sha256([CLUB_RULES_VERSION, CLUB_RANKINGS, RANKING_THRESHOLDS, RANKING_LIMIT, g, state.version, state.teams.map((t) => [t.id, t.seq, t.deleted])]);
 
 // --- Cálculo ----------------------------------------------------------------------------
 
@@ -132,12 +140,13 @@ export async function computeGroup(db: Db, teamIds: readonly Id[], season: strin
   if (teamIds.length === 0) return { candidates: {}, rankings: Object.fromEntries(CLUB_RANKINGS.map((id) => [id, []])) };
   const ids = teamIds.map(() => '?').join(', ');
   const [playersRes, matchesRes, squadRes, eventsRes] = await db.batch([
-    // Exclusión de la ficha o de su persona.
+    // Fichas vivas, con la exclusión de la ficha o de su persona. Una ficha
+    // borrada no está aquí: sus estadísticas no cuentan en el club.
     db
       .prepare(
         `SELECT p.id, p.team_id, p.person_id, p.role, MAX(p.ranking_excluded, COALESCE(pe.ranking_excluded, 0)) AS excluded
            FROM players p LEFT JOIN people pe ON pe.id = p.person_id
-          WHERE p.team_id IN (${ids})`,
+          WHERE p.team_id IN (${ids}) AND p.deleted_at IS NULL`,
       )
       .bind(...teamIds),
     // Solo los partidos vivos de esa temporada, con sus convocatorias y acciones.
@@ -172,7 +181,7 @@ export async function computeGroup(db: Db, teamIds: readonly Id[], season: strin
     const stats = computeSeasonStats(byTeam.get(teamId) ?? []);
     for (const sp of stats.players.values()) {
       const p = players.get(sp.playerId);
-      // Sin ficha del equipo, cuerpo técnico o excluida: no participa.
+      // Sin ficha viva del equipo, cuerpo técnico o excluida: no participa.
       if (!p || p.team_id !== teamId || (p.role ?? 'player') !== 'player' || p.excluded === 1) continue;
       const key = p.person_id ? `p:${p.person_id}` : `f:${p.id}`;
       const prev = acc.get(key);
@@ -256,15 +265,18 @@ export interface ClubRankingsResponse {
   mine: MyClubPosition[];
 }
 
-/** Nombres de los participantes que se muestran: el visible de la persona o el de la ficha. */
+/**
+ * Nombres de los participantes que se muestran: el visible de la persona o el de
+ * la ficha. Nunca el de una ficha o persona borrada (el cálculo ya no las incluye).
+ */
 async function namesOf(db: Db, keys: readonly string[]): Promise<Map<string, string>> {
   const people = keys.filter((k) => k.startsWith('p:')).map((k) => k.slice(2));
   const cards = keys.filter((k) => k.startsWith('f:')).map((k) => k.slice(2));
   const out = new Map<string, string>();
   const list = (xs: string[]) => xs.map(() => '?').join(', ');
   const [peopleRes, cardsRes] = await db.batch([
-    db.prepare(`SELECT id, display_name AS name FROM people WHERE id IN (${list(people) || "''"})`).bind(...people),
-    db.prepare(`SELECT id, name FROM players WHERE id IN (${list(cards) || "''"})`).bind(...cards),
+    db.prepare(`SELECT id, display_name AS name FROM people WHERE id IN (${list(people) || "''"}) AND deleted_at IS NULL`).bind(...people),
+    db.prepare(`SELECT id, name FROM players WHERE id IN (${list(cards) || "''"}) AND deleted_at IS NULL`).bind(...cards),
   ]);
   for (const r of (peopleRes?.results ?? []) as { id: string; name: string }[]) out.set(`p:${r.id}`, r.name);
   for (const r of (cardsRes?.results ?? []) as { id: string; name: string }[]) out.set(`f:${r.id}`, r.name);
