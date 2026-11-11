@@ -28,7 +28,7 @@ export interface ClubRankingPlayer {
 type Scope = 'team' | 'club';
 
 /**
- * «Temporada» con el selector «Mi equipo / Mi club». Solo aparece si el servidor
+ * «Temporada» con el selector «Mi equipo / Todo el club». Solo aparece si el servidor
  * ofrece grupos del club a este dispositivo; si no, `team` tal cual.
  */
 export function SeasonWithClubRankings({
@@ -55,12 +55,12 @@ export function SeasonWithClubRankings({
     <>
       {groups && clubId && (
         <Segmented
-          ariaLabel="Rankings de mi equipo o de mi club"
+          ariaLabel="Rankings de mi equipo o de todo el club"
           value={scope}
           onChange={setScope}
           options={[
             { value: 'team', label: 'Mi equipo' },
-            { value: 'club', label: 'Mi club' },
+            { value: 'club', label: 'Todo el club' },
           ]}
         />
       )}

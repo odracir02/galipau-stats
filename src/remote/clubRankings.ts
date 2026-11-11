@@ -5,11 +5,9 @@
 import { RemoteError, type Api, type ClubRankingGroup, type ClubRankings } from './api';
 import type { AccountStore } from './store';
 
-const GENDER_LABEL: Record<ClubRankingGroup['gender'], string> = { male: 'Masculino', female: 'Femenino', mixed: 'Mixto' };
-
-/** «senior · Masculino · 2026/27». */
-export const groupLabel = (g: ClubRankingGroup) => `${g.group} · ${GENDER_LABEL[g.gender]} · ${g.season}`;
-export const groupKey = (g: ClubRankingGroup) => `${g.season}|${g.gender}|${g.group}`;
+/** «Todo el club · 2026/27». */
+export const groupLabel = (g: ClubRankingGroup) => `${g.group} · ${g.season}`;
+export const groupKey = (g: ClubRankingGroup) => `${g.season}|${g.group}`;
 
 /** Grupos sin repetir, en el orden del servidor. */
 export function uniqueGroups(groups: readonly ClubRankingGroup[]): ClubRankingGroup[] {
@@ -18,7 +16,7 @@ export function uniqueGroups(groups: readonly ClubRankingGroup[]): ClubRankingGr
 }
 
 /**
- * Grupo con el que se abre «Mi club»: el único que, según el servidor, incluye
+ * Grupo con el que se abre «Todo el club»: el único que, según el servidor, incluye
  * el equipo abierto; si no hay ninguno, hay varios o el servidor no lo indica,
  * el primero (nunca se deduce por nombres, categorías ni códigos).
  */

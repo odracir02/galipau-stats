@@ -62,7 +62,7 @@ describe('reglas antes de unir (las del servidor)', () => {
 });
 
 describe('rankings del club', () => {
-  it('grupos: solo equipos que participan con modalidad y grupo, sin repetir, los más recientes primero', () => {
+  it('grupos: equipos que participan con grupo, de cualquier modalidad, sin repetir, los más recientes primero', () => {
     const teams = [
       team('sma'),
       team('smb'),
@@ -72,17 +72,23 @@ describe('rankings del club', () => {
       team('sin-grupo', { group: null }),
       team('sin-modalidad', { gender: null }),
     ];
+    // Masculinos, femenino y sin modalidad del mismo grupo y temporada: un solo grupo.
     expect(rankingGroups(teams)).toEqual([
-      { season: '2026/27', gender: 'female', group: 'senior' },
-      { season: '2026/27', gender: 'male', group: 'senior' },
-      { season: '2025/26', gender: 'male', group: 'senior' },
+      { season: '2026/27', group: 'senior' },
+      { season: '2025/26', group: 'senior' },
+    ]);
+    expect(rankingGroups([...teams, team('club', { group: 'Todo el club' })])).toEqual([
+      { season: '2026/27', group: 'senior' },
+      { season: '2026/27', group: 'Todo el club' },
+      { season: '2025/26', group: 'senior' },
     ]);
     expect(rankingGroups([])).toEqual([]);
-    expect(groupQuery({ season: '2026/27', gender: 'male', group: 'sénior A' })).toBe('season=2026%2F27&gender=male&group=s%C3%A9nior%20A');
+    expect(groupQuery({ season: '2026/27', group: 'Todo el club' })).toBe('season=2026%2F27&group=Todo%20el%20club');
   });
 
   it('avisa de los equipos que no pueden clasificar', () => {
-    expect(teamRankingProblem(team('x', { gender: null }))).toMatch(/modalidad/);
+    // La modalidad ya no impide participar.
+    expect(teamRankingProblem(team('x', { gender: null }))).toBeNull();
     expect(teamRankingProblem(team('x', { group: null }))).toMatch(/sin grupo/);
     expect(teamRankingProblem(team('x', { participates: false, group: null }))).toBeNull();
     expect(teamRankingProblem(team('x'))).toBeNull();

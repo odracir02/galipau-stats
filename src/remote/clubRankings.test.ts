@@ -6,7 +6,7 @@ import { AccountStore } from './store';
 
 const BASE = 'https://api.example';
 const TOKEN = 'token-de-prueba-no-real';
-const SENIOR: ClubRankingGroup = { season: '2026/27', gender: 'male', group: 'senior' };
+const SENIOR: ClubRankingGroup = { season: '2026/27', group: 'senior' };
 
 function fakeFetch(status: number, body: unknown) {
   return vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify(body), { status }));
@@ -29,7 +29,9 @@ describe('cliente de los rankings del club', () => {
     const urls = fetch.mock.calls.map(([url]) => String(url));
     expect(urls[0]).toBe(`${BASE}/api/clubs/club%2F1/rankings`);
     const q = new URL(urls[1]!).searchParams;
-    expect([q.get('season'), q.get('gender'), q.get('group'), q.get('players')]).toEqual(['2026/27', 'male', 'senior & B', 'p1,p2,p3,p4,p5']);
+    expect([q.get('season'), q.get('group'), q.get('players')]).toEqual(['2026/27', 'senior & B', 'p1,p2,p3,p4,p5']);
+    // Sin género: el grupo ya no se separa por él.
+    expect(q.has('gender')).toBe(false);
     expect(new URL(urls[2]!).searchParams.has('players')).toBe(false);
     for (const [url, init] of fetch.mock.calls) {
       expect(init?.method).toBe('GET');
@@ -79,7 +81,7 @@ describe('cliente de los rankings del club', () => {
   it('no guarda nada en la cuenta del dispositivo (el navegador se comprueba en la prueba de extremo a extremo)', async () => {
     const store = await storeWithDevice();
     const save = vi.spyOn(store, 'saveDevice');
-    const data = { season: '2026/27', gender: 'male', group: 'senior', computedAt: '', teams: [], rankings: [], mine: [] };
+    const data = { season: '2026/27', group: 'senior', computedAt: '', teams: [], rankings: [], mine: [] };
     const api = { clubRankingGroups: vi.fn(async () => ({ groups: [SENIOR] })), clubRankings: vi.fn(async () => data) } as unknown as Api;
     const client = new ClubRankingsClient(api, store);
     await client.groups('c');
@@ -90,17 +92,19 @@ describe('cliente de los rankings del club', () => {
 
 describe('grupos', () => {
   it('sin repetidos, en el orden del servidor, con un nombre legible', () => {
-    const female: ClubRankingGroup = { season: '2026/27', gender: 'female', group: 'senior' };
-    expect(uniqueGroups([SENIOR, female, { ...SENIOR }])).toEqual([SENIOR, female]);
-    expect(groupLabel(SENIOR)).toBe('senior · Masculino · 2026/27');
-    expect(groupLabel({ season: '2025/26', gender: 'mixed', group: 'alevín' })).toBe('alevín · Mixto · 2025/26');
+    const club: ClubRankingGroup = { season: '2026/27', group: 'Todo el club' };
+    expect(uniqueGroups([SENIOR, club, { ...SENIOR }])).toEqual([SENIOR, club]);
+    expect(groupLabel(club)).toBe('Todo el club · 2026/27');
+    expect(groupLabel({ season: '2025/26', group: 'alevín' })).toBe('alevín · 2025/26');
+    // Misma temporada y grupo con otro equipo: el mismo grupo.
+    expect(uniqueGroups([{ ...club, teamIds: ['sfa'] }, { ...club, teamIds: ['sma'] }])).toHaveLength(1);
   });
 });
 
 describe('grupo inicial', () => {
-  const FEM: ClubRankingGroup = { season: '2026/27', gender: 'female', group: 'senior', teamIds: ['sfa'] };
-  const MASC: ClubRankingGroup = { season: '2026/27', gender: 'male', group: 'senior', teamIds: ['sma', 'smb'] };
-  const JUV: ClubRankingGroup = { season: '2026/27', gender: 'male', group: 'juvenil', teamIds: ['jm'] };
+  const FEM: ClubRankingGroup = { season: '2026/27', group: 'femenino', teamIds: ['sfa'] };
+  const MASC: ClubRankingGroup = { season: '2026/27', group: 'masculino', teamIds: ['sma', 'smb'] };
+  const JUV: ClubRankingGroup = { season: '2026/27', group: 'juvenil', teamIds: ['jm'] };
 
   it('el único grupo que, según el servidor, incluye el equipo abierto (aunque no sea el primero)', () => {
     expect(initialGroup([FEM, JUV, MASC], 'smb')).toBe(MASC);
@@ -116,14 +120,14 @@ describe('grupo inicial', () => {
   });
 
   it('servidor anterior (sin teamIds) o dato no válido: el primero', () => {
-    const old = [{ season: '2026/27', gender: 'female', group: 'senior' }, { season: '2026/27', gender: 'male', group: 'senior' }] as ClubRankingGroup[];
+    const old = [{ season: '2026/27', group: 'femenino' }, { season: '2026/27', group: 'masculino' }] as ClubRankingGroup[];
     expect(initialGroup(old, 'sma')).toBe(old[0]);
     const odd = [FEM, { ...MASC, teamIds: 'sma' as unknown as string[] }];
     expect(initialGroup(odd, 'sma')).toBe(FEM);
   });
 
   it('coincidencias ambiguas: el primero, sin elegir entre ellas', () => {
-    const otra: ClubRankingGroup = { season: '2025/26', gender: 'male', group: 'senior', teamIds: ['sma'] };
+    const otra: ClubRankingGroup = { season: '2025/26', group: 'masculino', teamIds: ['sma'] };
     expect(initialGroup([FEM, MASC, otra], 'sma')).toBe(FEM);
   });
 

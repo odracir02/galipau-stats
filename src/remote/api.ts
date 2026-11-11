@@ -143,14 +143,17 @@ function errorFor(status: number, code: string | undefined, serverMessage: strin
   return new RemoteError(kind, message, status, code);
 }
 
-/** Grupo de los rankings del club (temporada, modalidad y grupo de clasificación). */
+/**
+ * Grupo de los rankings del club: temporada y grupo de clasificación (ni el
+ * género ni la categoría separan; un grupo puede reunir a todo el club).
+ */
 export interface ClubRankingGroup {
   season: string;
-  gender: 'male' | 'female' | 'mixed';
   group: string;
   /**
-   * Equipos del club que participan en el grupo y en los que este dispositivo es
-   * entrenador. Opcional: un servidor anterior no lo envía.
+   * Equipos del club que participan en el grupo y en los que este dispositivo
+   * tiene un permiso que la visibilidad del club abre. Opcional: un servidor
+   * anterior no lo envía.
    */
   teamIds?: string[];
 }
@@ -170,7 +173,6 @@ export interface ClubRankingEntry {
 /** Clasificaciones del club tal como las calcula el servidor (Top 10 y puestos propios). */
 export interface ClubRankings {
   season: string;
-  gender: ClubRankingGroup['gender'];
   group: string;
   computedAt: string;
   teams: { code: string; name: string }[];
@@ -265,7 +267,7 @@ export function createApi({ baseUrl, fetch: doFetch = globalThis.fetch.bind(glob
       call<ChangesPage>('GET', `/api/teams/${encodeURIComponent(teamId)}/changes?since=${since}`, token),
     clubRankingGroups: (token, clubId) => call('GET', `/api/clubs/${encodeURIComponent(clubId)}/rankings`, token),
     clubRankings: (token, clubId, g, playerIds) => {
-      const q = new URLSearchParams({ season: g.season, gender: g.gender, group: g.group });
+      const q = new URLSearchParams({ season: g.season, group: g.group });
       if (playerIds.length) q.set('players', playerIds.slice(0, 5).join(','));
       return call('GET', `/api/clubs/${encodeURIComponent(clubId)}/rankings?${q.toString()}`, token);
     },

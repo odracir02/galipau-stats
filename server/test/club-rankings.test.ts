@@ -22,7 +22,8 @@ let recorder: AuthContext;
 let seq = 0;
 const OWNER = 'propietario@example.com';
 const ADMIN_A = 'admina@example.com';
-const SENIOR_M = { season: '2026/27', gender: 'male', group: 'senior' } as const;
+// Grupo «senior» de 2026/27: los equipos masculinos sma y smb y el femenino sfa (sin separar por género).
+const SENIOR = { season: '2026/27', group: 'senior' } as const;
 
 // --- Datos ---------------------------------------------------------------------------
 
@@ -67,15 +68,15 @@ const link = (player: string, p: string | null) => db.run('UPDATE players SET pe
 
 // --- Consulta --------------------------------------------------------------------------
 
-async function call(path: string, { token, email, method = 'GET' }: { token?: string; email?: string; method?: string } = {}) {
+async function call(path: string, { token, email, method = 'GET', body }: { token?: string; email?: string; method?: string; body?: unknown } = {}) {
   const h = new Headers({ 'Sec-Fetch-Site': 'same-origin', Origin: 'https://api.example' });
   if (token) h.set('Authorization', `Bearer ${token}`);
   if (email) h.set('Cf-Access-Jwt-Assertion', await issuer.sign(claimsFor(email, { aud: CONFIG.adminAud })));
-  const res = await worker.fetch(new Request(`https://api.example${path}`, { method, headers: h }), env);
+  if (body !== undefined) h.set('Content-Type', 'application/json');
+  const res = await worker.fetch(new Request(`https://api.example${path}`, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) }), env);
   return { status: res.status, body: (await res.json()) as ClubRankingsResponse & Record<string, unknown>, headers: res.headers };
 }
-const q = (g: { season: string; gender: string; group: string } = SENIOR_M, extra = '') =>
-  `?season=${encodeURIComponent(g.season)}&gender=${g.gender}&group=${encodeURIComponent(g.group)}${extra}`;
+const q = (g: { season: string; group: string } = SENIOR, extra = '') => `?season=${encodeURIComponent(g.season)}&group=${encodeURIComponent(g.group)}${extra}`;
 const ranking = (r: ClubRankingsResponse, id: string) => r.rankings.find((x) => x.id === id)!;
 const names = (r: ClubRankingsResponse, id: string) => ranking(r, id).entries.map((e) => `${e.position}:${e.name}`);
 
@@ -122,7 +123,7 @@ describe('cálculo', () => {
     person('ana', 'Ana García López');
     link('a10', 'ana');
     link('b10', 'ana');
-    const r = await deviceClubRankings(db, coachAuth, 'A', SENIOR_M, []);
+    const r = await deviceClubRankings(db, coachAuth, 'A', SENIOR, []);
     // Ana: 3 + 1 = 4 goles (una sola fila); Siete A: 3; Nueve B: 2; los dos Juan Pérez, por separado.
     expect(names(r, 'top_scorer')).toEqual(['1:Ana García López', '2:Siete A', '3:Nueve B', '4:Juan Pérez', '4:Juan Pérez']);
     const ana = ranking(r, 'top_scorer').entries[0]!;
@@ -130,25 +131,25 @@ describe('cálculo', () => {
     // Sin vínculo, cada ficha suma sola.
     link('a10', null);
     link('b10', null);
-    const sep = await deviceClubRankings(db, coachAuth, 'A', SENIOR_M, []);
+    const sep = await deviceClubRankings(db, coachAuth, 'A', SENIOR, []);
     // Empates: mismo puesto, ordenados por dorsal como en los rankings de equipo.
     expect(names(sep, 'top_scorer')).toEqual(['1:Siete A', '1:Ana García', '3:Nueve B', '4:Ana G.', '4:Juan Pérez', '4:Juan Pérez']);
   });
 
   it('dos personas con el mismo nombre nunca se juntan', async () => {
-    const r = await deviceClubRankings(db, coachAuth, 'A', SENIOR_M, []);
+    const r = await deviceClubRankings(db, coachAuth, 'A', SENIOR, []);
     const juanes = ranking(r, 'top_scorer').entries.filter((e) => e.name === 'Juan Pérez');
     expect(juanes.map((e) => e.teams)).toEqual([['SMA2627'], ['SMB2627']]);
   });
 
   it('porcentajes sobre los totales y mínimos sobre los totales de la persona', async () => {
     // Por separado, ninguna ficha de Ana llega a 10 lanzamientos (6 y 6): fuera del francotirador.
-    let r = await deviceClubRankings(db, coachAuth, 'A', SENIOR_M, []);
+    let r = await deviceClubRankings(db, coachAuth, 'A', SENIOR, []);
     expect(ranking(r, 'sharpshooter').entries).toEqual([]);
     person('ana', 'Ana');
     link('a10', 'ana');
     link('b10', 'ana');
-    r = await deviceClubRankings(db, coachAuth, 'A', SENIOR_M, []);
+    r = await deviceClubRankings(db, coachAuth, 'A', SENIOR, []);
     // Juntas: 4 goles de 12 lanzamientos = 33,3 % (no la media de 50 % y 16,7 %).
     expect(ranking(r, 'sharpshooter').entries).toEqual([expect.objectContaining({ name: 'Ana', value: 33.3, made: 4, of: 12 })]);
     // El muro: 15 paradas de 20 tiros a puerta (mínimo 20) = 75 %.
@@ -161,7 +162,7 @@ describe('cálculo', () => {
     const many: Roster = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`c${i}`, [`Jugador ${i}`, 20 + i]]));
     await roster('smb', many);
     await match('smb', 'mb2', Object.keys(many).map((pid) => [pid, GOAL, 1] as [string, EventPayload, number]), { squadOf: Object.keys(many) });
-    const r = await deviceClubRankings(db, coachAuth, 'A', SENIOR_M, []);
+    const r = await deviceClubRankings(db, coachAuth, 'A', SENIOR, []);
     const top = ranking(r, 'top_scorer');
     expect(top.entries).toHaveLength(10);
     // 3 (Siete A, Ana García) · 2 (Nueve B) · 1: catorce jugadores empatados en el 4.º.
@@ -178,7 +179,7 @@ describe('cálculo', () => {
     person('ana', 'Ana');
     link('a10', 'ana');
     db.run("UPDATE people SET ranking_excluded = 1 WHERE id = 'ana'");
-    const r = await deviceClubRankings(db, coachAuth, 'A', SENIOR_M, ['a7', 'a10', 'a11']);
+    const r = await deviceClubRankings(db, coachAuth, 'A', SENIOR, ['a7', 'a10', 'a11']);
     expect(names(r, 'top_scorer')).toEqual(['1:Nueve B', '2:Ana G.', '2:Juan Pérez', '2:Juan Pérez']);
     expect(r.mine).toEqual(
       expect.arrayContaining([
@@ -195,27 +196,48 @@ describe('cálculo', () => {
     await applyEventOp(db, recorder, { opId: `op-${++seq}`, teamId: 'sma', baseVersion: null, event: ev({ kind: 'yellow' }, 'aof', 1, { matchId: 'ma-of' }) }, new Date(), officials);
     await applyEventOp(db, recorder, { opId: `op-${++seq}`, teamId: 'sma', baseVersion: null, event: ev(RECOVERY, 'a11', 2, { matchId: 'ma-of' }) }, new Date(), officials);
     expect(db.sqlite.prepare("SELECT COUNT(*) AS n FROM events WHERE player_id = 'aof'").get()).toEqual({ n: 1 });
-    const after = await deviceClubRankings(db, coachAuth, 'A', SENIOR_M, []);
+    const after = await deviceClubRankings(db, coachAuth, 'A', SENIOR, []);
     expect(JSON.stringify(after)).not.toContain('Entrenador');
     expect(ranking(after, 'thief').entries.map((e) => e.name)).toEqual(['Nueve B', 'Juan Pérez']);
   });
 
-  it('separación estricta por temporada, género y grupo; equipos que no participan, fuera', async () => {
+  it('un grupo reúne equipos de distinto género y categoría; temporada, grupo y participación sí separan', async () => {
+    // sfa (femenino) comparte grupo con sma y smb (masculinos); cvx es de otra categoría y género («mixed»).
+    team('cvx', 'CVX2627', { gender: 'mixed' });
+    db.run("UPDATE teams SET category = 'Cadete' WHERE id = 'cvx'");
+    recorder = (await addDevice(db, 'registrador-cvx', ['sma', 'smb', 'sfa', 'cvx', 'jm', 'old', 'np'].map((teamId) => ({ clubId: 'A', teamId, role: 'coach' as const })))).auth;
     await roster('sfa', { f1: ['Femenina', 5] });
+    await roster('cvx', { c1: ['Cadete Mixto', 4] });
     await roster('jm', { j1: ['Juvenil', 5] });
     await roster('old', { o1: ['Antigua', 5] });
     await roster('np', { n1: ['No participa', 5] });
-    for (const [t, p] of [['sfa', 'f1'], ['jm', 'j1'], ['old', 'o1'], ['np', 'n1']] as const) await match(t, `m-${t}`, [[p, GOAL, 9]], { season: t === 'old' ? '2025/26' : '2026/27' });
-    const senior = JSON.stringify(await deviceClubRankings(db, coachAuth, 'A', SENIOR_M, []));
-    for (const n of ['Femenina', 'Juvenil', 'Antigua', 'No participa']) expect(senior).not.toContain(n);
-    expect((await deviceClubRankings(db, recorder, 'A', { season: '2026/27', gender: 'female', group: 'senior' }, [])).rankings[0]!.entries.map((e) => e.name)).toEqual(['Femenina']);
-    expect((await deviceClubRankings(db, recorder, 'A', { season: '2026/27', gender: 'male', group: 'juvenil' }, [])).rankings[0]!.entries.map((e) => e.name)).toEqual(['Juvenil']);
-    expect((await deviceClubRankings(db, recorder, 'A', { season: '2025/26', gender: 'male', group: 'senior' }, [])).rankings[0]!.entries.map((e) => e.name)).toEqual(['Antigua']);
+    for (const [t, p] of [['sfa', 'f1'], ['cvx', 'c1'], ['jm', 'j1'], ['old', 'o1'], ['np', 'n1']] as const) await match(t, `m-${t}`, [[p, GOAL, 9]], { season: t === 'old' ? '2025/26' : '2026/27' });
+    const senior = await deviceClubRankings(db, coachAuth, 'A', SENIOR, []);
+    // Un solo ranking: la femenina y el cadete compiten con los masculinos (9 goles cada una: líderes empatados).
+    expect(ranking(senior, 'top_scorer').entries.filter((e) => e.position === 1).map((e) => `${e.name} ${e.teams}`).sort()).toEqual(['Cadete Mixto CVX2627', 'Femenina SFA2627']);
+    expect(senior.teams.map((t) => t.code)).toEqual(['CVX2627', 'SFA2627', 'SMA2627', 'SMB2627']);
+    const text = JSON.stringify(senior);
+    for (const n of ['Juvenil', 'Antigua', 'No participa']) expect(text).not.toContain(n);
+    expect((await deviceClubRankings(db, recorder, 'A', { season: '2026/27', group: 'juvenil' }, [])).rankings[0]!.entries.map((e) => e.name)).toEqual(['Juvenil']);
+    expect((await deviceClubRankings(db, recorder, 'A', { season: '2025/26', group: 'senior' }, [])).rankings[0]!.entries.map((e) => e.name)).toEqual(['Antigua']);
+    // El género y la categoría de los equipos no se tocan.
+    expect(db.sqlite.prepare("SELECT id, gender, category FROM teams WHERE id IN ('sfa', 'cvx', 'sma') ORDER BY id").all()).toEqual([
+      { id: 'cvx', gender: 'mixed', category: 'Cadete' },
+      { id: 'sfa', gender: 'female', category: 'Senior' },
+      { id: 'sma', gender: 'male', category: 'Senior' },
+    ]);
+  });
+
+  it('equipo sin género ni categoría: participa igual en su grupo', async () => {
+    team('sin', 'SIN2627');
+    db.run("UPDATE teams SET gender = NULL, category = NULL WHERE id = 'sin'");
+    const r = await deviceClubRankings(db, coachAuth, 'A', SENIOR, []);
+    expect(r.teams.map((t) => t.code)).toContain('SIN2627');
   });
 
   it('equipos sin partidos o sin participantes: clasificaciones vacías', async () => {
     team('vac', 'SMV2627', { group: 'vacio' });
-    const r = await deviceClubRankings(db, (await addDevice(db, 'vacio', [{ clubId: 'A', teamId: 'vac', role: 'coach' }])).auth, 'A', { season: '2026/27', gender: 'male', group: 'vacio' }, []);
+    const r = await deviceClubRankings(db, (await addDevice(db, 'vacio', [{ clubId: 'A', teamId: 'vac', role: 'coach' }])).auth, 'A', { season: '2026/27', group: 'vacio' }, []);
     expect(r.rankings.map((x) => [x.id, x.entries.length, x.ranked])).toEqual(CLUB_RANKINGS.map((id) => [id, 0, 0]));
     expect(r.teams).toEqual([{ code: 'SMV2627', name: 'Equipo vac' }]);
   });
@@ -223,11 +245,11 @@ describe('cálculo', () => {
 
 describe('permisos', () => {
   it('entrenador de un equipo del grupo: Top 10 y su puesto; de las fichas ajenas pedidas, nada', async () => {
-    const r = await call(`/api/clubs/A/rankings${q(SENIOR_M, '&players=a11,b11,b9')}`, { token: coachToken });
+    const r = await call(`/api/clubs/A/rankings${q(SENIOR, '&players=a11,b11,b9')}`, { token: coachToken });
     expect(r.status).toBe(200);
     // Solo las fichas de SU equipo (sma).
     expect(r.body.mine.map((m) => m.playerId)).toEqual(['a11']);
-    expect((await call('/api/clubs/A/rankings', { token: coachToken })).body).toEqual({ groups: [{ ...SENIOR_M, teamIds: ['sma'] }] });
+    expect((await call('/api/clubs/A/rankings', { token: coachToken })).body).toEqual({ groups: [{ ...SENIOR, teamIds: ['sma'] }] });
   });
 
   it('grupos: cada uno con sus equipos del club en los que el dispositivo es entrenador, en el orden de siempre', async () => {
@@ -249,18 +271,17 @@ describe('permisos', () => {
     expect(r.headers.get('Cache-Control')).toBe('no-store');
     expect(r.body).toEqual({
       groups: [
-        { season: '2026/27', gender: 'female', group: 'senior', teamIds: ['sfa'] },
-        { season: '2026/27', gender: 'male', group: 'juvenil', teamIds: ['jm'] },
-        { season: '2026/27', gender: 'male', group: 'senior', teamIds: ['sma', 'smb'] },
-        { season: '2025/26', gender: 'male', group: 'senior', teamIds: ['old'] },
+        { season: '2026/27', group: 'juvenil', teamIds: ['jm'] },
+        { season: '2026/27', group: 'senior', teamIds: ['sfa', 'sma', 'smb'] },
+        { season: '2025/26', group: 'senior', teamIds: ['old'] },
       ],
     });
     expect(JSON.stringify(r.body)).not.toMatch(/"np"|"smd"|"xb"/);
-    // Mismas claves que antes en cada grupo; solo se añade teamIds.
-    for (const g of r.body.groups as Record<string, unknown>[]) expect(Object.keys(g).sort()).toEqual(['gender', 'group', 'season', 'teamIds']);
+    // Sin género: temporada, grupo y equipos.
+    for (const g of r.body.groups as Record<string, unknown>[]) expect(Object.keys(g).sort()).toEqual(['group', 'season', 'teamIds']);
     // Desde el otro club (abierto a entrenadores): solo su equipo.
     db.run("UPDATE clubs SET rankings_visibility = 'coaches' WHERE id = 'B'");
-    expect((await call('/api/clubs/B/rankings', { token })).body).toEqual({ groups: [{ ...SENIOR_M, teamIds: ['xb'] }] });
+    expect((await call('/api/clubs/B/rankings', { token })).body).toEqual({ groups: [{ ...SENIOR, teamIds: ['xb'] }] });
   });
 
   it('grupos: equipo que deja de participar o se borra, fuera de teamIds y, sin equipos, fuera el grupo', async () => {
@@ -269,7 +290,7 @@ describe('permisos', () => {
       { clubId: 'A', teamId: 'smb', role: 'coach' },
     ]);
     db.run("UPDATE teams SET club_rankings = 0 WHERE id = 'smb'");
-    expect((await call('/api/clubs/A/rankings', { token })).body).toEqual({ groups: [{ ...SENIOR_M, teamIds: ['sma'] }] });
+    expect((await call('/api/clubs/A/rankings', { token })).body).toEqual({ groups: [{ ...SENIOR, teamIds: ['sma'] }] });
     db.run("UPDATE teams SET deleted_at = ? WHERE id = 'sma'", NOW);
     expect((await call('/api/clubs/A/rankings', { token })).body).toEqual({ groups: [] });
   });
@@ -278,23 +299,69 @@ describe('permisos', () => {
     db.run("UPDATE clubs SET rankings_visibility = 'admins' WHERE id = 'A'");
     expect(await call(`/api/clubs/A/rankings${q()}`, { token: coachToken })).toMatchObject({ status: 403, body: { error: 'club_rankings_unavailable' } });
     expect((await call('/api/clubs/A/rankings', { token: coachToken })).body).toEqual({ groups: [] });
+    // La consulta tampoco, pida lo que pida la aplicación.
+    const viewer = await addDevice(db, 'familia-admins', [{ clubId: 'A', teamId: 'sma', role: 'viewer' }]);
+    for (const path of [`/api/clubs/A/rankings${q()}`, `/api/clubs/A/rankings${q(SENIOR, '&players=a11')}`, `/api/clubs/A/rankings${q()}&gender=male`]) {
+      expect(await call(path, { token: viewer.token }), path).toMatchObject({ status: 403, body: { error: 'club_rankings_unavailable' } });
+    }
+    expect((await call('/api/clubs/A/rankings', { token: viewer.token })).body).toEqual({ groups: [] });
     const admin = await call(`/api/admin/clubs/A/rankings${q()}`, { email: ADMIN_A });
     expect(admin.status).toBe(200);
     expect(ranking(admin.body, 'top_scorer').entries.length).toBe(ranking(admin.body, 'top_scorer').ranked);
     expect((await call(`/api/admin/clubs/A/rankings${q()}`, { email: OWNER })).status).toBe(200);
   });
 
-  it('consulta (familias): nunca, ni siquiera con «members»; entrenador de un equipo que no participa: tampoco', async () => {
-    const viewer = await addDevice(db, 'familia', [{ clubId: 'A', teamId: 'sma', role: 'viewer' }]);
-    expect((await call(`/api/clubs/A/rankings${q()}`, { token: viewer.token })).status).toBe(403);
-    db.run("UPDATE clubs SET rankings_visibility = 'members' WHERE id = 'A'");
-    expect((await call(`/api/clubs/A/rankings${q()}`, { token: viewer.token })).status).toBe(403);
+  it('consulta (familias): solo con «members» y un código de un equipo del grupo', async () => {
+    const viewer = await addDevice(db, 'familia', [{ clubId: 'A', teamId: 'sfa', role: 'viewer' }]);
+    // «coaches» (la del club): la consulta no ve nada.
+    expect(await call(`/api/clubs/A/rankings${q()}`, { token: viewer.token })).toMatchObject({ status: 403, body: { error: 'club_rankings_unavailable' } });
     expect((await call('/api/clubs/A/rankings', { token: viewer.token })).body).toEqual({ groups: [] });
+    // «members»: la consulta de un equipo del grupo, sí (el Top 10 de todo el grupo).
+    db.run("UPDATE clubs SET rankings_visibility = 'members' WHERE id = 'A'");
+    expect((await call('/api/clubs/A/rankings', { token: viewer.token })).body).toEqual({ groups: [{ ...SENIOR, teamIds: ['sfa'] }] });
+    const r = await call(`/api/clubs/A/rankings${q()}`, { token: viewer.token });
+    expect(r.status).toBe(200);
+    expect(ranking(r.body, 'top_scorer').entries.length).toBeGreaterThan(0);
+    // Consulta de un equipo que no participa o de otro grupo: no.
+    const np = await addDevice(db, 'familia-np', [{ clubId: 'A', teamId: 'np', role: 'viewer' }]);
+    expect((await call(`/api/clubs/A/rankings${q()}`, { token: np.token })).status).toBe(403);
+    expect((await call('/api/clubs/A/rankings', { token: np.token })).body).toEqual({ groups: [] });
+    const juv = await addDevice(db, 'familia-jm', [{ clubId: 'A', teamId: 'jm', role: 'viewer' }]);
+    expect((await call(`/api/clubs/A/rankings${q()}`, { token: juv.token })).status).toBe(403);
+    // De vuelta a «coaches»: la consulta lo pierde en la siguiente petición; el entrenador, no.
+    db.run("UPDATE clubs SET rankings_visibility = 'coaches' WHERE id = 'A'");
+    expect((await call(`/api/clubs/A/rankings${q()}`, { token: viewer.token })).status).toBe(403);
+    expect((await call(`/api/clubs/A/rankings${q()}`, { token: coachToken })).status).toBe(200);
+    // Entrenador de un equipo que no participa: tampoco.
     const other = await addDevice(db, 'np', [{ clubId: 'A', teamId: 'np', role: 'coach' }]);
     expect((await call(`/api/clubs/A/rankings${q()}`, { token: other.token })).status).toBe(403);
-    // Entrenador de un equipo de otro grupo: no ve este.
-    const fem = await addDevice(db, 'fem', [{ clubId: 'A', teamId: 'sfa', role: 'coach' }]);
-    expect((await call(`/api/clubs/A/rankings${q()}`, { token: fem.token })).status).toBe(403);
+  });
+
+  it('consulta con «members»: puesto propio solo de fichas de su equipo; nunca de otros equipos ni clubes', async () => {
+    db.run("UPDATE clubs SET rankings_visibility = 'members' WHERE id = 'A'");
+    const viewer = await addDevice(db, 'familia', [{ clubId: 'A', teamId: 'sma', role: 'viewer' }]);
+    // Pide su ficha, una de otro equipo del grupo, una de otro club y una inventada.
+    const r = await call(`/api/clubs/A/rankings${q(SENIOR, '&players=a11,b9,x7,nadie')}`, { token: viewer.token });
+    expect(r.body.mine.map((m) => m.playerId)).toEqual(['a11']);
+    // El Top 10 no da identificadores de ficha ni de persona.
+    expect(JSON.stringify(r.body.rankings)).not.toMatch(/"(playerId|personId|id)":"(a|b)\d/);
+    // Otro club: 404 aunque el club B estuviera abierto.
+    db.run("UPDATE clubs SET rankings_visibility = 'members' WHERE id = 'B'");
+    expect((await call(`/api/clubs/B/rankings${q()}`, { token: viewer.token })).status).toBe(404);
+    expect((await call('/api/clubs/B/rankings', { token: viewer.token })).status).toBe(404);
+  });
+
+  it('código retirado (permiso revocado): sin acceso en la siguiente petición', async () => {
+    db.run("UPDATE clubs SET rankings_visibility = 'members' WHERE id = 'A'");
+    const viewer = await addDevice(db, 'familia', [{ clubId: 'A', teamId: 'sma', role: 'viewer' }]);
+    expect((await call(`/api/clubs/A/rankings${q()}`, { token: viewer.token })).status).toBe(200);
+    db.run("DELETE FROM grants WHERE device_id = 'familia'");
+    expect((await call(`/api/clubs/A/rankings${q()}`, { token: viewer.token })).status).toBe(404);
+    expect((await call('/api/clubs/A/rankings', { token: viewer.token })).status).toBe(404);
+  });
+
+  it('la administración nunca puede abrir «members» todavía (decisión de privacidad pendiente)', async () => {
+    expect((await call('/api/admin/clubs/A/rankings', { method: 'PUT', email: ADMIN_A, body: { visibility: 'members' } })).status).toBe(409);
   });
 
   it('otro club: 404 para dispositivos y administradores ajenos; sin credencial, 401', async () => {
@@ -307,14 +374,20 @@ describe('permisos', () => {
     expect((await call(`/api/clubs/A/rankings${q()}`, { token: coachToken })).status).toBe(404);
   });
 
-  it('parámetros no válidos: 400', async () => {
-    for (const bad of ['?season=2026/27&gender=x&group=senior', '?season=&gender=male&group=senior', `?season=2026/27&gender=male&group=${'x'.repeat(31)}`]) {
+  it('parámetros no válidos: 400; el género de versiones anteriores se ignora', async () => {
+    for (const bad of ['?season=&group=senior', '?season=2026/27&group=', `?season=2026/27&group=${'x'.repeat(31)}`, '?season=2026%2F27']) {
       expect((await call(`/api/clubs/A/rankings${bad}`, { token: coachToken })).status).toBe(400);
+    }
+    const now = await call(`/api/clubs/A/rankings${q()}`, { token: coachToken });
+    for (const gender of ['male', 'female', 'x']) {
+      const old = await call(`/api/clubs/A/rankings${q()}&gender=${gender}`, { token: coachToken });
+      expect(old.status).toBe(200);
+      expect(old.body.rankings).toEqual(now.body.rankings);
     }
   });
 
   it('la respuesta no lleva partidos, convocatorias, acciones ni fichas completas', async () => {
-    const r = await call(`/api/clubs/A/rankings${q(SENIOR_M, '&players=a11')}`, { token: coachToken });
+    const r = await call(`/api/clubs/A/rankings${q(SENIOR, '&players=a11')}`, { token: coachToken });
     // Ninguna caché compartida (ni del navegador) puede guardar la respuesta.
     expect(r.headers.get('Cache-Control')).toBe('no-store');
     expect((await call(`/api/admin/clubs/A/rankings${q()}`, { email: ADMIN_A })).headers.get('Cache-Control')).toBe('no-store');
@@ -322,25 +395,25 @@ describe('permisos', () => {
     for (const k of ['matchId', 'opponent', 'squad', 'events', 'kind', '"date"', 'person', 'playerId":"b', 'ma1', 'mb1', 'createdAt']) expect(text).not.toContain(k);
     const keys = new Set(r.body.rankings.flatMap((x) => x.entries.flatMap((e) => Object.keys(e))));
     expect([...keys].sort()).toEqual(['made', 'matches', 'name', 'of', 'position', 'teams', 'value'].filter((k) => keys.has(k)));
-    expect(Object.keys(r.body).sort()).toEqual(['computedAt', 'gender', 'group', 'mine', 'rankings', 'season', 'teams']);
+    expect(Object.keys(r.body).sort()).toEqual(['computedAt', 'group', 'mine', 'rankings', 'season', 'teams']);
   });
 });
 
 describe('caché', () => {
-  const cacheRow = () => db.sqlite.prepare("SELECT fingerprint, payload, computed_at FROM club_rankings_cache WHERE club_id = 'A' AND season = '2026/27' AND group_key = 'male:senior'").get() as { fingerprint: string; payload: string; computed_at: string } | undefined;
+  const cacheRow = () => db.sqlite.prepare("SELECT fingerprint, payload, computed_at FROM club_rankings_cache WHERE club_id = 'A' AND season = '2026/27' AND group_key = 'g:senior'").get() as { fingerprint: string; payload: string; computed_at: string } | undefined;
   const at = (min: number) => new Date(Date.UTC(2026, 10, 3, 12, min));
 
   it('se calcula una vez; misma huella, misma copia; cada cambio relevante la invalida', async () => {
-    const first = await deviceClubRankings(db, coachAuth, 'A', SENIOR_M, [], at(0));
+    const first = await deviceClubRankings(db, coachAuth, 'A', SENIOR, [], at(0));
     const row = cacheRow()!;
     // Lo guardado no lleva nombres.
     for (const n of ['Siete A', 'Ana', 'Juan', 'Nueve']) expect(row.payload).not.toContain(n);
-    expect((await deviceClubRankings(db, coachAuth, 'A', SENIOR_M, [], at(1))).computedAt).toBe(first.computedAt);
+    expect((await deviceClubRankings(db, coachAuth, 'A', SENIOR, [], at(1))).computedAt).toBe(first.computedAt);
 
     const recomputed = async (what: string, change: () => unknown | Promise<unknown>, minute: number) => {
       const before = cacheRow()!.fingerprint;
       await change();
-      const r = await deviceClubRankings(db, coachAuth, 'A', SENIOR_M, [], at(minute));
+      const r = await deviceClubRankings(db, coachAuth, 'A', SENIOR, [], at(minute));
       expect(r.computedAt, what).toBe(at(minute).toISOString());
       expect(cacheRow()!.fingerprint, what).not.toBe(before);
       return r;
@@ -362,25 +435,40 @@ describe('caché', () => {
     // La visibilidad no cambia el cálculo: no invalida.
     db.run("UPDATE clubs SET rankings_visibility = 'admins' WHERE id = 'A'");
     db.run("UPDATE clubs SET rankings_visibility = 'coaches' WHERE id = 'A'");
-    expect((await deviceClubRankings(db, coachAuth, 'A', SENIOR_M, [], at(8))).computedAt).toBe(at(7).toISOString());
+    expect((await deviceClubRankings(db, coachAuth, 'A', SENIOR, [], at(8))).computedAt).toBe(at(7).toISOString());
     // Cambiar un equipo de otro grupo del club invalida igualmente (versión del club: de más, nunca de menos).
-    await recomputed('equipo de otro grupo', () => db.run("UPDATE teams SET name = 'Otro nombre' WHERE id = 'sfa'"), 9);
+    await recomputed('equipo de otro grupo', () => db.run("UPDATE teams SET name = 'Otro nombre' WHERE id = 'jm'"), 9);
+    // Cambiar el género de un equipo del grupo no lo saca del grupo (y no cambia nada más que la huella).
+    r = await recomputed('género', () => db.run("UPDATE teams SET gender = 'female' WHERE id = 'sma'"), 10);
+    expect(r.teams.map((t) => t.code)).toContain('SMA2627');
   });
 
   it('una copia de un grupo o club nunca sirve para otro; los permisos se comprueban aunque haya copia', async () => {
-    await deviceClubRankings(db, coachAuth, 'A', SENIOR_M, []);
-    const fem = await deviceClubRankings(db, recorder, 'A', { season: '2026/27', gender: 'female', group: 'senior' }, []);
-    expect(fem.rankings.every((x) => x.entries.length === 0)).toBe(true);
+    await deviceClubRankings(db, coachAuth, 'A', SENIOR, []);
+    const juv = await deviceClubRankings(db, recorder, 'A', { season: '2026/27', group: 'juvenil' }, []);
+    expect(juv.rankings.every((x) => x.entries.length === 0)).toBe(true);
     expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM club_rankings_cache').get()).toEqual({ n: 2 });
     db.run("UPDATE clubs SET rankings_visibility = 'admins' WHERE id = 'A'");
     expect((await call(`/api/clubs/A/rankings${q()}`, { token: coachToken })).status).toBe(403);
+  });
+
+  it('una copia de las reglas anteriores (separadas por género) nunca se reutiliza', async () => {
+    // Copia con la clave y la huella de club-v1 para el grupo masculino.
+    db.run(
+      "INSERT INTO club_rankings_cache (club_id, season, group_key, fingerprint, payload, computed_at) VALUES ('A', '2026/27', 'male:senior', 'huella-antigua', ?, ?)",
+      JSON.stringify({ candidates: {}, rankings: {} }),
+      NOW,
+    );
+    const r = await deviceClubRankings(db, coachAuth, 'A', SENIOR, [], new Date(Date.UTC(2026, 10, 4)));
+    expect(r.computedAt).toBe(new Date(Date.UTC(2026, 10, 4)).toISOString());
+    expect(ranking(r, 'top_scorer').entries.length).toBeGreaterThan(0);
   });
 });
 
 describe('compatibilidad y volumen', () => {
   it('la sincronización y la descarga del equipo no cambian por calcular rankings', async () => {
     const before = await teamSnapshot(db, coachAuth, 'sma');
-    await deviceClubRankings(db, coachAuth, 'A', SENIOR_M, []);
+    await deviceClubRankings(db, coachAuth, 'A', SENIOR, []);
     expect(await teamSnapshot(db, coachAuth, 'sma')).toEqual(before);
     expect(JSON.stringify(before)).not.toMatch(/ranking|person/i);
   });
@@ -403,7 +491,7 @@ describe('compatibilidad y volumen', () => {
     let prepared = 0;
     const counting = new Proxy(db, { get: (t, k) => (k === 'prepare' ? (sql: string) => (prepared++, t.prepare(sql)) : Reflect.get(t, k, t)) });
     const t0 = performance.now();
-    const r = await deviceClubRankings(counting, me, 'A', { season: '2026/27', gender: 'male', group: 'grande' }, []);
+    const r = await deviceClubRankings(counting, me, 'A', { season: '2026/27', group: 'grande' }, []);
     const elapsed = performance.now() - t0;
     // Todos lanzan (72 en «Más lanzamientos»); seis por equipo no marcan (48 en «El pistolero»).
     expect(ranking(r, 'shots').ranked).toBe(72);
@@ -412,7 +500,7 @@ describe('compatibilidad y volumen', () => {
     expect(prepared).toBeLessThanOrEqual(10);
     expect(elapsed).toBeLessThan(3000);
     prepared = 0;
-    await deviceClubRankings(counting, me, 'A', { season: '2026/27', gender: 'male', group: 'grande' }, []);
+    await deviceClubRankings(counting, me, 'A', { season: '2026/27', group: 'grande' }, []);
     // Con copia: grupo y huella, copia y nombres.
     expect(prepared).toBeLessThanOrEqual(5);
   });

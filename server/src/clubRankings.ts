@@ -1,7 +1,8 @@
 // Rankings del club: las clasificaciones positivas de los rankings de equipo,
 // calculadas en el servidor con el mismo motor (computeSeasonStats, rankPlayers)
-// sobre los equipos que participan en un grupo (club, temporada, género y grupo
-// de clasificación). Una persona con fichas en varios equipos suma una sola vez
+// sobre los equipos que participan en un grupo (club, temporada y grupo de
+// clasificación; ni el género ni la categoría separan: un grupo puede reunir a
+// todo el club). Una persona con fichas en varios equipos suma una sola vez
 // (players.person_id); una ficha sin persona participa sola. Nunca por nombre.
 //
 // El resultado se guarda en club_rankings_cache con una huella: solo se calcula
@@ -17,7 +18,7 @@ import { authorizeClub } from './auth';
 import type { Db } from './db';
 import { HttpError, notFound } from './errors';
 import { rowsToMatch, rowToEvent, type EventRow, type MatchRow, type SquadRow } from './mapping';
-import type { AuthContext, Gender } from './model';
+import type { AuthContext, TeamRole } from './model';
 
 /** Clasificaciones del club: solo las positivas (nunca exclusiones ni pérdidas). */
 export const CLUB_RANKINGS: readonly RankingId[] = ['top_scorer', 'sharpshooter', 'wall', 'thief', 'shots'];
@@ -27,28 +28,30 @@ export const CLUB_RANKINGS: readonly RankingId[] = ['top_scorer', 'sharpshooter'
  * Los mínimos, el límite y las clasificaciones entran en la huella por sí solos;
  * esta versión cubre cambios en la forma de agregar o en el motor.
  */
-export const CLUB_RULES_VERSION = 'club-v1';
+// club-v2: el grupo ya no se separa por género (club, temporada y grupo).
+export const CLUB_RULES_VERSION = 'club-v2';
 
-const GENDERS: readonly Gender[] = ['male', 'female', 'mixed'];
-
+/** Grupo de clasificación: dentro de un club, una temporada y un nombre de grupo. */
 export interface GroupKey {
   season: string;
-  gender: Gender;
   group: string;
 }
 
-/** Grupo pedido en la consulta (400 si no es válido). */
+/**
+ * Grupo pedido en la consulta (400 si no es válido). Un parámetro «gender» de
+ * versiones anteriores de la aplicación se ignora: no separa a nadie.
+ */
 export function groupFromQuery(params: URLSearchParams): GroupKey {
   const season = (params.get('season') ?? '').trim();
-  const gender = params.get('gender') as Gender;
   const group = (params.get('group') ?? '').trim();
-  if (!season || season.length > 7 || !GENDERS.includes(gender) || !group || group.length > 30) {
-    throw new HttpError(400, 'bad_request', 'Temporada, género o grupo no válidos.');
+  if (!season || season.length > 7 || !group || group.length > 30) {
+    throw new HttpError(400, 'bad_request', 'Temporada o grupo no válidos.');
   }
-  return { season, gender, group };
+  return { season, group };
 }
 
-const groupKey = (g: GroupKey) => `${g.gender}:${g.group}`;
+/** Clave de la copia en caché. «g:» la distingue de las de club-v1 («género:grupo»). */
+const groupKey = (g: GroupKey) => `g:${g.group}`;
 
 // --- Lo guardado en caché (sin nombres) ------------------------------------------------
 
@@ -95,10 +98,10 @@ async function groupState(db: Db, clubId: Id, g: GroupKey): Promise<GroupState |
       .prepare(
         `SELECT t.id, t.code, t.name, COALESCE((SELECT MAX(c.seq) FROM change_log c WHERE c.team_id = t.id), 0) AS seq
            FROM teams t
-          WHERE t.club_id = ? AND t.season = ? AND t.gender = ? AND t.ranking_group = ? AND t.club_rankings = 1 AND t.deleted_at IS NULL
+          WHERE t.club_id = ? AND t.season = ? AND t.ranking_group = ? AND t.club_rankings = 1 AND t.deleted_at IS NULL
           ORDER BY t.id`,
       )
-      .bind(clubId, g.season, g.gender, g.group),
+      .bind(clubId, g.season, g.group),
   ]);
   const club = (clubRes?.results?.[0] ?? null) as { visibility: GroupState['visibility']; version: number } | null;
   if (!club) return null;
@@ -246,7 +249,6 @@ export interface MyClubPosition {
 
 export interface ClubRankingsResponse {
   season: string;
-  gender: Gender;
   group: string;
   computedAt: string;
   teams: { code: string; name: string }[];
@@ -300,7 +302,6 @@ async function buildResponse(
   });
   return {
     season: g.season,
-    gender: g.gender,
     group: g.group,
     computedAt,
     teams: state.teams.map((t) => ({ code: t.code, name: t.name })),
@@ -339,15 +340,25 @@ async function positionsOf(db: Db, data: CachedRankings, playerIds: readonly Id[
 
 const unavailable = () => new HttpError(403, 'club_rankings_unavailable', 'Los rankings del club no están disponibles para este dispositivo.');
 
+/** Roles de dispositivo que ve cada visibilidad del club («admins»: ninguno). */
+const ROLES_BY_VISIBILITY: Record<GroupState['visibility'], readonly TeamRole[]> = {
+  admins: [],
+  coaches: ['coach'],
+  members: ['coach', 'viewer'],
+};
+
+/** Equipos del club en los que el dispositivo tiene un permiso que esta visibilidad abre. */
+const reachableTeams = (auth: AuthContext, clubId: Id, visibility: GroupState['visibility']): Id[] =>
+  auth.grants.filter((gr) => gr.clubId === clubId && ROLES_BY_VISIBILITY[visibility].includes(gr.role)).map((gr) => gr.teamId);
+
 /**
  * Un dispositivo solo ve los rankings de un grupo si el club los abre a su rol
- * y tiene permiso de entrenador en un equipo que participa en ese grupo. La
- * consulta (familias) no los ve todavía, aunque el club figure como «members».
+ * («coaches»: entrenadores; «members»: también la consulta) y tiene ese permiso
+ * en un equipo que participa en el grupo. Se comprueba en cada petición.
  */
 function deviceAllowed(auth: AuthContext, clubId: Id, state: GroupState): boolean {
-  if (state.visibility === 'admins') return false;
   const teams = new Set(state.teams.map((t) => t.id));
-  return auth.grants.some((gr) => gr.clubId === clubId && gr.role === 'coach' && teams.has(gr.teamId));
+  return reachableTeams(auth, clubId, state.visibility).some((t) => teams.has(t));
 }
 
 /** Top 10 de cada clasificación y el puesto de las fichas propias pedidas (de equipos a los que tiene acceso). */
@@ -387,7 +398,8 @@ async function ownPlayers(db: Db, auth: AuthContext, clubId: Id, state: GroupSta
 
 /**
  * Grupo que el dispositivo puede consultar y, de sus equipos, los de este club
- * en los que el dispositivo es entrenador (para preseleccionar el del equipo abierto).
+ * en los que tiene un permiso que la visibilidad abre (para preseleccionar el del
+ * equipo abierto).
  */
 export interface DeviceClubGroup extends GroupKey {
   teamIds: Id[];
@@ -401,21 +413,20 @@ export async function deviceClubGroups(db: Db, auth: AuthContext, clubId: Id): P
     .bind(clubId)
     .first<{ visibility: GroupState['visibility'] }>();
   if (!club) throw notFound();
-  if (club.visibility === 'admins') return { groups: [] };
-  const coachTeams = auth.grants.filter((gr) => gr.clubId === clubId && gr.role === 'coach').map((gr) => gr.teamId);
-  if (coachTeams.length === 0) return { groups: [] };
+  const reachable = [...new Set(reachableTeams(auth, clubId, club.visibility))];
+  if (reachable.length === 0) return { groups: [] };
   const rows = (
     await db
       .prepare(
-        `SELECT season, gender, ranking_group AS "group", id FROM teams
-          WHERE club_id = ? AND club_rankings = 1 AND ranking_group IS NOT NULL AND gender IS NOT NULL AND deleted_at IS NULL
-            AND id IN (${coachTeams.map(() => '?').join(', ')})
-          ORDER BY season DESC, gender, ranking_group, id`,
+        `SELECT season, ranking_group AS "group", id FROM teams
+          WHERE club_id = ? AND club_rankings = 1 AND ranking_group IS NOT NULL AND deleted_at IS NULL
+            AND id IN (${reachable.map(() => '?').join(', ')})
+          ORDER BY season DESC, ranking_group, id`,
       )
-      .bind(clubId, ...coachTeams)
+      .bind(clubId, ...reachable)
       .all<GroupKey & { id: Id }>()
   ).results;
-  // Mismo orden y mismos grupos que antes; cada uno con sus equipos (solo los del dispositivo).
+  // Un grupo por temporada y nombre; cada uno con sus equipos (solo los del dispositivo).
   const groups = new Map<string, DeviceClubGroup>();
   for (const { id, ...g } of rows) {
     const key = `${g.season}|${groupKey(g)}`;

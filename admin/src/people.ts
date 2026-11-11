@@ -44,9 +44,9 @@ export interface ClubPeople {
   rankings: { visibility: RankingsVisibility; teams: RankingsTeam[] };
 }
 
+/** Grupo de clasificación: temporada y nombre (ni el género ni la categoría separan). */
 export interface GroupKey {
   season: string;
-  gender: Gender;
   group: string;
 }
 
@@ -62,7 +62,6 @@ export interface ClubRankingEntry {
 
 export interface ClubRankingsView {
   season: string;
-  gender: Gender;
   group: string;
   computedAt: string;
   teams: { code: string; name: string }[];
@@ -72,7 +71,7 @@ export interface ClubRankingsView {
 export const VISIBILITY_LABEL: Record<RankingsVisibility, string> = {
   admins: 'Solo administradores del club',
   coaches: 'Entrenadores de los equipos participantes',
-  members: 'Jugadores y familias',
+  members: 'Entrenadores y consulta (jugadores y familias)',
 };
 
 /** Texto sin mayúsculas ni tildes, para buscar «José» con «jose». */
@@ -116,23 +115,21 @@ export function linkProblem(card: CardView, target: { cards: readonly CardView[]
   return null;
 }
 
-/** Grupos que se pueden consultar: equipos participantes con modalidad y grupo. */
+/** Grupos que se pueden consultar: equipos participantes con grupo (sea cual sea su modalidad). */
 export function rankingGroups(teams: readonly RankingsTeam[]): GroupKey[] {
   const seen = new Map<string, GroupKey>();
   for (const t of teams) {
-    if (!t.participates || !t.group || !t.gender) continue;
-    const key = `${t.season}|${t.gender}|${t.group}`;
-    if (!seen.has(key)) seen.set(key, { season: t.season, gender: t.gender, group: t.group });
+    if (!t.participates || !t.group) continue;
+    const key = `${t.season}|${t.group}`;
+    if (!seen.has(key)) seen.set(key, { season: t.season, group: t.group });
   }
-  return [...seen.values()].sort((a, b) => b.season.localeCompare(a.season) || a.gender.localeCompare(b.gender) || a.group.localeCompare(b.group, 'es'));
+  return [...seen.values()].sort((a, b) => b.season.localeCompare(a.season) || a.group.localeCompare(b.group, 'es'));
 }
 
-export const groupQuery = (g: GroupKey) =>
-  `season=${encodeURIComponent(g.season)}&gender=${encodeURIComponent(g.gender)}&group=${encodeURIComponent(g.group)}`;
+export const groupQuery = (g: GroupKey) => `season=${encodeURIComponent(g.season)}&group=${encodeURIComponent(g.group)}`;
 
 /** Por qué un equipo todavía no clasifica con otros, o null si está listo. */
 export function teamRankingProblem(t: RankingsTeam): string | null {
-  if (!t.gender) return 'Indica la modalidad del equipo (en «Datos del equipo») para poder agruparlo.';
   if (t.participates && !t.group) return 'Participa, pero sin grupo: no aparece en ninguna clasificación.';
   return null;
 }

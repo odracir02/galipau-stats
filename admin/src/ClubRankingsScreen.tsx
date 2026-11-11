@@ -1,7 +1,9 @@
 // «Rankings del club»: qué equipos participan, en qué grupo de clasificación y
 // quién ve los rankings. Solo ofrece lo que el servidor permite: reducir la
 // visibilidad es administración normal; ampliarla a entrenadores es una
-// operación crítica (verificación reforzada); jugadores y familias, todavía no.
+// operación crítica (verificación reforzada); la consulta (jugadores y familias),
+// todavía no. Un grupo reúne a los equipos con el mismo nombre de grupo en la
+// temporada, sean del género o la categoría que sean.
 // Las clasificaciones se consultan ya calculadas por el servidor: aquí no se
 // calcula nada.
 import { Lock, ShieldAlert, Trophy } from 'lucide-react';
@@ -27,7 +29,7 @@ import { ActionError, Field, Screen } from './ui';
 /** `review`: exige marcar que se ha revisado la privacidad antes de confirmar. */
 type Confirm = { title: string; message: ReactNode; label: string; danger?: boolean; review?: boolean; run: () => Promise<unknown> };
 
-const groupLabel = (g: GroupKey) => `${g.group} · ${GENDER_LABEL[g.gender]} · ${g.season}`;
+const groupLabel = (g: GroupKey) => `${g.group} · ${g.season}`;
 
 export function ClubRankingsScreen({ me, clubId }: { me: Me; clubId: string }) {
   const club = useData<ClubDetail>(`/api/admin/clubs/${encodeURIComponent(clubId)}`);
@@ -179,11 +181,11 @@ export function ClubRankingsScreen({ me, clubId }: { me: Me; clubId: string }) {
                   </div>
                   {problem && <p className="hint">{problem}</p>}
                   <div className="form inline-form">
-                    <Field label="Grupo de clasificación" hint="Mismo nombre en los equipos que clasifican juntos (p. ej. senior).">
+                    <Field label="Grupo de clasificación" hint="Mismo nombre en los equipos que clasifican juntos, sea cual sea su género o categoría (p. ej. Todo el club).">
                       <input
                         value={draft}
                         maxLength={30}
-                        placeholder="senior"
+                        placeholder="Todo el club"
                         onChange={(e) => setGroups({ ...groups, [t.teamId]: e.target.value })}
                         list={`grupos-${clubId}`}
                       />
@@ -215,7 +217,7 @@ export function ClubRankingsScreen({ me, clubId }: { me: Me; clubId: string }) {
                       <button
                         type="button"
                         className={`btn btn-sm ${t.participates ? 'btn-danger-outline' : ''}`}
-                        disabled={action.busy || (!t.participates && !t.gender)}
+                        disabled={action.busy}
                         onClick={() =>
                           ask(
                             t.participates
