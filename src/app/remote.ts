@@ -23,6 +23,14 @@ const accountStore = API_URL ? new AccountStore() : null;
 /** Sesión del dispositivo con el servidor; null si esta versión no usa servidor. */
 export const remote: RemoteSession | null = api && accountStore ? new RemoteSession(api, accountStore) : null;
 
+/**
+ * ¿Esta ficha ya está en el club? Sí si el servidor la confirmó alguna vez
+ * (enviada desde aquí o recibida del club). Sin servidor, nunca.
+ */
+export async function isPlayerOnClub(playerId: string): Promise<boolean> {
+  return accountStore ? (await accountStore.getMeta('player', playerId)) !== null : false;
+}
+
 /** Vinculación y envío manual de equipos; null si esta versión no usa servidor. */
 export const clubSync: ClubSync | null =
   api && accountStore && remote ? new ClubSync(repo, accountStore, api, () => remote.getState().teams) : null;

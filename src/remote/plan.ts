@@ -139,7 +139,10 @@ export function buildPlan(
   /** Partidos que el servidor ya tiene (confirmados en envíos anteriores). */
   sentMatchIds: ReadonlySet<string> = new Set(),
 ): UploadPlan {
-  const players = local.players.filter((p) => p.teamId === localTeam.id).sort((a, b) => a.number - b.number || a.id.localeCompare(b.id));
+  // Primero las fichas inactivas: una baja libera su dorsal antes de que otra ficha lo ocupe.
+  const players = local.players
+    .filter((p) => p.teamId === localTeam.id)
+    .sort((a, b) => Number(a.active) - Number(b.active) || a.number - b.number || a.id.localeCompare(b.id));
   const teamMatches = local.matches.filter((m) => m.teamId === localTeam.id);
   const live = teamMatches.filter((m) => m.deletedAt === null);
   const deletions = teamMatches.filter((m) => m.deletedAt !== null && sentMatchIds.has(m.id));
@@ -164,7 +167,7 @@ export function buildPlan(
     // El cuerpo técnico no tiene dorsal: no cuenta para los repetidos.
     if (p.active && p.role !== 'official') {
       const clash = active.get(p.number);
-      if (clash) problems.push(`Dorsal ${p.number} repetido entre jugadores activos (${clash.name} y ${p.name}).`);
+      if (clash) problems.push(`Dorsal ${p.number} repetido entre jugadores activos (${clash.name} y ${p.name}). Corrígelo en «Plantilla».`);
       active.set(p.number, p);
     }
   }

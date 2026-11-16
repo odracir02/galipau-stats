@@ -42,11 +42,26 @@ export interface NewMatchInput {
  */
 export function buildSquad(players: readonly Player[], playerIds: readonly Id[]): SquadEntry[] {
   const selected = new Set(playerIds);
+  return orderSquad(
+    players
+      .filter((p) => selected.has(p.id))
+      .map((p): SquadEntry => ({ playerId: p.id, name: p.name, number: p.number, position: p.position, ...(isOfficial(p) && { role: 'official' as const }) })),
+  );
+}
+
+/** Orden de la convocatoria: campo por dorsal, porteros por dorsal y cuerpo técnico por nombre. */
+function orderSquad(entries: readonly SquadEntry[]): SquadEntry[] {
   const group = (s: SquadEntry) => (isOfficial(s) ? 2 : s.position === 'goalkeeper' ? 1 : 0);
-  return players
-    .filter((p) => selected.has(p.id))
-    .map((p): SquadEntry => ({ playerId: p.id, name: p.name, number: p.number, position: p.position, ...(isOfficial(p) && { role: 'official' as const }) }))
-    .sort((a, b) => group(a) - group(b) || (isOfficial(a) ? a.name.localeCompare(b.name, 'es') : a.number - b.number));
+  return [...entries].sort((a, b) => group(a) - group(b) || (isOfficial(a) ? a.name.localeCompare(b.name, 'es') : a.number - b.number));
+}
+
+/** Comprobaciones comunes de una convocatoria (las mismas al crear el partido y al editarla). */
+function assertValidSquad(squad: readonly SquadEntry[], maxSquad: number): void {
+  // El cuerpo técnico no cuenta para el máximo de convocados ni tiene dorsal.
+  const squadPlayers = squad.filter((s) => !isOfficial(s));
+  if (squadPlayers.length === 0) throw new ValidationError('Selecciona al menos un convocado.');
+  if (squadPlayers.length > maxSquad) throw new ValidationError(`Máximo ${maxSquad} convocados (hay ${squadPlayers.length}).`);
+  if (new Set(squadPlayers.map((s) => s.number)).size !== squadPlayers.length) throw new ValidationError('Hay dorsales repetidos en la convocatoria.');
 }
 
 /**
@@ -66,13 +81,7 @@ export async function createMatch(repo: Repository, input: NewMatchInput, id: Id
 
   const players = await repo.listPlayers(input.teamId);
   const squad = buildSquad(players, input.playerIds);
-  // El cuerpo técnico no cuenta para el máximo de convocados ni tiene dorsal.
-  const squadPlayers = squad.filter((s) => !isOfficial(s));
-  if (squadPlayers.length === 0) throw new ValidationError('Selecciona al menos un convocado.');
-  if (squadPlayers.length > team.maxSquad)
-    throw new ValidationError(`Máximo ${team.maxSquad} convocados (hay ${squadPlayers.length}).`);
-  if (new Set(squadPlayers.map((s) => s.number)).size !== squadPlayers.length)
-    throw new ValidationError('Hay dorsales repetidos en la convocatoria.');
+  assertValidSquad(squad, team.maxSquad);
 
   const halfMinutes = input.halfMinutes ?? DEFAULT_HALF_MINUTES;
   if (!Number.isInteger(halfMinutes) || halfMinutes < 5 || halfMinutes > 60)
@@ -104,6 +113,61 @@ export async function createMatch(repo: Repository, input: NewMatchInput, id: Id
 export async function previousSquadIds(repo: Repository, teamId: Id): Promise<Id[]> {
   const [last] = await repo.listMatches(teamId);
   return last ? last.squad.map((s) => s.playerId) : [];
+}
+
+// --- Convocatoria de un partido ya creado ---------------------------------------
+
+/** Jugadores con alguna acción en el partido (también anuladas): no pueden salir de la convocatoria. */
+export function playersWithEvents(events: readonly MatchEvent[]): Set<Id> {
+  return new Set(events.map((e) => e.playerId).filter((id): id is Id => id !== null));
+}
+
+/**
+ * Cambia la convocatoria de un partido sin finalizar (preparado, en juego o en
+ * el descanso) sin tocar nada más: ni el cronómetro, ni el estado, ni el
+ * marcador, ni las acciones. `match` debe ser la copia más reciente.
+ *
+ * - Quien sigue convocado conserva la copia que tenía en el partido (nombre,
+ *   dorsal y posición de entonces); los nuevos se copian de la plantilla.
+ * - No sale nadie con acciones en el partido, aunque estén anuladas: sus
+ *   acciones tienen que seguir siendo de un convocado.
+ * - Los puestos fijos del cuerpo técnico ya convocados se conservan siempre.
+ * - Mismas reglas que al crear el partido (al menos un jugador, máximo y
+ *   dorsales sin repetir) y todas las acciones siguen siendo válidas.
+ * Sin cambios, no escribe nada.
+ */
+export async function updateSquad(repo: Repository, match: Match, playerIds: readonly Id[]): Promise<Match> {
+  if (match.deletedAt !== null) throw new ValidationError('El partido está eliminado.');
+  if (match.status === 'finished') throw new ValidationError('El partido está finalizado: reábrelo para cambiar la convocatoria.');
+  const [team, players, events] = await Promise.all([repo.getTeam(match.teamId), repo.listPlayers(match.teamId), repo.listEvents(match.id)]);
+  if (!team) throw new ValidationError('El equipo no existe.');
+
+  const wanted = new Set(playerIds);
+  for (const s of match.squad) if (fixedSlotOf(s.playerId) !== null) wanted.add(s.playerId);
+  const locked = playersWithEvents(events);
+  const removed = match.squad.filter((s) => !wanted.has(s.playerId));
+  const blocked = removed.find((s) => locked.has(s.playerId));
+  if (blocked) {
+    const who = isOfficial(blocked) ? blocked.name : `${blocked.number} · ${blocked.name}`;
+    throw new ValidationError(`${who} tiene acciones en este partido: no se puede quitar de la convocatoria.`);
+  }
+
+  const kept = match.squad.filter((s) => wanted.has(s.playerId));
+  const keptIds = new Set(kept.map((s) => s.playerId));
+  const newIds = [...wanted].filter((id) => !keptIds.has(id));
+  const roster = new Map(players.map((p) => [p.id, p]));
+  for (const id of newIds) {
+    const p = roster.get(id);
+    if (!p) throw new ValidationError('Uno de los jugadores ya no está en la plantilla.');
+    if (!p.active) throw new ValidationError(`${p.name} está inactivo en la plantilla.`);
+  }
+  const squad = orderSquad([...kept, ...buildSquad(players, newIds)]);
+  assertValidSquad(squad, team.maxSquad);
+  for (const e of events) assertValidEvent({ squad }, e);
+
+  const same = squad.length === match.squad.length && squad.every((s, i) => s.playerId === match.squad[i]!.playerId);
+  if (same) return match;
+  return persist(repo, withChanges(match, { squad }));
 }
 
 async function persist(repo: Repository, match: Match): Promise<Match> {

@@ -140,6 +140,7 @@ export class IndexedDbRepository implements Repository, TeamDataStore {
         for (const p of players) track(tx.objectStore('players').put(p));
         for (const m of matches) track(tx.objectStore('matches').put(m));
         for (const e of events) track(tx.objectStore('events').put(e));
+        for (const id of records.deletePlayers ?? []) track(tx.objectStore('players').delete(id));
         await Promise.all(pending);
       } catch (e) {
         try {

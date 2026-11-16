@@ -124,6 +124,15 @@ export class ObservableRepository implements Repository {
 
   async saveTogether(records: SavedTogether): Promise<void> {
     const teams = new Set<Id>([...(records.players ?? []).map((p) => p.teamId), ...(records.matches ?? []).map((m) => m.teamId)]);
+    // Fichas que se borran: su equipo también debe poder modificarse.
+    const deletedTeams = new Set<Id>();
+    for (const id of records.deletePlayers ?? []) {
+      const teamId = (await this.inner.getPlayer(id))?.teamId;
+      if (teamId) {
+        teams.add(teamId);
+        deletedTeams.add(teamId);
+      }
+    }
     for (const e of records.events ?? []) {
       const teamId = (records.matches ?? []).find((m) => m.id === e.matchId)?.teamId ?? (await this.inner.getMatch(e.matchId))?.teamId;
       if (teamId) teams.add(teamId);
@@ -132,7 +141,7 @@ export class ObservableRepository implements Repository {
     for (const m of records.matches ?? []) await this.guard(async () => (await this.inner.getMatch(m.id))?.teamId);
     await this.inner.saveTogether(records);
     for (const teamId of teams) {
-      if (records.players?.some((p) => p.teamId === teamId)) this.emit({ entity: 'player', teamId });
+      if (records.players?.some((p) => p.teamId === teamId) || deletedTeams.has(teamId)) this.emit({ entity: 'player', teamId });
       if (records.matches?.some((m) => m.teamId === teamId)) this.emit({ entity: 'match', teamId });
       if (records.events?.length) this.emit({ entity: 'event', teamId });
     }

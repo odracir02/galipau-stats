@@ -11,6 +11,7 @@ import { isOfficial } from '../../domain/catalog';
 import { fixedSlotOf } from '../../domain/officials';
 import { formatDate, opponentLabel } from '../../domain/format';
 import type { Id, Player, Team } from '../../domain/types';
+import { duplicateNumbers } from '../../services/rosterService';
 import { loadSeasonItems } from '../../services/statsService';
 import { computeMatchStats } from '../../stats/engine';
 import { Icon } from '../components/Icon';
@@ -18,6 +19,7 @@ import { statusBadge } from '../match/labels';
 import { Segmented } from '../components/Segmented';
 import { TopBar } from '../components/TopBar';
 import { SeasonView } from '../stats/SeasonView';
+import { CardFixSheet } from './CardFixSheet';
 import { ClubLinkCard } from './ClubLinkCard';
 import { OngoingMatchBanner } from './OngoingMatchBanner';
 import { PlayerFormSheet } from './PlayerFormSheet';
@@ -161,7 +163,11 @@ function MatchList({ team, readOnly }: { team: Team; readOnly: boolean }) {
 function Roster({ team, readOnly }: { team: Team; readOnly: boolean }) {
   const players = useLoad(() => repo.listPlayers(team.id), [team.id]);
   const [editing, setEditing] = useState<{ player?: Player; official?: boolean; key: number } | null>(null);
+  const [fixing, setFixing] = useState<Player | null>(null);
   const list = players.data ?? [];
+  // Dorsales repetidos entre activos: el envío al club se detiene hasta corregirlos.
+  const duplicates = duplicateNumbers(list);
+  const duplicated = new Set(duplicates.flatMap((d) => d.players.map((p) => p.id)));
   const squad = list.filter((p) => !isOfficial(p));
   // Cuerpo técnico: los puestos fijos (Entrenador…) no se muestran ni se editan
   // aquí; solo los oficiales que se dieron de alta a mano antes, si los hay.
@@ -180,6 +186,15 @@ function Roster({ team, readOnly }: { team: Team; readOnly: boolean }) {
         </button>
       )}
       {players.error && <p className="form-error">{players.error}</p>}
+      {duplicates.length > 0 && (
+        <div className="notice" role="status">
+          <span>
+            <strong>Dorsales repetidos: {duplicates.map((d) => d.number).join(', ')}.</strong> Mientras haya dos fichas activas con el mismo dorsal no se
+            puede enviar nada al club. Abre cada ficha marcada y, en «Corregir ficha», únela con la otra (si es la misma persona) o bórrala (si
+            sobra y no ha jugado). Después, pulsa «Reintentar» en la tarjeta del club para reanudar el envío.
+          </span>
+        </div>
+      )}
       {groups.map(([title, group]) => (
         <section key={title}>
           <h3 className="section-title">
@@ -199,6 +214,7 @@ function Roster({ team, readOnly }: { team: Team; readOnly: boolean }) {
                   <span className="list-main">
                     <strong>{p.name}</strong>
                     {!p.active && <span className="muted">Inactivo</span>}
+                    {duplicated.has(p.id) && <span className="muted dup-tag">Dorsal repetido</span>}
                   </span>
                   {!readOnly && <Icon as={ChevronRight} className="chevron" />}
                 </button>
@@ -243,10 +259,29 @@ function Roster({ team, readOnly }: { team: Team; readOnly: boolean }) {
           player={editing.player}
           official={editing.official}
           onClose={() => setEditing(null)}
+          onFix={
+            editing.player && !isOfficial(editing.player)
+              ? () => {
+                  setFixing(editing.player!);
+                  setEditing(null);
+                }
+              : undefined
+          }
           onSaved={(p, addAnother) => {
             players.reload();
             showToast(isOfficial(p) ? `${p.name} guardado` : `${p.number} · ${p.name} guardado`);
             setEditing(addAnother ? { official: isOfficial(p), key: Date.now() } : null);
+          }}
+        />
+      )}
+      {fixing && (
+        <CardFixSheet
+          player={fixing}
+          onClose={() => setFixing(null)}
+          onDone={(message) => {
+            setFixing(null);
+            players.reload();
+            showToast(message);
           }}
         />
       )}

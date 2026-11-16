@@ -15,10 +15,12 @@ interface Props {
   official?: boolean;
   onClose: () => void;
   onSaved: (player: Player, addAnother: boolean) => void;
+  /** Abre «Corregir ficha» (borrar una ficha que sobra o unirla con otra de la misma persona). */
+  onFix?: () => void;
 }
 
 /** Alta y edición de un jugador o de un miembro del cuerpo técnico (sin dorsal ni posición). */
-export function PlayerFormSheet({ teamId, player, official: newOfficial = false, onClose, onSaved }: Props) {
+export function PlayerFormSheet({ teamId, player, official: newOfficial = false, onClose, onSaved, onFix }: Props) {
   const official = player ? isOfficial(player) : newOfficial;
   const [name, setName] = useState(player?.name ?? '');
   const [number, setNumber] = useState(player ? String(player.number) : '');
@@ -116,6 +118,11 @@ export function PlayerFormSheet({ teamId, player, official: newOfficial = false,
         )}
         {player && !official && (
           <p className="hint">Los partidos ya jugados conservan el nombre y dorsal que tenía entonces.</p>
+        )}
+        {onFix && (
+          <button type="button" className="btn btn-block" disabled={saving} onClick={onFix}>
+            Corregir ficha (borrar o unir con otra)
+          </button>
         )}
         {error && <p className="form-error">{error}</p>}
       </form>

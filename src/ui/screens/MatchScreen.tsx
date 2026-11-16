@@ -27,6 +27,7 @@ import { LastActionBar } from '../match/LastActionBar';
 import { ClockAdjustSheet, MatchMenuSheet, ScoreSheet } from '../match/MatchSheets';
 import { RecordPanel } from '../match/RecordPanel';
 import { ReductionSheet } from '../match/ReductionSheet';
+import { SquadEditorSheet } from '../match/SquadEditorSheet';
 import { Timeline } from '../match/Timeline';
 import { playerRows, staffOfMatch } from '../stats/staff';
 import { StatsView } from '../stats/StatsView';
@@ -195,6 +196,7 @@ type Overlay =
   | { name: 'menu' }
   | { name: 'clock' }
   | { name: 'score' }
+  | { name: 'squad' }
   | { name: 'halftime' }
   | { name: 'finish' }
   /** `synced`: el partido ya está en el servidor del club; `auto`: su equipo envía automáticamente. */
@@ -438,6 +440,7 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
           pendingCount={pending}
           onClose={() => setOverlay(null)}
           onAdjustClock={() => setOverlay({ name: 'clock' })}
+          onSquad={() => setOverlay({ name: 'squad' })}
           onScore={() => setOverlay({ name: 'score' })}
           onHalftime={() => setOverlay({ name: 'halftime' })}
           onFinish={() => setOverlay({ name: 'finish' })}
@@ -465,6 +468,24 @@ function MatchLive({ initialMatch, initialEvents, team }: { initialMatch: Match;
           onClose={() => setOverlay(null)}
           onShift={(d) => void clockOp((m) => svc.shiftClock(repo, m, d))}
           onSet={(ms) => clockOp((m) => svc.adjustClock(repo, m, ms))}
+        />
+      )}
+      {overlay?.name === 'squad' && (
+        <SquadEditorSheet
+          match={match}
+          events={events}
+          team={team}
+          onClose={() => setOverlay(null)}
+          // Sobre el partido más reciente y en la cola del cronómetro: nunca devuelve
+          // el reloj ni el estado a una copia anterior.
+          onSave={async (ids) => {
+            const ok = await clockOp((m) => svc.updateSquad(repo, m, ids));
+            if (ok) {
+              setOverlay(null);
+              showToast('Convocatoria actualizada');
+            }
+            return ok;
+          }}
         />
       )}
       {overlay?.name === 'score' && (

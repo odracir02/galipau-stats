@@ -1,4 +1,4 @@
-import { ArrowLeft, Coffee, Flag, Minus, Plus, RotateCcw, Scale, Timer, Trash2, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, Coffee, Flag, Minus, Plus, RotateCcw, Scale, Timer, Trash2, Users, type LucideIcon } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { elapsedMs, MINUTE_MS, periodStartMs } from '../../clock/clock';
 import { useNow } from '../../app/useNow';
@@ -189,6 +189,7 @@ interface MenuProps {
   match: Match;
   pendingCount: number;
   onAdjustClock: () => void;
+  onSquad: () => void;
   onScore: () => void;
   onHalftime: () => void;
   onFinish: () => void;
@@ -212,6 +213,7 @@ export function MatchMenuSheet(p: MenuProps) {
       <SyncIndicator teamId={p.match.teamId} variant="text" />
       <div className="menu">
         {!finished && item('Ajustar cronómetro', Timer, p.onAdjustClock)}
+        {!finished && item('Editar convocatoria', Users, p.onSquad)}
         {item('Corregir marcador', Scale, p.onScore)}
         {canHalftime && item('Descanso (fin de la 1.ª parte)', Coffee, p.onHalftime)}
         {finished && item('Reabrir partido', RotateCcw, p.onReopen)}

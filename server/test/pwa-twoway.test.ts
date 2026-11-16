@@ -323,6 +323,66 @@ describe('conflictos', () => {
     expect(count("players WHERE name = 'Nuevo de A'")).toBe(0);
   });
 
+  it('dorsal repetido con actividad (caso SFB): A une su ficha con la del club y el envío se reanuda sin perder nada', async () => {
+    const B = await coachB();
+    const idB = await B.localTeam();
+    const mine = await savePlayer(A.repo, teamA.id, { name: 'Nueva de A', number: 30, position: 'field', active: true });
+    // A juega un partido con su ficha (sin poder enviarlo todavía).
+    let live = await svc.createMatch(A.repo, { teamId: teamA.id, opponent: 'Rival', date: '2026-11-15', venue: 'home', season: '2026/27', playerIds: [ids[0]!, mine.id, ids[4]!] });
+    live = await svc.toggleClock(A.repo, live, 1_000);
+    const goal = await svc.recordEvent(A.repo, live, { kind: 'shot', shotType: 'nine_m', result: 'goal' }, mine.id, { period: 1, matchTimeMs: 120_000 });
+    const clubCard = await savePlayer(B.repo, idB, { name: 'Nueva de A', number: 30, position: 'field', active: true });
+    expect((await B.sync.upload(idB)).status).toBe('verified');
+    await A.puller.pull(teamA.id);
+    await expect(A.sync.upload(teamA.id)).rejects.toThrow(/no aceptaría/);
+
+    // La entrenadora une su ficha (solo en este dispositivo) con la del club.
+    const onClub = async (id: string) => (await A.store.getMeta('player', id)) !== null;
+    const { planMerge, mergePlayerCards } = await import('../../src/services/rosterService');
+    const plan = await planMerge(A.repo, mine, (await A.local.getPlayer(clubCard.id))!, onClub);
+    expect([plan.keep.id, plan.remove.id]).toEqual([clubCard.id, mine.id]);
+    await mergePlayerCards(A.repo, plan, onClub);
+
+    expect((await A.sync.upload(teamA.id)).status).toBe('verified');
+    expect(count(`players WHERE number = 30 AND active = 1 AND team_id = '${REMOTE}'`)).toBe(1);
+    expect(count(`players WHERE id = '${mine.id}'`)).toBe(0);
+    expect(count(`match_squad WHERE match_id = '${live.id}' AND player_id = '${clubCard.id}'`)).toBe(1);
+    expect(count(`events WHERE id = '${goal.id}' AND player_id = '${clubCard.id}'`)).toBe(1);
+    // El partido conserva su cronómetro.
+    const row = db.sqlite.prepare('SELECT status, clock_json FROM matches WHERE id = ?').get(live.id) as { status: string; clock_json: string };
+    expect(row.status).toBe('in_progress');
+    expect(JSON.parse(row.clock_json)).toMatchObject({ running: true, anchorWallMs: 1_000 });
+  });
+
+  it('dorsal repetido sin actividad: dar de baja la ficha del club libera el dorsal (las bajas se envían antes)', async () => {
+    const B = await coachB();
+    const idB = await B.localTeam();
+    // La ficha de A va antes por id: sin enviar primero las bajas, su alta llegaría antes que la baja.
+    const mine = await savePlayer(A.repo, teamA.id, { name: 'Nuevo de A', number: 30, position: 'field', active: true }, undefined, '0000-ficha-de-a');
+    const clubCard = await savePlayer(B.repo, idB, { name: 'Nuevo de B', number: 30, position: 'field', active: true }, undefined, 'ffff-ficha-de-b');
+    expect((await B.sync.upload(idB)).status).toBe('verified');
+    await A.puller.pull(teamA.id);
+    await savePlayer(A.repo, teamA.id, { name: 'Nuevo de B', number: 30, position: 'field', active: false }, (await A.local.getPlayer(clubCard.id))!);
+    expect((await A.sync.upload(teamA.id)).status).toBe('verified');
+    expect(count(`players WHERE id = '${clubCard.id}' AND active = 0`)).toBe(1);
+    expect(count(`players WHERE id = '${mine.id}' AND active = 1`)).toBe(1);
+  });
+
+  it('convocatoria editada en pleno partido (minuto 8): se envía con el gol, sin tocar el cronómetro', async () => {
+    let live = await svc.createMatch(A.repo, { teamId: teamA.id, opponent: 'Rival', date: '2026-11-15', venue: 'home', season: '2026/27', playerIds: [ids[0]!, ids[1]!, ids[4]!] });
+    live = await svc.toggleClock(A.repo, live, 5_000);
+    await svc.recordEvent(A.repo, live, { kind: 'recovery' }, ids[0]!, { period: 1, matchTimeMs: 60_000 });
+    expect((await A.sync.upload(teamA.id)).status).toBe('verified');
+    live = await svc.updateSquad(A.repo, (await A.local.getMatch(live.id))!, [...live.squad.map((s) => s.playerId), ids[2]!]);
+    const goal = await svc.recordEvent(A.repo, live, { kind: 'shot', shotType: 'nine_m', result: 'goal' }, ids[2]!, { period: 1, matchTimeMs: 480_000 });
+    expect((await A.sync.upload(teamA.id)).status).toBe('verified');
+    expect(count(`match_squad WHERE match_id = '${live.id}'`)).toBe(4);
+    expect(count(`events WHERE id = '${goal.id}' AND player_id = '${ids[2]}'`)).toBe(1);
+    expect(count(`events WHERE match_id = '${live.id}'`)).toBe(2);
+    const row = db.sqlite.prepare('SELECT clock_json FROM matches WHERE id = ?').get(live.id) as { clock_json: string };
+    expect(JSON.parse(row.clock_json)).toMatchObject({ running: true, anchorWallMs: 5_000, baseMs: 0 });
+  });
+
   it('un cambio local mientras se reciben cambios: la recepción no lo pisa (se reintenta)', async () => {
     const B = await coachB();
     const idB = await B.localTeam();

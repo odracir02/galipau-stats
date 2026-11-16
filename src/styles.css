@@ -1113,6 +1113,18 @@ svg {
   color: var(--c-on-header);
 }
 
+/* Convocado con acciones en el partido: no se puede quitar. */
+.squad-chip.locked {
+  cursor: default;
+}
+
+/* Fichas con el dorsal repetido en la plantilla. */
+.dup-tag {
+  margin-left: var(--s-1);
+  color: var(--c-danger);
+  font-weight: 600;
+}
+
 .squad-check {
   margin-left: auto;
   color: var(--c-accent);

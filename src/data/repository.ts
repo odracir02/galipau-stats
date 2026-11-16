@@ -43,6 +43,12 @@ export interface SavedTogether {
   players?: readonly Player[];
   matches?: readonly Match[];
   events?: readonly MatchEvent[];
+  /**
+   * Fichas que se borran en la misma transacción. Solo para corregir la
+   * plantilla (ver rosterService): fichas que nunca llegaron al club y que ya no
+   * aparecen en ninguna convocatoria ni acción.
+   */
+  deletePlayers?: readonly Id[];
 }
 
 export interface LocalSnapshot {

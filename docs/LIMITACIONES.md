@@ -7,6 +7,7 @@
 - En iOS, la app instalada y Safari tienen almacenamientos distintos: los datos de uno no se ven en el otro. Hay que instalarla antes de crear datos.
 - Eliminar la app de la pantalla de inicio borra sus datos. Ver [DESPLIEGUE.md](DESPLIEGUE.md#datos-en-ios).
 - Si se abre el mismo partido en dos pestañas a la vez, la última escritura del partido (reloj, marcador) gana. No hay bloqueo entre pestañas.
+- **Fichas repetidas (pendiente de investigar):** la causa probable es la recepción de cambios del club (`src/remote/pull.ts`), que incorpora las fichas del club sin comprobar el dorsal. Si el dispositivo ya tenía fichas creadas a mano para las mismas personas (con otro identificador), quedan dos fichas activas con el mismo dorsal y el envío se detiene. «Corregir ficha» (unir o borrar) permite resolverlo, pero no evita que vuelva a ocurrir. Cambiar la recepción requiere una investigación y pruebas específicas.
 
 ## Cronómetro
 
