@@ -4,6 +4,7 @@
 import type { Repository } from '../data/repository';
 import { RemoteError, type Api, type RemoteTeam } from './api';
 import { buildPlan, type UploadPlan } from './plan';
+import { rosterCoincidences, type RosterCoincidence } from './rosterCheck';
 import type { AccountStore, TeamLink, UploadRecord } from './store';
 import { pendingChanges, runUpload, verifyUpload, type PendingChanges, type UploadDeps, type UploadOutcome, type UploadProgress } from './upload';
 
@@ -67,6 +68,20 @@ export class ClubSync {
     };
     await this.store.addLink(link);
     return link;
+  }
+
+  /**
+   * Antes de vincular: fichas activas de este equipo cuyo dorsal ya tiene otra
+   * ficha en el equipo del club. Al vincular, el club rechazaría las de aquí y,
+   * al recibir, quedarían las dos (dorsal repetido). Solo informa: nunca une ni
+   * cambia nada; el entrenador decide si son la misma persona.
+   */
+  async linkCheck(localTeamId: string, remoteTeamId: string): Promise<{ clubPlayers: number; coincidences: RosterCoincidence[] }> {
+    const device = await this.store.getDevice();
+    if (!device) throw new RemoteError('unauthorized', 'Este dispositivo no tiene sesión con el club.');
+    const [local, snapshot] = await Promise.all([this.repo.listPlayers(localTeamId), this.api.snapshot(device.token, remoteTeamId)]);
+    const club = snapshot.players.map((p) => p.player);
+    return { clubPlayers: club.filter((p) => p.active && p.role !== 'official').length, coincidences: rosterCoincidences(local, club) };
   }
 
   /** ¿Se ha enviado ya algo con este vínculo? Entonces ya no se puede deshacer desde aquí. */

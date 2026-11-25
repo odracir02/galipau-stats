@@ -383,6 +383,93 @@ describe('conflictos', () => {
     expect(JSON.parse(row.clock_json)).toMatchObject({ running: true, anchorWallMs: 5_000, baseMs: 0 });
   });
 
+  it('caso de los ocho duplicados (equipo local vinculado con el del club): se avisa antes, se resuelve a mano y nada se pierde', async () => {
+    // El club ya tiene 8 fichas: las 5 de A y 3 más.
+    for (const num of [3, 4, 5]) ids.push((await savePlayer(A.repo, teamA.id, { name: `Jugador ${num}`, number: num, position: 'field', active: true })).id);
+    expect((await A.sync.upload(teamA.id)).status).toBe('verified');
+    const clubIds = new Map((await A.local.listPlayers(teamA.id)).map((p) => [p.number, p.id]));
+    // Persona vinculada (rankings del club) en la ficha del 7 del club.
+    db.run("INSERT INTO people (id, club_id, display_name, created_at, updated_at) VALUES ('persona-7', 'A', 'Jugador 7', '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z')");
+    db.run('UPDATE players SET person_id = ? WHERE id = ?', 'persona-7', clubIds.get(7)!);
+
+    // Otro dispositivo con su propio equipo: las mismas 7 personas (mismos dorsales y nombres), otra persona
+    // distinta con el 5 y cuatro dorsales que el club no tiene; juega un partido con ellas.
+    const C = await device('tablet', tokens.b);
+    const teamC = await createTeam(C.repo, { name: 'Senior Masculino A', code: 'SMA2627', season: '2026/27', maxSquad: 16 });
+    const local = new Map<number, string>();
+    for (const [num, name, pos] of [
+      [7, 'Jugador 7', 'field'], [9, 'Jugador 9', 'field'], [14, 'Jugador 14', 'field'], [22, 'Jugador 22', 'field'], [1, 'Jugador 1', 'goalkeeper'],
+      [3, 'Jugador 3', 'field'], [4, 'Jugador 4', 'field'], [5, 'Otra Persona', 'field'],
+      [40, 'Nueva 40', 'field'], [41, 'Nueva 41', 'field'], [42, 'Nueva 42', 'field'], [43, 'Nueva 43', 'field'],
+    ] as const) {
+      local.set(num, (await savePlayer(C.repo, teamC.id, { name, number: num, position: pos, active: true })).id);
+    }
+    const match = await svc.createMatch(C.repo, { teamId: teamC.id, opponent: 'Rival C', date: '2026-11-22', venue: 'home', season: '2026/27', playerIds: [...local.values()] });
+    for (const [i, num] of [7, 7, 9, 5, 40, 1].entries()) {
+      const payload = num === 1 ? ({ kind: 'gk_shot', shotType: 'nine_m', result: 'save' } as const) : ({ kind: 'shot', shotType: 'nine_m', result: 'goal' } as const);
+      await svc.recordEvent(C.repo, match, payload, local.get(num)!, { period: 1, matchTimeMs: (i + 1) * 60_000 });
+    }
+
+    // 1. Antes de vincular se avisa de los 8 dorsales (7 con el mismo nombre; el 5, no).
+    const check = await C.sync.linkCheck(teamC.id, REMOTE);
+    expect(check.coincidences.map((c) => [c.number, c.sameName])).toEqual([[1, true], [3, true], [4, true], [5, false], [7, true], [9, true], [14, true], [22, true]]);
+    expect(check.clubPlayers).toBe(8);
+    expect(await C.local.listPlayers(teamC.id)).toHaveLength(12);
+
+    // 2. Se vincula igualmente: el club rechaza las de aquí y, al recibir, quedan 8 dorsales repetidos.
+    await C.sync.link(teamC.id, REMOTE);
+    await C.sync.upload(teamC.id).catch(() => undefined);
+    await C.puller.pull(teamC.id);
+    const { duplicateNumbers, planMerge, mergePlayerCards } = await import('../../src/services/rosterService');
+    expect(duplicateNumbers(await C.local.listPlayers(teamC.id)).map((d) => d.number)).toEqual([1, 3, 4, 5, 7, 9, 14, 22]);
+    await expect(C.sync.upload(teamC.id)).rejects.toThrow(/no aceptaría/);
+    // Descarga repetida: no añade nada.
+    await C.puller.pull(teamC.id);
+    await C.puller.pull(teamC.id);
+    expect(await C.local.listPlayers(teamC.id)).toHaveLength(20);
+
+    // 3. A mano: se unen las 7 parejas de la misma persona; la otra persona del 5 cambia de dorsal.
+    const onClub = async (id: string) => (await C.store.getMeta('player', id)) !== null;
+    for (const num of [1, 3, 4, 7, 9, 14, 22]) {
+      const mine = (await C.local.getPlayer(local.get(num)!))!;
+      const theirs = (await C.local.getPlayer(clubIds.get(num)!))!;
+      const plan = await planMerge(C.repo, mine, theirs, onClub);
+      expect(plan.keep.id).toBe(theirs.id);
+      await mergePlayerCards(C.repo, plan, onClub);
+    }
+    await savePlayer(C.repo, teamC.id, { name: 'Otra Persona', number: 50, position: 'field', active: true }, (await C.local.getPlayer(local.get(5)!))!);
+    expect(duplicateNumbers(await C.local.listPlayers(teamC.id))).toEqual([]);
+
+    // 4. Envío interrumpido (sin conexión) y reanudado.
+    C.net.down = true;
+    await C.sync.upload(teamC.id).catch(() => undefined);
+    C.net.down = false;
+    expect((await C.sync.upload(teamC.id)).status).toBe('verified');
+
+    // En el club: 8 + 4 nuevas + la otra persona (50), sin repetidos; el partido y sus 6 acciones con las fichas buenas.
+    expect(count(`players WHERE team_id = '${REMOTE}'`)).toBe(13);
+    expect(count(`(SELECT number FROM players WHERE team_id = '${REMOTE}' AND active = 1 AND role = 'player' GROUP BY number HAVING COUNT(*) > 1)`)).toBe(0);
+    expect(count(`match_squad WHERE match_id = '${match.id}'`)).toBe(12);
+    expect(count(`events WHERE match_id = '${match.id}'`)).toBe(6);
+    for (const num of [7, 9, 1]) expect(count(`events WHERE match_id = '${match.id}' AND player_id = '${clubIds.get(num)}'`)).toBe(num === 7 ? 2 : 1);
+    expect(count(`events WHERE match_id = '${match.id}' AND player_id = '${local.get(5)}'`)).toBe(1);
+    // La persona vinculada para los rankings sigue en su ficha.
+    expect(db.sqlite.prepare('SELECT person_id FROM players WHERE id = ?').get(clubIds.get(7)!)).toEqual({ person_id: 'persona-7' });
+    // Ninguna de las fichas unidas llegó al club.
+    for (const num of [1, 3, 4, 7, 9, 14, 22]) expect(count(`players WHERE id = '${local.get(num)}'`)).toBe(0);
+  });
+
+  it('dos personas distintas con el mismo nombre y distinto dorsal: no es una coincidencia y se envían las dos', async () => {
+    const C = await device('tablet', tokens.b);
+    const teamC = await createTeam(C.repo, { name: 'Senior Masculino A', code: 'SMA2627', season: '2026/27', maxSquad: 16 });
+    const otra = await savePlayer(C.repo, teamC.id, { name: 'Jugador 7', number: 70, position: 'field', active: true });
+    expect((await C.sync.linkCheck(teamC.id, REMOTE)).coincidences).toEqual([]);
+    await C.sync.link(teamC.id, REMOTE);
+    expect((await C.sync.upload(teamC.id)).status).toBe('verified');
+    expect(count(`players WHERE team_id = '${REMOTE}' AND name = 'Jugador 7'`)).toBe(2);
+    expect(count(`players WHERE id = '${otra.id}'`)).toBe(1);
+  });
+
   it('un cambio local mientras se reciben cambios: la recepción no lo pisa (se reintenta)', async () => {
     const B = await coachB();
     const idB = await B.localTeam();

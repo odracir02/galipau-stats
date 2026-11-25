@@ -1118,6 +1118,16 @@ svg {
   cursor: default;
 }
 
+/* Antes de vincular: dorsales que ya tiene el club. */
+.link-clash p,
+.link-clash ul {
+  margin: 0 0 var(--s-2);
+}
+
+.link-clash ul {
+  padding-left: var(--s-4);
+}
+
 /* Fichas con el dorsal repetido en la plantilla. */
 .dup-tag {
   margin-left: var(--s-1);

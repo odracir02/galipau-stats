@@ -7,7 +7,7 @@
 - En iOS, la app instalada y Safari tienen almacenamientos distintos: los datos de uno no se ven en el otro. Hay que instalarla antes de crear datos.
 - Eliminar la app de la pantalla de inicio borra sus datos. Ver [DESPLIEGUE.md](DESPLIEGUE.md#datos-en-ios).
 - Si se abre el mismo partido en dos pestañas a la vez, la última escritura del partido (reloj, marcador) gana. No hay bloqueo entre pestañas.
-- **Fichas repetidas (pendiente de investigar):** la causa probable es la recepción de cambios del club (`src/remote/pull.ts`), que incorpora las fichas del club sin comprobar el dorsal. Si el dispositivo ya tenía fichas creadas a mano para las mismas personas (con otro identificador), quedan dos fichas activas con el mismo dorsal y el envío se detiene. «Corregir ficha» (unir o borrar) permite resolverlo, pero no evita que vuelva a ocurrir. Cambiar la recepción requiere una investigación y pruebas específicas.
+- **Fichas repetidas:** la recepción de cambios del club (`src/remote/pull.ts`) incorpora cada ficha por su identificador, sin comprobar el dorsal. Si el dispositivo tiene fichas propias de las mismas personas (otro identificador), quedan dos fichas activas con el mismo dorsal y el envío se detiene. Pasa sobre todo al **vincular** un equipo creado en el dispositivo con un equipo del club que ya tiene su plantilla: desde 005E.3B la confirmación del vínculo avisa de los dorsales que ya tiene el club. También puede pasar sin vincular, si dos dispositivos dan de alta a la misma persona con distinto identificador (p. ej. sin conexión). Se resuelve a mano con «Corregir ficha» (unir o borrar); no se une nada automáticamente: un dorsal o un nombre iguales no demuestran que sea la misma persona.
 
 ## Cronómetro
 
