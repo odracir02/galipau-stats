@@ -65,7 +65,12 @@ export function MatchScreen({ matchId }: { matchId: Id }) {
   }
   const { match, events, team } = data.data;
   if (readOnly) {
-    return <ReadOnlyMatch match={match} events={events} team={team} notice="Este equipo está bloqueado en este dispositivo: aquí no se registra ni se corrige nada." />;
+    // Sin permiso de entrenador: el partido se conserva tal como estaba (ni el cronómetro
+    // ni el marcador cambian por el bloqueo) y lo que haya sin enviar sigue aquí.
+    const notice = link?.accessLost
+      ? 'Este dispositivo ya no tiene permiso de entrenador en este equipo. El partido se conserva aquí tal como estaba, sin registrar ni corregir nada, y sin permiso no se puede enviar al club. Para seguir, vuelve a unirte con un código de entrenador.'
+      : 'Este equipo está bloqueado en este dispositivo: aquí no se registra ni se corrige nada.';
+    return <ReadOnlyMatch match={match} events={events} team={team} notice={notice} withoutPermission={link?.accessLost === true} />;
   }
   // Partido en curso que registra otro dispositivo: se sigue en directo, sin escrituras que choquen.
   const active = match.status === 'in_progress' || match.status === 'halftime';
@@ -95,6 +100,7 @@ function ReadOnlyMatch({
   notice,
   live = false,
   takeOver = false,
+  withoutPermission = false,
 }: {
   match: Match;
   events: MatchEvent[];
@@ -103,6 +109,8 @@ function ReadOnlyMatch({
   live?: boolean;
   /** Ofrecer «Tomar el control» (entrenador del equipo). */
   takeOver?: boolean;
+  /** El dispositivo ya no tiene permiso de entrenador: lo pendiente no se puede enviar. */
+  withoutPermission?: boolean;
 }) {
   const stats = useMemo(() => computeMatchStats(match, events), [match, events]);
   const [confirming, setConfirming] = useState(false);
@@ -141,7 +149,7 @@ function ReadOnlyMatch({
         {(pending.data ?? 0) > 0 && (
           <p className="notice" role="status">
             Este dispositivo tiene {pending.data} {pending.data === 1 ? 'acción' : 'acciones'} de este partido sin enviar: se
-            conservan aquí y se enviarán si vuelves a tener el control.
+            conservan aquí{withoutPermission ? '. Sin permiso de entrenador no se pueden enviar al club.' : ' y se enviarán si vuelves a tener el control.'}
           </p>
         )}
         {takeOver && (

@@ -419,7 +419,8 @@ describe('permisos', () => {
     db.sqlite.prepare("UPDATE grants SET revoked_at = '2026-10-31T11:00:00.000Z' WHERE device_id = 'otro-entrenador'").run();
     state = { ...state, checkedAt: '2026-10-31T11:00:00.000Z', teams: [] };
     listeners.forEach((l) => l());
-    await new Promise((r) => setTimeout(r, 50));
+    // Espera a que termine la retirada (sin depender de un tiempo fijo).
+    for (let i = 0; i < 100 && (await d.store.listLinks()).length > 0; i++) await new Promise((r) => setTimeout(r, 20));
     expect(await d.local.readAll()).toEqual({ teams: [], players: [], matches: [], events: [] });
     expect(await d.store.listLinks()).toEqual([]);
     expect(await d.sync.upload(localTeamId).catch((e: Error) => e.message)).toMatch(/no está vinculado/);

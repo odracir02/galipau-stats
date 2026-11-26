@@ -9,6 +9,7 @@ import { teamImporter, teamPuller } from '../../app/remote';
 import { navigate } from '../../app/router';
 import { showToast } from '../../app/toast';
 import type { Team } from '../../domain/types';
+import { ACCESS_LOST } from '../../remote/importer';
 import { formatChecked } from '../../remote/session';
 import type { SyncConflict, TeamLink } from '../../remote/store';
 import { Icon } from '../components/Icon';
@@ -47,8 +48,7 @@ export function ClubChangesBlock({ team, link, onChanged, advanced }: { team: Te
       {link.accessLost && (
         <p className="notice" role="status">
           <Icon as={TriangleAlert} size={18} />
-          Este dispositivo ya no tiene permiso de entrenador en el equipo del club. Los cambios sin enviar se conservan aquí,
-          bloqueados, hasta recuperar el permiso (vuelve a unirte con el código de entrenador).
+          {ACCESS_LOST}
         </p>
       )}
       {list.length > 0 && (

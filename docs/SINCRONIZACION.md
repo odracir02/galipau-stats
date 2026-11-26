@@ -160,7 +160,9 @@ Código: [`importer.ts`](../src/remote/importer.ts) (incorporación), [`pull.ts`
 
 ### Acceso retirado
 
-- Una copia sin cambios propios se retira del dispositivo. Una copia con cambios sin enviar **se conserva bloqueada** (sin edición ni envío) y con el aviso de permiso perdido; al recuperar el permiso (volver a canjear el código) se desbloquea y lo pendiente se envía. El servidor rechaza cualquier operación sin permiso.
+- Una copia con cambios sin enviar **o con un partido en juego o en el descanso** se conserva bloqueada (sin edición ni envío), con el aviso de permiso perdido; el partido queda tal como estaba (el bloqueo no escribe nada: ni cronómetro ni marcador). Una copia sin nada de eso se retira del dispositivo: todo lo que tenía ya estaba en el club. En los dos casos se avisa de qué ha pasado, sin decir nunca que algo se ha enviado si no es así.
+- Al recuperar el permiso de **entrenador** (volver a canjear un código de entrenador) se desbloquea y lo pendiente se envía con el mecanismo de siempre (mismos identificadores de operación: sin duplicados) y respetando el control del partido. Un permiso de consulta no la desbloquea. El servidor rechaza cualquier operación sin permiso.
+- **Coordinación con lo que se registra a la vez (006D.4B):** la retirada o el bloqueo se deciden con el equipo bloqueado para envíos y recepciones y con sus escrituras locales **congeladas** (`ObservableRepository.exclusive`): las acciones ya empezadas terminan antes de mirar los datos y las nuevas se rechazan con un aviso. Cada escritura comprueba el congelado y se registra como «en curso» sin ninguna espera entre ambas cosas, así que ninguna queda fuera de la decisión. Desde ese momento la copia queda bloqueada en memoria (aunque falle guardar el bloqueo o se vuelvan a leer los vínculos); si falla la base local, no se borra nada y se reintenta en la siguiente comprobación correcta de la sesión. Un problema de conexión nunca se toma como pérdida del permiso.
 - Un equipo propio del dispositivo (como el del iPhone original) nunca se retira ni se modifica por esto.
 
 ## Consulta desde otros móviles (005E.2E)

@@ -2,7 +2,7 @@ import { createApi } from '../remote/api';
 import { AutoSync } from '../remote/autosync';
 import { ClubRankingsClient } from '../remote/clubRankings';
 import { ClubSync } from '../remote/clubsync';
-import { TeamImporter } from '../remote/importer';
+import { accessChangeMessage, TeamImporter } from '../remote/importer';
 import { TeamPuller } from '../remote/pull';
 import { LiveFeed } from '../remote/live';
 import { RemoteSession } from '../remote/session';
@@ -10,6 +10,7 @@ import { AccountStore } from '../remote/store';
 import { ClubViewer, ViewerStore } from '../remote/viewer';
 import { MyPlayerPreferences } from './myPlayer';
 import { localDb, repo } from './repo';
+import { showToast } from './toast';
 
 /**
  * Servidor de la API, fijado al compilar (ver vite.config.ts). Vacío: esta
@@ -57,7 +58,7 @@ if (clubViewer) myPlayer.followViewer(clubViewer);
 
 /** Copias de equipos del club en este dispositivo (entrenadores); null si esta versión no usa servidor. */
 export const teamImporter: TeamImporter | null =
-  api && accountStore && remote ? new TeamImporter(localDb, accountStore, api, () => remote.getState().teams) : null;
+  api && accountStore && remote ? new TeamImporter(localDb, accountStore, api, () => remote.getState().teams, undefined, repo) : null;
 
 /** Recepción de los cambios del club en los equipos vinculados; null si esta versión no usa servidor. */
 export const teamPuller: TeamPuller | null =
@@ -75,6 +76,8 @@ if (teamImporter && teamPuller && remote) {
   // (o bloqueadas si tienen cambios sin enviar), equipos de entrenador que faltan
   // preparados y cambios del club recibidos.
   teamImporter.followSession(remote, () => void teamPuller.pullAll());
+  // Qué ha pasado con una copia que pierde el permiso: bloqueada (con lo suyo) o retirada (sin perder nada).
+  teamImporter.onAccessChange((c) => showToast(accessChangeMessage(c), c.kind === 'blocked' ? 'error' : 'info'));
   // Recepción puntual al abrir la app, al volver a ella o al recuperar la
   // conexión (nunca periódica salvo en un partido que registra otro dispositivo).
   let last = 0;

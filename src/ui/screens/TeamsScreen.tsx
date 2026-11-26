@@ -75,7 +75,7 @@ export function TeamsScreen() {
 /** Marca discreta de un equipo del club que está bloqueado en este dispositivo. */
 function ImportedMark({ teamId }: { teamId: string }) {
   const link = useImportedTeam(teamId);
-  if (link?.accessLost) return <> · Sin permiso del club: cambios guardados aquí</>;
+  if (link?.accessLost) return <> · Sin permiso de entrenador: bloqueado en este dispositivo</>;
   if (link?.importState === 'pending') return <> · Preparándose</>;
   return null;
 }

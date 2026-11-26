@@ -22,6 +22,7 @@ import { RecordExistsError } from '../data/repository';
 import { newId } from '../domain/ids';
 import type { Id, Team } from '../domain/types';
 import { RemoteError, type Api, type RemoteTeam, type TeamSnapshot } from './api';
+import type { TeamWriteGate } from '../app/observableRepository';
 import type { RemoteSession } from './session';
 import { metaKey, type AccountStore, type SyncEntity, type SyncMeta, type TeamLink } from './store';
 import { eventContent, matchContent, playerContent, sha256, stableJson, waitForLock } from './upload';
@@ -95,7 +96,20 @@ export class TeamImporter {
     /** Equipos y permisos vigentes según la última comprobación de la sesión. */
     private readonly remoteTeams: () => RemoteTeam[],
     private readonly now: () => Date = () => new Date(),
+    /**
+     * Exclusión de las escrituras locales de un equipo (el repositorio de la app). La
+     * retirada o el bloqueo de una copia se decide con sus escrituras congeladas.
+     */
+    private readonly writes: TeamWriteGate = { exclusive: (_teamId, fn) => fn() },
   ) {}
+
+  /**
+   * Copias que han perdido el permiso en esta sesión, bloqueadas en memoria desde el
+   * primer momento: no dependen de que se haya podido guardar el bloqueo ni de que
+   * `load()` vuelva a leer los vínculos. Se quitan al recuperar el permiso o al
+   * retirar la copia.
+   */
+  private readonly lostAccess = new Set<Id>();
 
   // --- Solo lectura (lo consulta el repositorio antes de cada escritura) ------------
 
@@ -112,10 +126,11 @@ export class TeamImporter {
 
   /** Mientras no se sepa, se supone que puede haber copias (se espera a leerlas). */
   any(): boolean {
-    return this.loaded === null || this.imported.size > 0;
+    return this.loaded === null || this.imported.size > 0 || this.lostAccess.size > 0;
   }
 
   async isReadOnly(teamId: Id): Promise<boolean> {
+    if (this.lostAccess.has(teamId)) return true;
     await (this.loaded ?? this.load());
     const link = this.imported.get(teamId);
     return link !== undefined && (link.readOnly === true || link.importState === 'pending');
@@ -445,6 +460,8 @@ export class TeamImporter {
     const check = () => {
       const s = session.getState();
       if (!s.ready || s.checking) return;
+      // Solo una comprobación correcta (o una sesión cerrada o rechazada) decide: un
+      // problema de conexión nunca se toma como pérdida del permiso.
       if (!s.linked) {
         lastChecked = null;
         void this.retireExcept([]);
@@ -459,49 +476,123 @@ export class TeamImporter {
     return session.subscribe(check);
   }
 
+  /** ¿Hay que conservar la copia? Cambios sin enviar o un partido en juego o en el descanso. */
+  private async mustKeep(localTeamId: Id): Promise<boolean> {
+    if (await this.hasLocalChanges(localTeamId)) return true;
+    const matches = await this.local.listMatches(localTeamId);
+    return matches.some((m) => !m.deletedAt && (m.status === 'in_progress' || m.status === 'halftime'));
+  }
+
   /**
-   * Copias de equipos que ya no están en la lista: sin cambios propios se
-   * retiran; con cambios sin enviar se CONSERVAN bloqueadas (sin edición ni
-   * envío), para recuperarlas con autorización. Las que vuelven a tener permiso
-   * se desbloquean. Nunca toca un equipo propio del dispositivo. Devuelve los
-   * equipos locales retirados.
+   * Copias de equipos que ya no están en la lista (sin permiso de entrenador):
+   *   - con cambios sin enviar o con un partido en juego o en el descanso, se
+   *     CONSERVAN bloqueadas (sin edición ni envío), para recuperarlas con autorización;
+   *   - si no, se retiran: todo lo que tienen está ya en el club.
+   * Las que vuelven a tener permiso de entrenador se desbloquean. Nunca toca un equipo
+   * propio del dispositivo. Devuelve los equipos locales retirados.
+   *
+   * Coordinación: con el bloqueo del equipo (ningún envío ni recepción a la vez) y con
+   * sus escrituras locales congeladas (`writes.exclusive`): las acciones ya empezadas
+   * terminan antes de decidir y las nuevas se rechazan, así que ninguna queda fuera de
+   * la decisión. Si algo falla (p. ej. la base local), la copia sigue bloqueada en este
+   * dispositivo y se vuelve a intentar en la siguiente comprobación: nunca se borra a medias.
    */
   async retireExcept(remoteTeamIds: readonly string[]): Promise<Id[]> {
     const allowed = new Set(remoteTeamIds);
     const retired: Id[] = [];
-    for (const link of await this.store.listLinks()) {
+    let links: TeamLink[];
+    try {
+      links = await this.store.listLinks();
+    } catch {
+      return retired; // sin poder leer los vínculos no se decide nada
+    }
+    for (const link of links) {
       if (link.origin !== 'imported') continue;
-      if (allowed.has(link.remoteTeamId) && !link.accessLost) continue; // con permiso y sin bloquear: nada que hacer
-      // Con el bloqueo del equipo: ningún envío ni recepción a la vez.
-      const gone = await waitForLock(link.remoteTeamId, async () => {
-        const current = await this.store.getLink(link.localTeamId);
-        if (!current || current.origin !== 'imported') return false;
-        if (allowed.has(current.remoteTeamId)) {
-          if (current.accessLost) {
-            await this.store.saveSyncState({ ...current, accessLost: undefined, readOnly: false, autoBlocked: current.autoBlocked === ACCESS_LOST ? null : current.autoBlocked }, []);
-            await this.load();
-          }
-          return false;
-        }
-        if (current.importState !== 'pending' && (await this.hasLocalChanges(current.localTeamId))) {
-          if (!current.accessLost) {
-            await this.store.saveSyncState({ ...current, accessLost: true, readOnly: true, autoBlocked: ACCESS_LOST }, []);
-            await this.load();
-          }
-          return false;
-        }
-        await this.discardLocked(current.localTeamId, false);
-        return true;
-      });
-      if (gone) retired.push(link.localTeamId);
+      if (allowed.has(link.remoteTeamId) && !link.accessLost && !this.lostAccess.has(link.localTeamId)) continue; // con permiso y sin bloquear
+      try {
+        const gone = await waitForLock(link.remoteTeamId, () => this.writes.exclusive(link.localTeamId, () => this.decide(link.localTeamId, allowed)));
+        if (gone) retired.push(link.localTeamId);
+      } catch (e) {
+        // La copia queda bloqueada aquí (lostAccess) y se reintenta en la próxima comprobación.
+        console.error(e);
+      }
     }
     return retired;
   }
+
+  /** Decisión sobre una copia, con el equipo bloqueado y sus escrituras congeladas. Devuelve si se ha retirado. */
+  private async decide(localTeamId: Id, allowed: ReadonlySet<string>): Promise<boolean> {
+    const current = await this.store.getLink(localTeamId);
+    if (!current || current.origin !== 'imported') {
+      this.lostAccess.delete(localTeamId);
+      return false;
+    }
+    if (allowed.has(current.remoteTeamId)) {
+      if (current.accessLost) {
+        await this.store.saveSyncState({ ...current, accessLost: undefined, readOnly: false, autoBlocked: current.autoBlocked === ACCESS_LOST ? null : current.autoBlocked }, []);
+        await this.load();
+      }
+      this.lostAccess.delete(localTeamId);
+      this.emit();
+      return false;
+    }
+    // Sin permiso: bloqueada desde ya en este dispositivo, pase lo que pase después.
+    const firstTime = !this.lostAccess.has(localTeamId) && !current.accessLost;
+    this.lostAccess.add(localTeamId);
+    this.emit();
+    const name = (await this.local.getTeam(localTeamId))?.name ?? 'El equipo';
+    if (current.importState !== 'pending' && (await this.mustKeep(localTeamId))) {
+      if (!current.accessLost) {
+        await this.store.saveSyncState({ ...current, accessLost: true, readOnly: true, autoBlocked: ACCESS_LOST }, []);
+        await this.load();
+      }
+      if (firstTime) this.notifyAccess({ kind: 'blocked', teamName: name });
+      return false;
+    }
+    await this.discardLocked(localTeamId, false);
+    this.lostAccess.delete(localTeamId);
+    if (current.importState !== 'pending') this.notifyAccess({ kind: 'retired', teamName: name });
+    return true;
+  }
+
+  // --- Avisos a la interfaz ----------------------------------------------------------
+
+  private readonly accessListeners = new Set<(change: AccessChange) => void>();
+
+  /** Avisa cuando una copia pierde el permiso (bloqueada o retirada). */
+  onAccessChange(listener: (change: AccessChange) => void): () => void {
+    this.accessListeners.add(listener);
+    return () => this.accessListeners.delete(listener);
+  }
+
+  private notifyAccess(change: AccessChange): void {
+    for (const l of this.accessListeners) {
+      try {
+        l(change);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }
 }
 
-/** Aviso en una copia que perdió el permiso con cambios sin enviar. */
+/** Qué ha pasado con una copia al perder el permiso de entrenador. */
+export type AccessChange =
+  /** Se conserva bloqueada: tenía cambios sin enviar o un partido en juego o en el descanso. */
+  | { kind: 'blocked'; teamName: string }
+  /** Se ha quitado del dispositivo: todo lo que tenía estaba ya en el club. */
+  | { kind: 'retired'; teamName: string };
+
+/** Texto del aviso para quien usa el dispositivo. Nunca dice que algo se ha enviado si no es así. */
+export function accessChangeMessage(change: AccessChange): string {
+  return change.kind === 'blocked'
+    ? `«${change.teamName}»: este dispositivo ya no tiene permiso de entrenador. Lo que hay aquí se conserva, bloqueado, pero sin permiso no se puede enviar al club.`
+    : `«${change.teamName}» se ha quitado de este dispositivo: ya no tiene permiso de entrenador. No se ha perdido nada: todo lo que tenía ya estaba en el club.`;
+}
+
+/** Aviso en una copia que perdió el permiso de entrenador y se conserva bloqueada. */
 export const ACCESS_LOST =
-  'Este dispositivo ya no tiene permiso de entrenador en el equipo del club. Los cambios sin enviar se conservan aquí, bloqueados, hasta recuperar el permiso.';
+  'Este dispositivo ya no tiene permiso de entrenador en este equipo del club. Lo que hay aquí se conserva en este dispositivo, bloqueado; sin permiso no se puede enviar al club. Para volver a sincronizarlo, vuelve a unirte con un código de entrenador.';
 
 /** Situación de la incorporación automática de un equipo del club. */
 export type Incorporation =
