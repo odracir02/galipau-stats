@@ -158,8 +158,9 @@ describe('ninguna operación del servidor concede superadministrador', () => {
   it('no hay código en server/src que inserte el rol superadmin', () => {
     const dir = new URL('../src/', import.meta.url);
     let checked = 0;
-    for (const file of readdirSync(dir)) {
-      const src = readFileSync(new URL(file, dir), 'utf8');
+    // Todos los módulos, también los de subcarpetas (accounts/).
+    for (const file of readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.ts'))) {
+      const src = readFileSync(new URL(file.replaceAll('\\', '/'), dir), 'utf8');
       // Cada sentencia que inserta roles, hasta el final de su cadena.
       for (const sql of src.match(/INSERT INTO admin_roles[^"`]*/g) ?? []) {
         checked++;

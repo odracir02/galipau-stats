@@ -17,6 +17,7 @@ Base técnica para clubes, equipos, permisos y sincronización. **La aplicación
 | Worker de preview (`galipau-stats-api-preview`) | **Desplegado** en `galipau-stats-api-preview.ricardosastrelopez.workers.dev`, con `TOKEN_PEPPER` configurado. La versión desplegada aún no incluye el AUD de la aplicación crítica |
 | Cloudflare Access de preview | Equipo `shiny-star-4f59` y **las dos aplicaciones creadas** y configuradas en `wrangler.jsonc`: la general (`/api/admin`, `/api/admin/*`) y la crítica (`/api/admin/critical`, `/api/admin/critical/*`, con autenticación y biometría). Ambas solo admiten al superadministrador. La funcionalidad crítica **no está habilitada** en el Worker |
 | Base de datos D1 de producción, Workers, secretos y Access | **No creados** |
+| Cuentas de club: propietario y administradores con código por correo, migración 0008 ([CUENTAS.md](CUENTAS.md)) | Hecho y probado; **desactivado en todos los entornos** (`ACCOUNTS_ENABLED` sin definir); 0008 sin aplicar en remoto; sin interfaz |
 
 Relacionado: [Sincronización](SINCRONIZACION.md) · [Permisos, seguridad y privacidad](SEGURIDAD.md).
 
@@ -116,7 +117,7 @@ Correspondencia con IndexedDB:
 | `POST /api/sync/events` | entrenador, administrador de club o superadministrador | Subir una acción (alta, edición o borrado). En partidos en curso, solo el dispositivo con el control |
 | `POST /api/sync/control` | entrenador (`match.transfer`) | Tomar el control de un partido en curso o en el descanso, con el contador de control visto ([SINCRONIZACION.md](SINCRONIZACION.md#control-de-los-partidos-entre-entrenadores-005e2h1)) |
 
-Autenticación: `Authorization: Bearer <token del dispositivo>`. Las rutas de administración (`/api/admin/*`) usan Cloudflare Access y están en [AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#operaciones-implementadas). Roles y permisos: [SEGURIDAD.md](SEGURIDAD.md).
+Autenticación: `Authorization: Bearer <token del dispositivo>`. Las rutas de cuentas de club (`/api/account/*`) solo existen con `ACCOUNTS_ENABLED=true` y están en [CUENTAS.md](CUENTAS.md#rutas-apiaccount-solo-con-el-interruptor-activado). Las rutas de administración (`/api/admin/*`) usan Cloudflare Access y están en [AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#operaciones-implementadas). Roles y permisos: [SEGURIDAD.md](SEGURIDAD.md).
 
 De fases posteriores son:
 

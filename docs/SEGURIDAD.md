@@ -194,6 +194,13 @@ Su administrador de club deja de verlo. Solo el superadministrador lo gestiona p
 
 `GET /api/teams/:teamId/codes` se autentica con el token de dispositivo (`Authorization: Bearer`), no con cookies de Access. Por eso puede usar CORS para los orígenes de la app **sin credenciales**, sin afectar a la administración, que sigue sin CORS y con su protección CSRF. Las respuestas llevan `Cache-Control: no-store`.
 
+## Cuentas de club
+
+Propietario y administradores con cuenta propia (código por correo, sesión con cookie en
+su propio origen), desactivadas en todos los entornos hasta su publicación. No dan ningún
+permiso sobre la API de dispositivos ni sobre la administración de Access, y un token de
+dispositivo no da acceso a ellas. Modelo, límites, invariantes y rutas: [CUENTAS.md](CUENTAS.md).
+
 ## Protección CSRF de la administración
 
 Las escrituras administrativas (`POST`, `PUT`, `PATCH`, `DELETE`) solo se aceptan desde el propio origen de la API y, si llevan cuerpo, con `Content-Type: application/json`. Si faltan las cabeceras `Sec-Fetch-Site` y `Origin`, se rechaza. Detalle y tabla de respuestas: [AUTENTICACION_ADMIN.md](AUTENTICACION_ADMIN.md#protección-csrf-de-las-escrituras-administrativas).

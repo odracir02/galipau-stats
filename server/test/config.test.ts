@@ -112,8 +112,9 @@ describe('base de datos de preview', () => {
 
   it('el código del Worker no contiene secretos', () => {
     const dir = new URL('../src/', import.meta.url);
-    for (const file of readdirSync(dir)) {
-      const src = readFileSync(new URL(file, dir), 'utf8');
+    // Todos los módulos, también los de subcarpetas (accounts/).
+    for (const file of readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.ts'))) {
+      const src = readFileSync(new URL(file.replaceAll('\\', '/'), dir), 'utf8');
       // Ninguna asignación de un valor literal a la clave.
       expect(src, file).not.toMatch(/TOKEN_PEPPER\s*[:=]\s*['"`][^'"`]/);
       expect(src, file).not.toMatch(/-----BEGIN|sk-[A-Za-z0-9]{20}|ghp_[A-Za-z0-9]{20}/);

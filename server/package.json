@@ -16,5 +16,8 @@
   },
   "engines": {
     "node": ">=24"
+  },
+  "dependencies": {
+    "better-auth": "1.7.28"
   }
 }

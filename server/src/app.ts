@@ -52,6 +52,8 @@
 //   POST   /api/admin/critical/teams/:teamId/codes/:role/regenerate   regenerar un código
 //   POST   /api/admin/critical/teams/:teamId/codes/:role/revoke       revocar un código
 import { accessConfig } from './access';
+import { accountsEnabled } from './accounts/config';
+import type { AccountMailer } from './accounts/mail';
 import {
   adminProfile,
   appointClubAdmin,
@@ -106,6 +108,18 @@ export interface Env {
   ADMIN_CRITICAL_OPS?: string;
   /** Panel de administración. */
   ASSETS?: AssetsBinding;
+  /** Cuentas de club (accounts/config.ts). «true» publica la función; cualquier otro valor la deja sin rutas. */
+  ACCOUNTS_ENABLED?: string;
+  /** «true» = registro libre de cuentas y clubes. Independiente de ACCOUNTS_ENABLED. */
+  ACCOUNTS_PUBLIC_SIGNUP?: string;
+  /** Origen exacto en el que se sirven las cuentas. */
+  ACCOUNTS_ORIGIN?: string;
+  /** Clave de firma de las sesiones de cuenta. Secret. */
+  BETTER_AUTH_SECRET?: string;
+  /** Clave secreta de Turnstile. Secret. */
+  TURNSTILE_SECRET_KEY?: string;
+  /** Correo de los códigos (solo pruebas; el proveedor real llegará en otra tarea). */
+  ACCOUNTS_MAILER?: AccountMailer;
 }
 
 /** Longitud mínima de TOKEN_PEPPER (32 bytes aleatorios en base64url ocupan 43). */
@@ -216,6 +230,13 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
 
   if (parts[1] === 'admin') return adminRoute(request, env, parts.slice(2));
+  // Cuentas de club (/api/account/*) y su administración por club (/api/club/*): con
+  // el interruptor apagado esta rama no existe y la ruta sigue el camino de siempre
+  // (dispositivos). El módulo (y la biblioteca de autenticación) solo se carga si se usa.
+  if ((parts[1] === 'account' || parts[1] === 'club') && accountsEnabled(env)) {
+    const { accountsRoute } = await import('./accounts/routes');
+    return accountsRoute(request, env, parts);
+  }
 
   if (request.method === 'POST' && parts[1] === 'invites' && parts[2] === 'redeem' && parts.length === 3) {
     return redeem(request, env);
@@ -475,8 +496,11 @@ async function peopleRoute(request: Request, db: Db, auth: AuthContext, path: st
 
 export async function handle(request: Request, env: Env): Promise<Response> {
   // La administración (panel y API) solo se usa desde su propio origen: nunca CORS.
-  const isAdmin = /^\/(api\/)?admin(\/|$)/.test(new URL(request.url).pathname);
-  const cors = isAdmin ? {} : corsHeaders(request, env);
+  const path = new URL(request.url).pathname;
+  const isAdmin = /^\/(api\/)?admin(\/|$)/.test(path);
+  // Las cuentas tampoco usan CORS (mismo origen y cookie), solo si están activadas.
+  const isAccount = accountsEnabled(env) && /^\/api\/(account|club)(\/|$)/.test(path);
+  const cors = isAdmin || isAccount ? {} : corsHeaders(request, env);
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   try {
     const res = await route(request, env);

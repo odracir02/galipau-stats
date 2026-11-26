@@ -93,7 +93,7 @@ describe('migración 0007: estructura y datos existentes', () => {
     addClub(db, 'A');
     addTeam(db, 'ta', 'A', 'SMA2627');
     addRoster(db, 'ta', 'a-');
-    expect(db.migrate()).toEqual([FILE]);
+    expect(db.migrate(FILE)).toEqual([FILE]);
     expect(one(db, "SELECT person_id, ranking_excluded FROM players WHERE id = 'a-p7'")).toEqual({ person_id: null, ranking_excluded: 0 });
   });
 });

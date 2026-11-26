@@ -22,11 +22,22 @@ describe('migraciones', () => {
     // Numeración única y consecutiva.
     expect(files.map((f) => Number(f.slice(0, 4)))).toEqual(files.map((_, i) => i + 1));
     expect(tables(db)).toEqual([
+      'account_audit',
+      'account_state',
       'admin_audit',
       'admin_identities',
       'admin_roles',
+      'auth_account',
       'auth_attempts',
+      'auth_rate_limit',
+      'auth_session',
+      'auth_user',
+      'auth_verification',
       'change_log',
+      'club_invitations',
+      'club_memberships',
+      'club_owner_transfers',
+      'club_owners',
       'club_rankings_cache',
       'clubs',
       'd1_migrations',
