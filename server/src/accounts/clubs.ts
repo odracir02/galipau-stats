@@ -25,6 +25,8 @@ export interface AccountUser {
 export type ClubRole = 'owner' | 'admin';
 
 export const INVITATION_DAYS = 7;
+/** Máximo de invitaciones pendientes (vigentes, sin aceptar ni retirar) por club. */
+export const MAX_PENDING_INVITATIONS = 20;
 export const TRANSFER_DAYS = 7;
 
 const DAY_MS = 86_400_000;
@@ -125,15 +127,15 @@ export async function requireClubAccess(db: Db, user: AccountUser, clubId: strin
 export async function accountSummary(db: Db, user: AccountUser, now = new Date()) {
   const { results: clubs } = await db
     .prepare(
-      `SELECT c.id, c.name, 'owner' AS role FROM clubs c JOIN club_owners o ON o.club_id = c.id
+      `SELECT c.id, c.name, c.short_name AS shortName, 'owner' AS role FROM clubs c JOIN club_owners o ON o.club_id = c.id
          WHERE o.user_id = ?1 AND c.deleted_at IS NULL
        UNION ALL
-       SELECT c.id, c.name, 'admin' AS role FROM clubs c JOIN club_memberships m ON m.club_id = c.id
+       SELECT c.id, c.name, c.short_name AS shortName, 'admin' AS role FROM clubs c JOIN club_memberships m ON m.club_id = c.id
          WHERE m.user_id = ?1 AND m.revoked_at IS NULL AND c.deleted_at IS NULL
        ORDER BY 2`,
     )
     .bind(user.id)
-    .all<{ id: string; name: string; role: ClubRole }>();
+    .all<{ id: string; name: string; shortName: string | null; role: ClubRole }>();
   const { results: invitations } = user.emailVerified
     ? await db
         .prepare(
@@ -190,10 +192,24 @@ export async function deactivateAccount(db: Db, userId: string, actor: string | 
 // Alta de club (registro libre)
 // ---------------------------------------------------------------------------
 
+/** Texto visible sin caracteres de control y sin espacios sobrantes. */
+const printable = (value: string) => [...value].filter((ch) => ch.charCodeAt(0) >= 32 && ch.charCodeAt(0) !== 127).join('').trim();
+
 function clubName(value: unknown): string {
-  const name = typeof value === 'string' ? [...value].filter((ch) => ch.charCodeAt(0) >= 32 && ch.charCodeAt(0) !== 127).join('').trim() : '';
+  const name = typeof value === 'string' ? printable(value) : '';
   if (!name || name.length > 80) throw new HttpError(400, 'bad_request', 'Nombre de club no válido.');
   return name;
+}
+
+export const SHORT_NAME_MAX = 24;
+
+/** Nombre corto opcional (cabeceras): vacío = sin nombre corto. */
+function clubShortName(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') throw new HttpError(400, 'bad_request', 'Nombre corto no válido.');
+  const short = printable(value);
+  if (short.length > SHORT_NAME_MAX) throw new HttpError(400, 'bad_request', `El nombre corto admite hasta ${SHORT_NAME_MAX} caracteres.`);
+  return short || null;
 }
 
 /**
@@ -201,20 +217,21 @@ function clubName(value: unknown): string {
  * identificador lo propone el cliente (UUID): si la petición se repite, devuelve el
  * mismo club en lugar de crear otro.
  */
-export async function createOwnedClub(db: Db, user: AccountUser, input: { id?: unknown; name?: unknown }, pepper: string, now = new Date()) {
+export async function createOwnedClub(db: Db, user: AccountUser, input: { id?: unknown; name?: unknown; shortName?: unknown }, pepper: string, now = new Date()) {
   const id = typeof input.id === 'string' ? input.id.toLowerCase() : '';
   if (!UUID.test(id)) throw new HttpError(400, 'bad_request', 'Identificador de club no válido.');
   const name = clubName(input.name);
+  const shortName = clubShortName(input.shortName);
   if (!user.emailVerified) throw new HttpError(403, 'email_unverified', 'Verifica antes tu correo.');
 
   const existing = async () => {
     const row = await db
-      .prepare('SELECT c.id, c.name, o.user_id AS owner FROM clubs c LEFT JOIN club_owners o ON o.club_id = c.id WHERE c.id = ?')
+      .prepare('SELECT c.id, c.name, c.short_name AS shortName, o.user_id AS owner FROM clubs c LEFT JOIN club_owners o ON o.club_id = c.id WHERE c.id = ?')
       .bind(id)
-      .first<{ id: string; name: string; owner: string | null }>();
+      .first<{ id: string; name: string; shortName: string | null; owner: string | null }>();
     if (!row) return null;
     if (row.owner !== user.id) throw new HttpError(409, 'conflict', 'Ese identificador ya está en uso.');
-    return { club: { id: row.id, name: row.name }, created: false };
+    return { club: { id: row.id, name: row.name, shortName: row.shortName }, created: false };
   };
   const before = await existing();
   if (before) return before;
@@ -229,8 +246,8 @@ export async function createOwnedClub(db: Db, user: AccountUser, input: { id?: u
     res = await db.batch([
       guard.increment,
       db
-        .prepare(`INSERT INTO clubs (id, name, created_at, updated_at) SELECT ?, ?, ?, ? WHERE ${guard.withinLimit.sql} RETURNING id`)
-        .bind(id, name, t, t, ...guard.withinLimit.values),
+        .prepare(`INSERT INTO clubs (id, name, short_name, created_at, updated_at) SELECT ?, ?, ?, ?, ? WHERE ${guard.withinLimit.sql} RETURNING id`)
+        .bind(id, name, shortName, t, t, ...guard.withinLimit.values),
       db.prepare('INSERT INTO club_owners (club_id, user_id, since) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM clubs WHERE id = ?)').bind(id, user.id, t, id),
       auditIf(db, 'EXISTS (SELECT 1 FROM club_owners WHERE club_id = ? AND user_id = ?)', [id, user.id], user.id, id, 'club.create', 'club', id, t),
     ]);
@@ -240,7 +257,7 @@ export async function createOwnedClub(db: Db, user: AccountUser, input: { id?: u
     if (after) return after;
     return translateDbError(e);
   }
-  if (returned(res[1])) return { club: { id, name }, created: true };
+  if (returned(res[1])) return { club: { id, name, shortName }, created: true };
   const after = await existing();
   if (after) return after;
   throw tooManyClubs();
@@ -253,7 +270,7 @@ export async function createOwnedClub(db: Db, user: AccountUser, input: { id?: u
 export async function clubDetail(db: Db, user: AccountUser, clubId: string, now = new Date()) {
   const role = await requireRole(db, user, clubId, 'any', false);
   const [club, owner, admins, invitations, transfer] = await db.batch([
-    db.prepare('SELECT id, name, status FROM clubs WHERE id = ?').bind(clubId),
+    db.prepare('SELECT id, name, short_name AS shortName, status FROM clubs WHERE id = ?').bind(clubId),
     db.prepare('SELECT u.id AS userId, u.email, o.since FROM club_owners o JOIN auth_user u ON u.id = o.user_id WHERE o.club_id = ?').bind(clubId),
     db
       .prepare('SELECT u.id AS userId, u.email, m.created_at AS since FROM club_memberships m JOIN auth_user u ON u.id = m.user_id WHERE m.club_id = ? AND m.revoked_at IS NULL ORDER BY m.created_at')
@@ -275,6 +292,22 @@ export async function clubDetail(db: Db, user: AccountUser, clubId: string, now 
     invitations: role === 'owner' ? invitations?.results ?? [] : [],
     transfer: role === 'owner' || pendingTransfer?.toUserId === user.id ? pendingTransfer : null,
   };
+}
+
+/**
+ * Resumen de los equipos del club para su panel: solo con rol en ese club, sin
+ * códigos de invitación ni datos de jugadores.
+ */
+export async function clubTeams(db: Db, user: AccountUser, clubId: string) {
+  await requireClubAccess(db, user, clubId);
+  const { results } = await db
+    .prepare(
+      `SELECT id, name, code, season, category, gender FROM teams
+       WHERE club_id = ? AND deleted_at IS NULL ORDER BY season DESC, name`,
+    )
+    .bind(clubId)
+    .all<{ id: string; name: string; code: string; season: string; category: string | null; gender: string | null }>();
+  return { teams: results };
 }
 
 // ---------------------------------------------------------------------------
@@ -304,12 +337,18 @@ export async function inviteAdmin(db: Db, user: AccountUser, clubId: string, raw
       db
         .prepare('UPDATE club_invitations SET revoked_at = ? WHERE club_id = ? AND email = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at <= ?')
         .bind(t, clubId, email, t),
+      // Solo se inserta si el club no ha llegado al máximo de pendientes vigentes. La
+      // cuenta y la inserción son la misma sentencia dentro del batch (D1 ejecuta las
+      // escrituras una a una), así que ni con peticiones simultáneas se supera.
       db
         .prepare(
           `INSERT INTO club_invitations (id, club_id, email, role, invited_by_user_id, created_at, expires_at)
-           VALUES (?, ?, ?, 'admin', ?, ?, ?) ON CONFLICT DO NOTHING`,
+           SELECT ?1, ?2, ?3, 'admin', ?4, ?5, ?6
+           WHERE (SELECT COUNT(*) FROM club_invitations
+                  WHERE club_id = ?2 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?5) < ?7
+           ON CONFLICT DO NOTHING`,
         )
-        .bind(id, clubId, email, user.id, t, new Date(now.getTime() + INVITATION_DAYS * DAY_MS).toISOString()),
+        .bind(id, clubId, email, user.id, t, new Date(now.getTime() + INVITATION_DAYS * DAY_MS).toISOString(), MAX_PENDING_INVITATIONS),
       auditIf(db, 'EXISTS (SELECT 1 FROM club_invitations WHERE id = ?)', [id], user.id, clubId, 'invitation.create', 'invitation', id, t),
     ]),
   );
@@ -317,9 +356,17 @@ export async function inviteAdmin(db: Db, user: AccountUser, clubId: string, raw
     .prepare('SELECT id, email, expires_at AS expiresAt FROM club_invitations WHERE club_id = ? AND email = ? AND accepted_at IS NULL AND revoked_at IS NULL')
     .bind(clubId, email)
     .first<{ id: string; email: string; expiresAt: string }>();
-  if (!row) throw new HttpError(409, 'conflict', 'No se ha podido crear la invitación. Inténtalo de nuevo.');
+  // Sin invitación pendiente para ese correo: el club ha llegado al máximo.
+  if (!row) throw tooManyInvitations();
   return { invitation: row, created: row.id === id };
 }
+
+export const tooManyInvitations = () =>
+  new HttpError(
+    409,
+    'limite_invitaciones',
+    `El club ya tiene ${MAX_PENDING_INVITATIONS} invitaciones pendientes. Retira alguna o espera a que caduquen para invitar a otra persona.`,
+  );
 
 export async function revokeInvitation(db: Db, user: AccountUser, clubId: string, invitationId: string, now = new Date()) {
   await requireRole(db, user, clubId, 'owner', true);

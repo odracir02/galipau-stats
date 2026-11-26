@@ -2,8 +2,8 @@
 
 Base técnica de la autogestión de clubes: cuentas con inicio de sesión por código de
 correo, un propietario por club y varios administradores. **Desactivada en todos los
-entornos** (`ACCOUNTS_ENABLED` sin definir): no hay interfaz y la migración 0008 no está
-aplicada en ninguna D1 remota. Con el interruptor apagado, el Worker no carga el módulo y
+entornos** (`ACCOUNTS_ENABLED` sin definir). La migración 0008 está aplicada en la D1 de
+preview (sus tablas, vacías) y el panel de clubes (`/club/`) solo se ha probado en local. Con el interruptor apagado, el Worker no carga el módulo y
 funciona sin la migración 0008; `/api/account/*` y `/api/club/*` siguen el camino de
 cualquier ruta desconocida (401 sin token de dispositivo, 404 con él), como antes.
 
@@ -29,6 +29,7 @@ responden 503 `accounts_not_configured` y no se arranca nada):
 | `BETTER_AUTH_SECRET` | secret | Clave de firma de las sesiones, al menos 32 caracteres |
 | `TOKEN_PEPPER` | secret | La de siempre; aquí, para los contadores de límites |
 | `TURNSTILE_SECRET_KEY` | secret | Obligatoria salvo en local y pruebas |
+| `TURNSTILE_SITE_KEY` | variable | Clave de sitio (pública) para el panel. Siempre junto a la secreta: con una sola, 503 |
 | Proveedor de correo | — | Pendiente (tarea posterior). Hoy solo hay correo simulado en las pruebas y la consola en `wrangler dev` local |
 
 ## Biblioteca de autenticación
@@ -141,11 +142,64 @@ siguen gestionados desde la administración.
 | `POST /api/account/invitations/:id/accept` · `…/decline` | cuenta del correo invitado | Responder a una invitación |
 | `POST /api/account/transfers/:id/accept` · `…/decline` | quien la recibe | Responder a una transferencia |
 | `POST /api/account/transfers/:id/cancel` | quien la propuso | Cancelarla |
+| `GET /api/account/config` | cualquiera (sin sesión) | Si el alta de clubes está abierta, la clave de sitio de Turnstile y el enlace a la PWA. Nada privado |
+| `GET /api/club/:clubId/teams` | propietario o administrador de ese club | Resumen de equipos (nombre, identificador, temporada, categoría, modalidad). Sin códigos de invitación ni jugadores |
 | `GET /api/club/:clubId/me` | propietario o administrador de ese club | Rol de la cuenta en el club. Las futuras operaciones administrativas del club cuelgan de `/api/club/:clubId/*` y pasan por el mismo guardián |
 
 Quien no tiene rol en un club recibe 404 (no se revela si existe). Un token de
 dispositivo no sirve en estas rutas, y una sesión de cuenta no sirve en la API de
 dispositivos ni en la administración.
+
+## Panel de clubes (`/club/`)
+
+Aplicación web propia (`club/`), separada de la PWA deportiva y del panel de
+superadministración (`/admin`). Comparte el sistema de diseño (`src/styles.css`) y la
+navegación por `#`. Se compila a `server/admin-dist/club` (`npm run build:club`; el
+Worker compila los dos paneles con `build:panels`) y el Worker la sirve en `/club/`
+**solo con `ACCOUNTS_ENABLED=true` y en `ACCOUNTS_ORIGIN`**; si no, `/club` da el 404 de
+siempre. Política de seguridad propia: solo archivos y API del mismo origen y, con
+Turnstile configurado, su script y su marco.
+
+| Pantalla | Contenido |
+| -------- | --------- |
+| Bienvenida | Qué es, «Entrar», «Crear mi club» (desactivado si el alta está cerrada), cómo funciona el código por correo y enlace a la aplicación deportiva |
+| Acceso | Correo → código de seis cifras → entrar. Mensajes para código incorrecto, caducado, demasiados intentos, demasiadas solicitudes y sin conexión. El texto no revela si el correo tiene cuenta |
+| Alta de club | Nombre y nombre corto; la cuenta queda como propietaria. El identificador se propone una vez: si se repite el envío, el mismo club |
+| Inicio | Clubes con su rol, propuestas de propiedad pendientes (enlace al club), invitaciones pendientes (aceptar o rechazar) y «Crear otro club» si el alta está abierta. Se actualiza al volver a él |
+| Panel del club | Selector si hay varios clubes (conserva la sección); Resumen, Equipos y Temporadas (lectura), Códigos (no disponible todavía) y Administradores. Lo que aún no existe en el servidor aparece como «Próximamente», sin formularios |
+
+### Sección «Administradores»
+
+Usa solo las rutas de cuentas que ya existían (invitaciones, administradores,
+salida y transferencias); no hay rutas nuevas.
+
+| Rol | Puede |
+| --- | ----- |
+| Propietario | Ver a las personas con acceso (correo, rol, estado y fecha); invitar por correo; ver y retirar invitaciones pendientes; retirar administradores; proponer la propiedad a un administrador, ver su estado y cancelarla. No puede dejar el club mientras tenga la propiedad |
+| Administrador | Ver a las personas con acceso; aceptar o rechazar la propiedad si se la proponen; dejar el club |
+
+- **Sin correo todavía.** Crear una invitación no envía nada: el panel dice que la
+  persona podrá aceptarla al entrar con ese correo y que, de momento, hay que
+  avisarla. Cuando haya proveedor, el envío irá en el servidor, justo después de
+  crear la invitación (`inviteAdmin`), sin cambiar el panel.
+- **Confirmación** antes de retirar una invitación o un administrador, proponer o
+  aceptar la propiedad y dejar el club (hoja de confirmación de la PWA).
+- **Tras cada operación**, salga bien o mal, se vuelven a pedir la ficha del club y la
+  cuenta, y el resultado aparece junto con los datos ya actualizados. Si el rol ha
+  cambiado mientras la pantalla estaba abierta (otra persona ha aceptado la propiedad
+  o le han retirado el acceso), el servidor rechaza la operación y la pantalla pasa al
+  rol real o a «No encontrado o sin acceso».
+- Los botones solo reflejan el rol: cada operación la vuelve a comprobar el Worker.
+  Repetir una invitación pendiente devuelve la misma (sin duplicar).
+- **Límite: 20 invitaciones pendientes por club** (vigentes: sin aceptar, sin retirar y
+  sin caducar). Lo aplica el servidor en la misma sentencia que crea la invitación,
+  así que tampoco se supera con peticiones simultáneas; al llegar, 409
+  `limite_invitaciones` con un mensaje claro. Retirar, aceptar o dejar caducar una
+  invitación libera hueco. Cada club tiene su propio límite.
+
+La sesión vive solo en la cookie HttpOnly: el panel no guarda nada en
+`localStorage` ni en `sessionStorage`, y el rol que muestra es el que devuelve el
+servidor en cada petición.
 
 ## Pruebas
 
@@ -157,6 +211,8 @@ dispositivos ni en la administración.
   revocaciones, desactivación, aislamiento y concurrencia.
 - `server/test/accounts-flags.test.ts`: con el interruptor apagado, respuestas idénticas
   a las de antes; activado e incompleto, 503.
+- `server/test/accounts-panel.test.ts`: configuración pública, archivos de `/club/` (solo con el interruptor y en su origen, con su política de seguridad), nombre corto, resumen de equipos con autorización de club y lo que usa la sección «Administradores» (invitaciones simultáneas, permisos de cada rol, clubes ajenos, invitaciones retiradas o de otro correo, transferencias canceladas y simultáneas, salida y retirada, origen, JSON y sesión en cada escritura).
+- `club/src/format.test.ts`: validaciones, mensajes de error y navegación del panel.
 - `server/test/accounts-cookie.test.ts`: la cookie (`Path=/`, solo el host) sirve en las rutas de cuentas y del club, no concede nada por sí misma, no se comparte con otro host y deja de valer al revocar o desactivar.
 - `server/test/accounts-signup.test.ts`: sin registro libre nadie crea cuentas; con él, una persona crea su cuenta, verifica su correo y es propietaria de su club sin intervención de la superadministración.
 - `server/test/migration-0008.test.ts`: sobre una base representativa (`representativeDb.ts`), la migración no cambia ningún dato existente.
@@ -165,7 +221,8 @@ dispositivos ni en la administración.
 
 - Proveedor de correo (Resend) y plantillas.
 - Turnstile real (clave de sitio en el panel y secreto en el Worker).
-- Interfaz del panel de cuentas.
+- Gestión desde el panel: equipos, temporadas y códigos.
+- Aviso por correo de invitaciones y propuestas de propiedad (con el proveedor de correo).
 - Dominio propio y `ACCOUNTS_ORIGIN` definitivo.
 - Aplicar 0008 en la D1 de preview y activar el interruptor allí.
 - Asignar propietario a los clubes existentes (operación de superadministración).

@@ -27,6 +27,10 @@ export interface AccountsEnv {
   BETTER_AUTH_SECRET?: string;
   /** Clave secreta de Turnstile. Secret. Obligatoria fuera de local y pruebas. */
   TURNSTILE_SECRET_KEY?: string;
+  /** Clave de sitio de Turnstile (pública, para el panel). Va siempre junto a la secreta. */
+  TURNSTILE_SITE_KEY?: string;
+  /** Orígenes de la PWA deportiva; el primero es el enlace «Ya tengo código» del panel. */
+  ALLOWED_ORIGINS?: string;
   /** Envío de correo inyectado (pruebas). En otros entornos se configurará el proveedor. */
   ACCOUNTS_MAILER?: AccountMailer;
 }
@@ -36,7 +40,10 @@ export interface AccountsConfig {
   secret: string;
   pepper: string;
   turnstileSecret: string | null;
+  turnstileSiteKey: string | null;
   publicSignup: boolean;
+  /** Dirección de la PWA deportiva (o null si no hay ninguna configurada). */
+  appUrl: string | null;
   mailer: AccountMailer;
 }
 
@@ -70,9 +77,51 @@ export function accountsConfig(env: AccountsEnv): AccountsConfig {
   if (pepper.length < MIN_SECRET_LENGTH) throw notConfigured('TOKEN_PEPPER');
   const turnstileSecret = env.TURNSTILE_SECRET_KEY || null;
   if (!turnstileSecret && !offline) throw notConfigured('TURNSTILE_SECRET_KEY');
+  // La clave de sitio y la secreta van juntas: con una sola, el panel no podría
+  // obtener el token que el servidor exige (o lo pediría sin comprobarlo).
+  const turnstileSiteKey = env.TURNSTILE_SITE_KEY || null;
+  if (!turnstileSecret !== !turnstileSiteKey) throw notConfigured(turnstileSecret ? 'TURNSTILE_SITE_KEY' : 'TURNSTILE_SECRET_KEY');
   const mailer = env.ACCOUNTS_MAILER ?? (env.ENVIRONMENT === 'local' ? consoleMailer : null);
   if (!mailer) throw notConfigured('correo');
-  return { origin, secret, pepper, turnstileSecret, publicSignup: publicSignupEnabled(env), mailer };
+  const firstApp = (env.ALLOWED_ORIGINS ?? '').split(',').map((o) => o.trim()).find(Boolean) ?? null;
+  return {
+    origin,
+    secret,
+    pepper,
+    turnstileSecret,
+    turnstileSiteKey,
+    publicSignup: publicSignupEnabled(env),
+    appUrl: firstApp && /^https?:\/\/[^/]+$/.test(firstApp) ? `${firstApp}/` : null,
+    mailer,
+  };
+}
+
+/**
+ * Datos públicos para el panel antes de entrar: si el alta de clubes está abierta,
+ * la clave de sitio de Turnstile y el enlace a la PWA. Nada privado.
+ */
+export function publicAccountsInfo(cfg: AccountsConfig) {
+  return { publicSignup: cfg.publicSignup, turnstileSiteKey: cfg.turnstileSiteKey, appUrl: cfg.appUrl };
+}
+
+/**
+ * Política de seguridad del panel de clubes: solo archivos propios y la propia API;
+ * con Turnstile configurado, además su script y su marco.
+ */
+export function clubPanelCsp(cfg: AccountsConfig): string {
+  const turnstile = cfg.turnstileSiteKey ? ' https://challenges.cloudflare.com' : '';
+  return [
+    "default-src 'self'",
+    `script-src 'self'${turnstile}`,
+    `frame-src ${cfg.turnstileSiteKey ? 'https://challenges.cloudflare.com' : "'none'"}`,
+    "style-src 'self'",
+    "img-src 'self' data:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+  ].join('; ');
 }
 
 /** Solo `wrangler dev` local: el código se ve en la consola en lugar de enviarse. */

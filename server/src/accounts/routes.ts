@@ -10,6 +10,9 @@
 //   GET  /list-sessions                     sesiones de la cuenta
 //   POST /revoke-session | /revoke-other-sessions | /revoke-sessions | /sign-out
 //
+// Sin sesión:
+//   GET  /api/account/config                               alta abierta o no, clave de sitio de Turnstile y enlace a la PWA
+//
 // Cuentas y clubes (sesión obligatoria):
 //   GET  /api/account/me                                   cuenta, clubes, invitaciones y transferencias pendientes
 //   POST /api/account/deactivate                           desactivar la propia cuenta
@@ -25,6 +28,7 @@
 //
 // Administración del club (sesión obligatoria y rol en ese club):
 //   GET  /api/club/:clubId/me                              rol de la cuenta en el club
+//   GET  /api/club/:clubId/teams                           resumen de equipos (sin códigos)
 //   (las futuras operaciones administrativas del club cuelgan de aquí)
 //
 // No hay ninguna relación con los tokens de dispositivo: un entrenador o un usuario
@@ -37,6 +41,7 @@ import {
   acceptInvitation,
   accountSummary,
   clubDetail,
+  clubTeams,
   createOwnedClub,
   deactivateAccount,
   decideTransfer,
@@ -49,7 +54,7 @@ import {
   revokeInvitation,
   type AccountUser,
 } from './clubs';
-import { accountsConfig, type AccountsConfig, type AccountsEnv } from './config';
+import { accountsConfig, clubPanelCsp, publicAccountsInfo, type AccountsConfig, type AccountsEnv } from './config';
 import { allowCodeRequest } from './limits';
 import { emailAccountState, isUserDisabled, mayCreateAccount } from './policy';
 
@@ -115,6 +120,8 @@ export async function accountsRoute(request: Request, env: AccountsEnv, parts: s
   const auth = makeAuth(env.DB, cfg);
 
   if (parts[1] === 'account' && parts[2] === 'auth') return authRoute(request, env, cfg, auth);
+  // Datos públicos para el panel antes de entrar (sin sesión y sin nada privado).
+  if (parts[1] === 'account' && parts[2] === 'config' && parts.length === 3 && request.method === 'GET') return json(publicAccountsInfo(cfg));
 
   const { headers: refreshed, response: session } = await auth.api.getSession({ headers: request.headers, returnHeaders: true });
   if (!session || (await isUserDisabled(env.DB, session.user.id))) throw unauthorized();
@@ -134,6 +141,7 @@ export async function accountsRoute(request: Request, env: AccountsEnv, parts: s
     if (!clubId) throw notFound();
     const access = await requireClubAccess(db, user, clubId);
     if (parts[3] === 'me' && n === 4 && m === 'GET') return out({ clubId, role: access.role, clubStatus: access.status });
+    if (parts[3] === 'teams' && n === 4 && m === 'GET') return out(await clubTeams(db, user, clubId));
     throw notFound();
   }
 
@@ -170,4 +178,24 @@ export async function accountsRoute(request: Request, env: AccountsEnv, parts: s
     return out(await decideTransfer(db, user, id, action));
   }
   throw notFound();
+}
+
+/**
+ * Panel de clubes (/club/): archivos estáticos del mismo origen que la API de
+ * cuentas, con su propia política de seguridad. No exige sesión para servir los
+ * archivos (la pantalla de entrada es pública); los datos los protege la API.
+ */
+export async function clubPanel(request: Request, env: AccountsEnv & { ASSETS?: { fetch(request: Request): Promise<Response> } }): Promise<Response> {
+  const cfg = accountsConfig(env);
+  if (new URL(request.url).origin !== cfg.origin) throw notFound();
+  if (request.method !== 'GET' && request.method !== 'HEAD') throw new HttpError(405, 'method_not_allowed', 'Método no permitido.');
+  if (!env.ASSETS) throw new HttpError(503, 'panel_unavailable', 'El panel no está disponible en este entorno.');
+  const res = await env.ASSETS.fetch(request);
+  const out = new Response(res.body, res);
+  out.headers.set('Content-Security-Policy', clubPanelCsp(cfg));
+  out.headers.set('X-Frame-Options', 'DENY');
+  out.headers.set('X-Content-Type-Options', 'nosniff');
+  out.headers.set('Referrer-Policy', 'no-referrer');
+  out.headers.set('Cache-Control', 'no-store');
+  return out;
 }

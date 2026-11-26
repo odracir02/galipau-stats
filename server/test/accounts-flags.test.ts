@@ -92,8 +92,10 @@ describe('ACCOUNTS_ENABLED activado pero incompleto: 503 sin arrancar nada', () 
     ['sin origen', { ACCOUNTS_ORIGIN: undefined }],
     ['origen con ruta', { ACCOUNTS_ORIGIN: `${ORIGIN}/panel` }],
     ['origen http fuera de local', { ACCOUNTS_ORIGIN: 'http://cuentas.galipau.test', ENVIRONMENT: 'preview' }],
-    ['sin Turnstile en preview', { TURNSTILE_SECRET_KEY: undefined, ENVIRONMENT: 'preview' }],
-    ['sin Turnstile en producción', { TURNSTILE_SECRET_KEY: undefined, ENVIRONMENT: 'production' }],
+    ['sin Turnstile en preview', { TURNSTILE_SECRET_KEY: undefined, TURNSTILE_SITE_KEY: undefined, ENVIRONMENT: 'preview' }],
+    ['sin Turnstile en producción', { TURNSTILE_SECRET_KEY: undefined, TURNSTILE_SITE_KEY: undefined, ENVIRONMENT: 'production' }],
+    ['clave secreta de Turnstile sin clave de sitio', { TURNSTILE_SITE_KEY: undefined }],
+    ['clave de sitio de Turnstile sin clave secreta', { TURNSTILE_SECRET_KEY: undefined }],
     ['sin correo fuera de local', { ACCOUNTS_MAILER: undefined, ENVIRONMENT: 'preview' }],
     ['sin TOKEN_PEPPER', { TOKEN_PEPPER: undefined }],
   ];
@@ -107,7 +109,7 @@ describe('ACCOUNTS_ENABLED activado pero incompleto: 503 sin arrancar nada', () 
   });
 
   it('en local y pruebas, Turnstile puede faltar (se desactiva) y el origen puede ser localhost', async () => {
-    const ctx = accountsEnv({ publicSignup: true, overrides: { TURNSTILE_SECRET_KEY: undefined } });
+    const ctx = accountsEnv({ publicSignup: true, overrides: { TURNSTILE_SECRET_KEY: undefined, TURNSTILE_SITE_KEY: undefined } });
     const r = await call(ctx.env, '/api/account/auth/email-otp/send-verification-otp', { body: { email: 'a@example.test', type: 'sign-in' }, turnstile: null });
     expect(r.status).toBe(200);
     expect(ctx.mail.count('a@example.test')).toBe(1);

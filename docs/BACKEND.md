@@ -17,7 +17,7 @@ Base técnica para clubes, equipos, permisos y sincronización. **La aplicación
 | Worker de preview (`galipau-stats-api-preview`) | **Desplegado** en `galipau-stats-api-preview.ricardosastrelopez.workers.dev`, con `TOKEN_PEPPER` configurado. La versión desplegada aún no incluye el AUD de la aplicación crítica |
 | Cloudflare Access de preview | Equipo `shiny-star-4f59` y **las dos aplicaciones creadas** y configuradas en `wrangler.jsonc`: la general (`/api/admin`, `/api/admin/*`) y la crítica (`/api/admin/critical`, `/api/admin/critical/*`, con autenticación y biometría). Ambas solo admiten al superadministrador. La funcionalidad crítica **no está habilitada** en el Worker |
 | Base de datos D1 de producción, Workers, secretos y Access | **No creados** |
-| Cuentas de club: propietario y administradores con código por correo, migración 0008 ([CUENTAS.md](CUENTAS.md)) | Hecho y probado; **desactivado en todos los entornos** (`ACCOUNTS_ENABLED` sin definir); 0008 sin aplicar en remoto; sin interfaz |
+| Cuentas de club: propietario y administradores con código por correo, migración 0008 ([CUENTAS.md](CUENTAS.md)) | Hecho y probado; **desactivado en todos los entornos** (`ACCOUNTS_ENABLED` sin definir); 0008 aplicada en preview; panel de clubes (`/club/`, con gestión de administradores) solo en local |
 
 Relacionado: [Sincronización](SINCRONIZACION.md) · [Permisos, seguridad y privacidad](SEGURIDAD.md).
 

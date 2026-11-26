@@ -13,16 +13,18 @@
   // Sin URLs de vista previa por versión: serían otra forma de llegar al Worker.
   "preview_urls": false,
 
-  // Panel de administración (/admin), en el mismo origen que la API. El Worker
-  // se ejecuta siempre primero: comprueba Access y el rol antes de servir
-  // cualquier archivo del panel. Se compila antes de cada despliegue.
+  // Paneles en el mismo origen que la API: administración (/admin) y clubes
+  // (/club/, solo con ACCOUNTS_ENABLED). El Worker se ejecuta siempre primero:
+  // comprueba Access y el rol antes de servir cualquier archivo de /admin, y que
+  // las cuentas estén activadas antes de servir /club/. Se compilan antes de
+  // cada despliegue.
   "assets": {
     "directory": "./admin-dist",
     "binding": "ASSETS",
     "run_worker_first": true
   },
   "build": {
-    "command": "npm --prefix .. run build:admin"
+    "command": "npm --prefix .. run build:panels"
   },
 
   // Entorno local (wrangler dev / migraciones --local). No toca Cloudflare.

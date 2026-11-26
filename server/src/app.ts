@@ -118,6 +118,8 @@ export interface Env {
   BETTER_AUTH_SECRET?: string;
   /** Clave secreta de Turnstile. Secret. */
   TURNSTILE_SECRET_KEY?: string;
+  /** Clave de sitio de Turnstile (pública, para el panel de clubes). Va junto a la secreta. */
+  TURNSTILE_SITE_KEY?: string;
   /** Correo de los códigos (solo pruebas; el proveedor real llegará en otra tarea). */
   ACCOUNTS_MAILER?: AccountMailer;
 }
@@ -220,9 +222,14 @@ function teamRole(value: string | undefined): TeamRole {
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const parts = url.pathname.split('/').filter(Boolean);
-  // Única excepción a «sin barra final»: la página de entrada del panel.
-  if (!isCanonicalPath(url.pathname) && url.pathname !== '/admin/') throw notFound();
+  // Únicas excepciones a «sin barra final»: las páginas de entrada de los paneles.
+  if (!isCanonicalPath(url.pathname) && url.pathname !== '/admin/' && !(url.pathname === '/club/' && accountsEnabled(env))) throw notFound();
   if (parts[0] === 'admin') return adminPanel(request, env);
+  // Panel de clubes: solo existe con las cuentas activadas (si no, el 404 de siempre).
+  if (parts[0] === 'club' && accountsEnabled(env)) {
+    const { clubPanel } = await import('./accounts/routes');
+    return clubPanel(request, env);
+  }
   if (parts[0] !== 'api') throw notFound();
 
   if (request.method === 'GET' && parts[1] === 'health' && parts.length === 2) {

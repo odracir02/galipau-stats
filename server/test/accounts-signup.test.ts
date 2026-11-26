@@ -76,7 +76,7 @@ describe('registro público habilitado (pruebas locales)', () => {
     const c = await call(ctx.env, '/api/account/clubs', { cookie, body: { id, name: 'CB Autónomo' } });
     expect(c.status).toBe(201);
     expect((await call(ctx.env, `/api/club/${id}/me`, { cookie })).data.role).toBe('owner');
-    expect((await call(ctx.env, '/api/account/me', { cookie })).data.clubs).toEqual([{ id, name: 'CB Autónomo', role: 'owner' }]);
+    expect((await call(ctx.env, '/api/account/me', { cookie })).data.clubs).toEqual([{ id, name: 'CB Autónomo', shortName: null, role: 'owner' }]);
 
     // 5. Sin aprobación ni intervención de la superadministración.
     expect(adminRows()).toBe(before);

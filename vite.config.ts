@@ -108,7 +108,7 @@ export default defineConfig(({ mode }) => {
     ],
     test: {
       environment: 'node',
-      include: ['src/**/*.test.ts', 'server/test/**/*.test.ts', 'admin/src/**/*.test.ts'],
+      include: ['src/**/*.test.ts', 'server/test/**/*.test.ts', 'admin/src/**/*.test.ts', 'club/src/**/*.test.ts'],
     },
   };
 });

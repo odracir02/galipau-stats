@@ -61,6 +61,7 @@ export function accountsEnv(opts: { publicSignup?: boolean; db?: SqliteD1; overr
     ACCOUNTS_ORIGIN: ORIGIN,
     BETTER_AUTH_SECRET: SECRET,
     TURNSTILE_SECRET_KEY: 'clave-turnstile-de-pruebas',
+    TURNSTILE_SITE_KEY: 'clave-de-sitio-de-pruebas',
     ACCOUNTS_MAILER: mail,
     ...opts.overrides,
   };

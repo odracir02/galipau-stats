@@ -126,7 +126,11 @@ describe('panel de administración y códigos', () => {
   it('el panel se sirve desde el Worker, que se ejecuta siempre primero', () => {
     const raw = config as unknown as { assets?: { directory: string; binding: string; run_worker_first: boolean }; build?: { command: string } };
     expect(raw.assets).toEqual({ directory: './admin-dist', binding: 'ASSETS', run_worker_first: true });
-    expect(raw.build?.command).toContain('build:admin');
+    // Compila los dos paneles (administración y clubes) antes de cada despliegue.
+    expect(raw.build?.command).toContain('build:panels');
+    const rootPkg = JSON.parse(read('../../package.json')) as { scripts: Record<string, string> };
+    expect(rootPkg.scripts['build:panels']).toContain('build:admin');
+    expect(rootPkg.scripts['build:panels']).toContain('build:club');
   });
 
   it('la clave de cifrado de códigos es un secreto, nunca una variable', () => {

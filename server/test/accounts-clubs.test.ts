@@ -60,7 +60,7 @@ describe('alta de club con registro libre', () => {
     expect(ownerOf(ctx, id)).toBe(ana.id);
     expect(one<{ name: string; status: string }>(ctx.db, 'SELECT name, status FROM clubs WHERE id = ?', id)).toEqual({ name: 'CB Sintético', status: 'active' });
     const me = await call(ctx.env, '/api/account/me', { cookie: ana.cookie });
-    expect(me.data.clubs).toEqual([{ id, name: 'CB Sintético', role: 'owner' }]);
+    expect(me.data.clubs).toEqual([{ id, name: 'CB Sintético', shortName: null, role: 'owner' }]);
     expect(count(ctx.db, "SELECT COUNT(*) AS n FROM account_audit WHERE action = 'club.create' AND club_id = ?", id)).toBe(1);
   });
 
